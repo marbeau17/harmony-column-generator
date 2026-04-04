@@ -774,6 +774,51 @@ export default function SettingsPage() {
                 )}
                 バナー画像を再生成
               </button>
+              <button
+                onClick={async () => {
+                  try {
+                    setSaving(true);
+                    setSaveMessage('全記事のCTAを更新中...');
+                    const res = await fetch('/api/articles/batch-update-cta', { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data?.error ?? 'CTA一括更新に失敗しました');
+                    const errorInfo = data.errors?.length ? ` (${data.errors.length}件エラー)` : '';
+                    setSaveMessage(`CTA更新完了: ${data.updated ?? 0}件更新、${data.skipped ?? 0}件スキップ${errorInfo}`);
+                    showToast(`${data.updated ?? 0}件のCTAを更新しました`, 'success');
+                    setTimeout(() => setSaveMessage(null), 8000);
+                  } catch (err: any) {
+                    setSaveMessage(`エラー: ${err.message}`);
+                    showToast(`エラー: ${err.message}`, 'error');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+              >
+                {saving && (
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                )}
+                全記事のCTAを更新
+              </button>
             </div>
           </div>
         )}
@@ -999,6 +1044,42 @@ export default function SettingsPage() {
                 画像を一括生成
               </button>
               <div id="batch-img-msg" className="mt-3 text-sm"></div>
+            </div>
+
+            <hr className="border-gray-100" />
+
+            {/* TOC一括挿入 */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">
+                TOC（目次）一括挿入
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                目次がまだ挿入されていない全記事に対して、H2/H3見出しからTOCを自動生成・挿入します。
+              </p>
+              <button
+                onClick={async () => {
+                  const btn = document.getElementById('batch-toc-btn') as HTMLButtonElement | null;
+                  const msgEl = document.getElementById('batch-toc-msg');
+                  if (btn) btn.disabled = true;
+                  if (msgEl) { msgEl.textContent = 'TOCを一括挿入中...'; msgEl.className = 'mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3'; }
+                  try {
+                    const res = await fetch('/api/articles/batch-add-toc', { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data?.error ?? 'TOC一括挿入に失敗しました');
+                    const errorInfo = data.errors?.length ? ` (${data.errors.length}件エラー)` : '';
+                    if (msgEl) { msgEl.textContent = `完了: ${data.updated ?? 0}件挿入、${data.skipped ?? 0}件スキップ${errorInfo}`; msgEl.className = 'mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3'; }
+                  } catch (err: unknown) {
+                    if (msgEl) { msgEl.textContent = `エラー: ${err instanceof Error ? err.message : String(err)}`; msgEl.className = 'mt-3 text-sm text-red-700 bg-red-50 rounded-lg p-3'; }
+                  } finally {
+                    if (btn) btn.disabled = false;
+                  }
+                }}
+                id="batch-toc-btn"
+                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-wait"
+              >
+                全記事にTOCを追加
+              </button>
+              <div id="batch-toc-msg" className="mt-3 text-sm"></div>
             </div>
 
             <hr className="border-gray-100" />

@@ -29,6 +29,7 @@ import {
   buildImagePromptUserPrompt,
 } from '@/lib/ai/prompts/image-prompt';
 import type { ImagePromptsResult } from '@/lib/ai/prompts/image-prompt';
+import { insertTocIntoHtml } from '@/lib/content/toc-generator';
 import { logger } from '@/lib/logger';
 import type { Stage1Input, Stage1OutlineResult, Stage2Input } from '@/types/ai';
 
@@ -402,6 +403,9 @@ export async function POST(request: NextRequest) {
             throw chainError;
           }
 
+          // TOC（目次）を本文に挿入
+          const bodyHtmlWithToc = insertTocIntoHtml(chainResult.bodyHtml);
+
           // 本文保存 + ステータス → body_review
           const fullLog =
             (article.ai_generation_log || '') +
@@ -412,7 +416,7 @@ export async function POST(request: NextRequest) {
             .from('articles')
             .update({
               status: 'body_review',
-              stage2_body_html: chainResult.bodyHtml,
+              stage2_body_html: bodyHtmlWithToc,
               ai_generation_log: fullLog,
               updated_at: new Date().toISOString(),
             })

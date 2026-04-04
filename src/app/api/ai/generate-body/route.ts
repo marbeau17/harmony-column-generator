@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { executeStage2Chain } from '@/lib/ai/prompt-chain';
+import { insertTocIntoHtml } from '@/lib/content/toc-generator';
 import { logger } from '@/lib/logger';
 import type { Stage1OutlineResult, Stage2Input } from '@/types/ai';
 
@@ -184,7 +185,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // 7. DB に保存 + ステータス遷移: body_generating → body_review
+  // 7. TOC（目次）を本文に挿入 + DB 保存 + ステータス遷移: body_generating → body_review
+  const bodyHtmlWithToc = insertTocIntoHtml(chainResult.bodyHtml);
+
   try {
     const fullLog =
       (article.ai_generation_log || '') +
@@ -195,7 +198,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       .from('articles')
       .update({
         status: 'body_review',
-        stage2_body_html: chainResult.bodyHtml,
+        stage2_body_html: bodyHtmlWithToc,
         ai_generation_log: fullLog,
         updated_at: new Date().toISOString(),
       })
@@ -216,10 +219,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json({
     success: true,
     articleId,
-    bodyHtml: chainResult.bodyHtml,
+    bodyHtml: bodyHtmlWithToc,
     proofreadCorrections: chainResult.proofreadResult.corrections,
     stats: {
-      bodyLength: chainResult.bodyHtml.length,
+      bodyLength: bodyHtmlWithToc.length,
       correctionsCount: chainResult.proofreadResult.corrections.length,
     },
   });
