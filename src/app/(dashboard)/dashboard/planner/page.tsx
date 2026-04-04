@@ -481,18 +481,17 @@ export default function PlannerPage() {
         setTimeout(() => setActionMessage(null), 5000);
         return;
       }
-      setActionMessage(reject ? '却下しました' : '承認しました！生成キューに追加されました');
+      setActionMessage(reject ? '却下しました' : '承認しました！記事の自動生成を開始します...');
       await fetchPlans();
       await fetchQueue();
-      // Requirement 1: scroll to queue section and highlight start button after approval
       if (!reject) {
+        // 承認後、自動的にキュー処理を開始
         setTimeout(() => {
           queueSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          setHighlightQueueBtn(true);
-          setTimeout(() => setHighlightQueueBtn(false), 3000);
+          handleStartQueue(); // 自動開始
         }, 500);
       }
-      setTimeout(() => setActionMessage(null), 3000);
+      setTimeout(() => setActionMessage(null), 5000);
     } catch (err) {
       console.error('[planner] approve/reject error:', err);
       setActionMessage('通信エラーが発生しました');
@@ -509,14 +508,12 @@ export default function PlannerPage() {
     setSelectedIds(new Set());
     await fetchPlans();
     await fetchQueue();
-    setActionMessage(`${count}件を承認しました！`);
-    // Scroll to queue section after bulk approve
+    setActionMessage(`${count}件を承認しました！記事の自動生成を開始します...`);
     setTimeout(() => {
       queueSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setHighlightQueueBtn(true);
-      setTimeout(() => setHighlightQueueBtn(false), 3000);
+      handleStartQueue(); // 自動開始
     }, 500);
-    setTimeout(() => setActionMessage(null), 4000);
+    setTimeout(() => setActionMessage(null), 5000);
   };
 
   // ── Queue processing (loops until all items completed/failed) ──
@@ -533,31 +530,43 @@ export default function PlannerPage() {
     }
 
     // Process queue items one step at a time until nothing left
-    let maxIterations = 100; // safety limit
+    let maxIterations = 100;
+    let iteration = 0;
+    console.log('[queue] Starting queue processing loop');
+
     while (maxIterations-- > 0) {
+      iteration++;
+      console.log(`[queue] Iteration ${iteration}: calling /api/queue/process`);
+
       try {
         const res = await fetch('/api/queue/process', { method: 'POST' });
         const data = await res.json().catch(() => ({}));
 
+        console.log(`[queue] Response: status=${res.status}`, data);
+
         // No more items to process
         if (res.status === 404 || data.processed === false || data.message?.includes('処理対象')) {
-          console.log('[queue] All items processed');
+          console.log('[queue] No more items to process. Done.');
           break;
         }
 
         if (!res.ok) {
-          console.error('[queue] Process error:', data.error);
-          // Continue to try next item even if one fails
+          console.error(`[queue] Process error (status ${res.status}):`, data.error, data.detail);
+          // Don't break - try next iteration (the failed item gets error_message set and will be skipped)
+        } else {
+          console.log(`[queue] Step completed: ${data.previousStep} → ${data.newStep} for plan "${data.keyword || 'unknown'}"`);
         }
 
         // Refresh UI after each step
         await fetchQueue();
         await fetchPlans();
       } catch (err) {
-        console.error('[queue] Process fetch error:', err);
+        console.error('[queue] Fetch error:', err);
         break;
       }
     }
+
+    console.log(`[queue] Loop ended after ${iteration} iterations`);
 
     setQueueRunning(false);
     await fetchQueue();
