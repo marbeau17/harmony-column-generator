@@ -431,11 +431,15 @@ export default function PlannerPage() {
       const res = await fetch(`/api/plans/${id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reject }),
+        body: JSON.stringify(reject ? { reject: true } : { approve: true }),
       });
-      if (res.ok) await fetchPlans();
-    } catch {
-      // silent
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error('[planner] approve/reject failed:', data.error);
+      }
+      await fetchPlans();
+    } catch (err) {
+      console.error('[planner] approve/reject error:', err);
     }
   };
 
