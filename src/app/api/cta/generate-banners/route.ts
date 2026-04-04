@@ -12,9 +12,12 @@ import { uploadCtaBannerImage } from './storage';
 import { buildCtaBannerPrompts } from '@/lib/ai/prompts/cta-banner-prompt';
 import { logger } from '@/lib/logger';
 
+// Vercel Serverless 最大実行時間 (Pro: 300秒, Hobby: 60秒)
+export const maxDuration = 300;
+
 // ─── 定数 ──────────────────────────────────────────────────────────────────
 
-const IMAGE_TIMEOUT_MS = 120_000; // 各画像2分
+const IMAGE_TIMEOUT_MS = 90_000; // 各画像90秒（3枚で合計最大270秒+α）
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 

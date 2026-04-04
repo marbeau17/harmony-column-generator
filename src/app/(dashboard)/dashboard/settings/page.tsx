@@ -620,27 +620,42 @@ export default function SettingsPage() {
                 onClick={async () => {
                   try {
                     setSaving(true);
-                    setSaveMessage('バナー画像を生成中...');
+                    setSaveMessage('バナー画像を生成中...（数分かかる場合があります）');
                     const res = await fetch('/api/cta/generate-banners', { method: 'POST' });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data?.error ?? 'バナー生成に失敗しました');
                     // 生成結果をCTA設定に反映
+                    let updatedCta = { ...cta };
                     if (data.banners) {
-                      const updated = { ...cta };
                       for (const banner of data.banners) {
                         const key = banner.position as 'cta1' | 'cta2' | 'cta3';
-                        if (updated[key]) {
-                          updated[key] = {
-                            ...updated[key],
+                        if (updatedCta[key]) {
+                          updatedCta[key] = {
+                            ...updatedCta[key],
                             bannerUrl: banner.url,
-                            bannerAlt: banner.alt || updated[key].bannerAlt,
+                            bannerAlt: banner.alt || updatedCta[key].bannerAlt,
                           };
                         }
                       }
-                      setCTA(updated);
+                      setCTA(updatedCta);
                     }
-                    setSaveMessage(`バナー画像を${data.banners?.length ?? 0}枚生成しました`);
-                    setTimeout(() => setSaveMessage(null), 5000);
+
+                    // バナーURL を含むCTA設定を自動保存
+                    setSaveMessage('バナー画像を保存中...');
+                    const saveRes = await fetch('/api/settings', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ section: 'cta', data: updatedCta }),
+                    });
+                    if (!saveRes.ok) {
+                      console.warn('[settings] CTA auto-save after banner generation failed');
+                    }
+
+                    const errorInfo = data.errors?.length
+                      ? ` (${data.errors.length}件失敗)`
+                      : '';
+                    setSaveMessage(`バナー画像を${data.banners?.length ?? 0}枚生成・保存しました${errorInfo}`);
+                    setTimeout(() => setSaveMessage(null), 8000);
                   } catch (err: any) {
                     setSaveMessage(`エラー: ${err.message}`);
                   } finally {

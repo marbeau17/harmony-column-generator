@@ -1,18 +1,23 @@
 // ============================================================================
 // src/app/api/plans/generate/route.ts
 // POST /api/plans/generate
-// コンテンツプラン一括生成API
+// Step1: キーワードリサーチのみ実行 → キーワード一覧を返却
+// (タイムアウト対策: ステップ分割方式)
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
-import { generateContentPlans } from '@/lib/planner/plan-generator';
+import { researchKeywords } from '@/lib/planner/keyword-researcher';
 import { logger } from '@/lib/logger';
+
+// Vercel Serverless 最大実行時間を60秒に設定
+export const maxDuration = 60;
 
 // ─── ハンドラー ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
   try {
     // 認証チェック
     const supabase = await createServerSupabaseClient();
@@ -43,58 +48,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // AI でプラン生成
-    const generatedPlans = await generateContentPlans(count);
+    logger.info('api', 'generatePlans.step1_start', { count });
 
-    // バッチID生成（タイムスタンプベース）
-    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    // Step1: キーワードリサーチのみ実行
+    const keywordCount = Math.max(count * 2, 10);
+    const keywords = await researchKeywords({ count: keywordCount });
 
-    // content_plans テーブルに一括 insert
-    const serviceClient = await createServiceRoleClient();
-    const insertRows = generatedPlans.map((plan) => ({
-      batch_id: batchId,
-      keyword: plan.keyword,
-      theme: plan.theme,
-      persona: plan.persona,
-      perspective_type: plan.perspectiveType,
-      target_word_count: plan.targetWordCount ?? 2000,
-      status: 'proposed',
-      sub_keywords: plan.subKeywords ?? [],
-      source_article_ids: plan.sourceArticleIds ?? [],
-      predicted_seo_score: plan.predictedSeoScore ?? 75,
-      proposal_reason: plan.proposalReason ?? `AIが「${plan.keyword}」をキーワードとして提案`,
-    }));
-
-    const { data: insertedPlans, error: insertError } = await serviceClient
-      .from('content_plans')
-      .insert(insertRows)
-      .select('*');
-
-    if (insertError) {
-      logger.error('api', 'generatePlans.insert_failed', undefined, insertError);
+    if (keywords.length === 0) {
+      logger.warn('api', 'generatePlans.step1_no_keywords');
       return NextResponse.json(
-        { error: 'プランのDB保存に失敗しました' },
+        { error: 'キーワードが見つかりませんでした。再度お試しください。' },
         { status: 500 },
       );
     }
 
-    logger.info('api', 'generatePlans', {
-      batchId,
-      count: insertedPlans?.length ?? 0,
+    // 必要数に絞る
+    const targetKeywords = keywords.slice(0, Math.max(count + 2, 7));
+
+    const durationMs = Date.now() - startTime;
+    logger.info('api', 'generatePlans.step1_done', {
+      keywordCount: targetKeywords.length,
+      durationMs,
     });
 
+    return NextResponse.json({
+      step: 'keywords_ready',
+      keywords: targetKeywords,
+      requestedCount: count,
+    });
+  } catch (error) {
+    const durationMs = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error('api', 'generatePlans.step1_failed', { durationMs, errorMessage }, error);
     return NextResponse.json(
       {
-        batchId,
-        plans: insertedPlans,
-        count: insertedPlans?.length ?? 0,
+        error: 'キーワードリサーチに失敗しました',
+        detail: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
       },
-      { status: 201 },
-    );
-  } catch (error) {
-    logger.error('api', 'generatePlans', undefined, error);
-    return NextResponse.json(
-      { error: 'プランの生成に失敗しました' },
       { status: 500 },
     );
   }

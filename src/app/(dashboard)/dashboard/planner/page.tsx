@@ -15,6 +15,8 @@ import {
   Play,
   Loader2,
   RefreshCw,
+  AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -24,13 +26,13 @@ type PlanStatus = 'proposed' | 'approved' | 'generating' | 'completed';
 interface ContentPlan {
   id: string;
   theme: string;
-  main_keyword: string;
+  keyword: string;
   sub_keywords: string[];
   persona: string;
   perspective_type: string;
-  source_titles: string[];
+  source_article_ids: string[];
   predicted_seo_score: number;
-  suggestion_reason: string;
+  proposal_reason: string;
   status: PlanStatus;
 }
 
@@ -41,6 +43,18 @@ interface QueueItem {
   plan_id: string;
   plan_name: string;
   current_step: QueueStep;
+}
+
+// Generation progress tracking
+type GenerateStep = 'idle' | 'keywords' | 'plans' | 'done' | 'error';
+
+interface GenerateProgress {
+  step: GenerateStep;
+  currentStepLabel: string;
+  stepsCompleted: number;
+  totalSteps: number;
+  detail?: string;
+  errorMessage?: string;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -107,6 +121,13 @@ const FILTER_OPTIONS: { value: PlanStatus | 'all'; label: string }[] = [
   { value: 'completed',  label: '完了' },
 ];
 
+const INITIAL_PROGRESS: GenerateProgress = {
+  step: 'idle',
+  currentStepLabel: '',
+  stepsCompleted: 0,
+  totalSteps: 3,
+};
+
 // ─── Helper: SEO Score Ring ─────────────────────────────────────────────────
 
 function SeoScoreRing({ score }: { score: number }) {
@@ -146,6 +167,99 @@ function SeoScoreRing({ score }: { score: number }) {
   );
 }
 
+// ─── Helper: Progress Bar ───────────────────────────────────────────────────
+
+function GenerateProgressBar({ progress }: { progress: GenerateProgress }) {
+  if (progress.step === 'idle') return null;
+
+  const pct = Math.round((progress.stepsCompleted / progress.totalSteps) * 100);
+  const isError = progress.step === 'error';
+  const isDone = progress.step === 'done';
+
+  return (
+    <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-800">
+          {isError ? 'エラーが発生しました' : isDone ? 'プラン生成完了' : 'プラン生成中...'}
+        </h3>
+        <span className="text-xs text-gray-500">
+          {progress.stepsCompleted}/{progress.totalSteps} ステップ完了
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="relative h-3 w-full rounded-full bg-gray-100 overflow-hidden mb-3">
+        <div
+          className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ease-out ${
+            isError
+              ? 'bg-red-400'
+              : isDone
+                ? 'bg-emerald-400'
+                : 'bg-brand-400'
+          }`}
+          style={{ width: `${isDone ? 100 : pct}%` }}
+        />
+      </div>
+
+      {/* Step indicators */}
+      <div className="flex justify-between mb-2">
+        {['キーワードリサーチ', 'プラン生成', '元記事選定・保存'].map((label, i) => {
+          const done = progress.stepsCompleted > i;
+          const active = progress.stepsCompleted === i && !isError && !isDone;
+          return (
+            <div key={label} className="flex items-center gap-1.5">
+              {done ? (
+                <Check className="h-3.5 w-3.5 text-emerald-500" />
+              ) : active ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-500" />
+              ) : (
+                <div className="h-3.5 w-3.5 rounded-full border-2 border-gray-200" />
+              )}
+              <span
+                className={`text-[11px] ${
+                  done
+                    ? 'text-emerald-600 font-medium'
+                    : active
+                      ? 'text-brand-600 font-medium'
+                      : 'text-gray-400'
+                }`}
+              >
+                {label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Current step detail */}
+      {progress.currentStepLabel && !isError && !isDone && (
+        <p className="text-xs text-gray-500 flex items-center gap-1.5">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          {progress.currentStepLabel}
+        </p>
+      )}
+
+      {/* Detail info */}
+      {progress.detail && !isError && (
+        <p className="text-xs text-gray-400 mt-1">{progress.detail}</p>
+      )}
+
+      {/* Error message */}
+      {isError && progress.errorMessage && (
+        <div className="flex items-start gap-2 mt-2 rounded-lg bg-red-50 p-3">
+          <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm text-red-700">{progress.errorMessage}</p>
+            <p className="text-xs text-red-500 mt-1">
+              コンソールに詳細ログが出力されています。
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function PlannerPage() {
@@ -154,8 +268,10 @@ export default function PlannerPage() {
   const [filter, setFilter] = useState<PlanStatus | 'all'>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
-  const [loadingMsg, setLoadingMsg] = useState('');
+
+  // Generate progress (step-split)
+  const [progress, setProgress] = useState<GenerateProgress>(INITIAL_PROGRESS);
+  const [lastGenerateCount, setLastGenerateCount] = useState(5);
 
   // Generate dialog
   const [showCountDialog, setShowCountDialog] = useState(false);
@@ -165,16 +281,19 @@ export default function PlannerPage() {
   const [queueRunning, setQueueRunning] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
+  const isGenerating = progress.step === 'keywords' || progress.step === 'plans';
+
   // ── Fetch plans ─────────────────────────────────────────────────
   const fetchPlans = useCallback(async () => {
     try {
       const res = await fetch('/api/plans');
       if (res.ok) {
-        const data = await res.json();
-        setPlans(data.plans ?? []);
+        const json = await res.json();
+        // API は { data: [...], meta: {...} } を返す
+        setPlans(json.data ?? []);
       }
-    } catch {
-      // silent
+    } catch (err) {
+      console.error('[planner] fetchPlans failed:', err);
     }
   }, []);
 
@@ -209,36 +328,101 @@ export default function PlannerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Generate plans ──────────────────────────────────────────────
+  // ── Generate plans (step-split) ─────────────────────────────────
   const handleGenerate = async (count: number) => {
     setShowCountDialog(false);
-    setLoading(true);
-    setLoadingMsg('AIがキーワードリサーチ中...');
+    setLastGenerateCount(count);
+
+    // Reset progress
+    setProgress({
+      step: 'keywords',
+      currentStepLabel: 'AIがキーワードリサーチ中...',
+      stepsCompleted: 0,
+      totalSteps: 3,
+    });
 
     try {
-      // Phase message
-      const phaseTimer = setTimeout(() => setLoadingMsg('プランを生成中...'), 4000);
-
-      const res = await fetch('/api/plans/generate', {
+      // ── Step 1: Keyword Research ──
+      console.log('[planner] Step 1: Starting keyword research...');
+      const step1Res = await fetch('/api/plans/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count }),
       });
 
-      clearTimeout(phaseTimer);
-
-      if (res.ok) {
-        await fetchPlans();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error ?? 'プラン生成に失敗しました');
+      if (!step1Res.ok) {
+        const err = await step1Res.json().catch(() => ({}));
+        console.error('[planner] Step 1 failed:', err);
+        throw new Error(err.error ?? err.detail ?? 'キーワードリサーチに失敗しました');
       }
-    } catch {
-      alert('プラン生成に失敗しました');
-    } finally {
-      setLoading(false);
-      setLoadingMsg('');
+
+      const step1Data = await step1Res.json();
+      console.log('[planner] Step 1 complete:', {
+        keywordCount: step1Data.keywords?.length ?? 0,
+        keywords: step1Data.keywords?.map((k: { keyword: string }) => k.keyword),
+      });
+
+      setProgress({
+        step: 'plans',
+        currentStepLabel: 'プランを生成中...',
+        stepsCompleted: 1,
+        totalSteps: 3,
+        detail: `${step1Data.keywords?.length ?? 0}件のキーワードを取得済み`,
+      });
+
+      // ── Step 2: Plan Generation + Source Selection + DB Save ──
+      console.log('[planner] Step 2: Generating plans from keywords...');
+      const step2Res = await fetch('/api/plans/generate-plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keywords: step1Data.keywords,
+          count,
+        }),
+      });
+
+      if (!step2Res.ok) {
+        const err = await step2Res.json().catch(() => ({}));
+        console.error('[planner] Step 2 failed:', err);
+        throw new Error(err.error ?? err.detail ?? 'プラン生成に失敗しました');
+      }
+
+      const step2Data = await step2Res.json();
+      console.log('[planner] Step 2 complete:', {
+        planCount: step2Data.count ?? 0,
+        batchId: step2Data.batchId,
+      });
+
+      // ── Done ──
+      setProgress({
+        step: 'done',
+        currentStepLabel: '',
+        stepsCompleted: 3,
+        totalSteps: 3,
+        detail: `${step2Data.count ?? 0}件のプランを生成しました`,
+      });
+
+      // Refresh plans list
+      await fetchPlans();
+
+      // Auto-clear done state after 5 seconds
+      setTimeout(() => {
+        setProgress(INITIAL_PROGRESS);
+      }, 5000);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'プラン生成に失敗しました';
+      console.error('[planner] Generation failed:', errorMessage);
+      setProgress((prev) => ({
+        ...prev,
+        step: 'error',
+        errorMessage,
+      }));
     }
+  };
+
+  // ── Retry after error ──────────────────────────────────────────
+  const handleRetry = () => {
+    handleGenerate(lastGenerateCount);
   };
 
   // ── Approve / Reject ───────────────────────────────────────────
@@ -350,10 +534,14 @@ export default function PlannerPage() {
         </div>
         <button
           onClick={() => setShowCountDialog(true)}
-          disabled={loading}
+          disabled={isGenerating}
           className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600 disabled:opacity-50"
         >
-          <Sparkles className="h-4 w-4" />
+          {isGenerating ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="h-4 w-4" />
+          )}
           プランを生成
         </button>
       </div>
@@ -396,13 +584,21 @@ export default function PlannerPage() {
         </div>
       )}
 
-      {/* ── Loading overlay ──────────────────────────────────────── */}
-      {loading && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/30">
-          <div className="rounded-xl bg-white px-8 py-6 shadow-2xl text-center">
-            <Loader2 className="mx-auto h-8 w-8 animate-spin text-brand-500 mb-3" />
-            <p className="text-sm font-medium text-gray-700">{loadingMsg}</p>
-          </div>
+      {/* ── Generation Progress ─────────────────────────────────── */}
+      {progress.step !== 'idle' && (
+        <div className="space-y-3">
+          <GenerateProgressBar progress={progress} />
+          {progress.step === 'error' && (
+            <div className="flex justify-center">
+              <button
+                onClick={handleRetry}
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600"
+              >
+                <RotateCcw className="h-4 w-4" />
+                再試行
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -486,20 +682,22 @@ export default function PlannerPage() {
 
                     {/* Main keyword */}
                     <h3 className="text-base font-bold text-gray-900 leading-snug mb-1.5">
-                      {plan.main_keyword}
+                      {plan.keyword}
                     </h3>
 
                     {/* Sub keywords */}
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {plan.sub_keywords.map((kw) => (
-                        <span
-                          key={kw}
-                          className="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600"
-                        >
-                          {kw}
-                        </span>
-                      ))}
-                    </div>
+                    {plan.sub_keywords && plan.sub_keywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {plan.sub_keywords.map((kw) => (
+                          <span
+                            key={kw}
+                            className="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600"
+                          >
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Meta info */}
                     <div className="text-xs text-gray-500 space-y-0.5">
@@ -527,26 +725,8 @@ export default function PlannerPage() {
                   </div>
                 </div>
 
-                {/* Source titles */}
-                {plan.source_titles.length > 0 && (
-                  <div className="px-5 pb-2">
-                    <p className="text-[11px] font-medium text-gray-400 mb-1">元記事</p>
-                    <ul className="space-y-0.5">
-                      {plan.source_titles.slice(0, 3).map((t, i) => (
-                        <li
-                          key={i}
-                          className="text-xs text-gray-500 truncate"
-                          title={t}
-                        >
-                          {t}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
                 {/* Suggestion reason (collapsible) */}
-                {plan.suggestion_reason && (
+                {plan.proposal_reason && (
                   <div className="px-5 pb-2">
                     <button
                       onClick={() => toggleExpand(plan.id)}
@@ -561,7 +741,7 @@ export default function PlannerPage() {
                     </button>
                     {expandedIds.has(plan.id) && (
                       <p className="mt-1 text-xs text-gray-500 leading-relaxed">
-                        {plan.suggestion_reason}
+                        {plan.proposal_reason}
                       </p>
                     )}
                   </div>
@@ -632,7 +812,7 @@ export default function PlannerPage() {
         ) : (
           <ul className="divide-y divide-gray-50">
             {queueItems.map((item) => {
-              const progress = getQueueProgress(item.current_step);
+              const queueProgress = getQueueProgress(item.current_step);
               return (
                 <li key={item.id} className="px-6 py-4">
                   <div className="flex items-center justify-between mb-2">
@@ -651,7 +831,7 @@ export default function PlannerPage() {
                           ? 'bg-emerald-400'
                           : 'bg-brand-400'
                       }`}
-                      style={{ width: `${progress}%` }}
+                      style={{ width: `${queueProgress}%` }}
                     />
                   </div>
                   {/* Step indicators */}

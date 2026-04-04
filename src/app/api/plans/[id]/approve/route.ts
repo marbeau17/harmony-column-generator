@@ -74,10 +74,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // draft のみ承認/却下可能
-    if (plan.status !== 'draft') {
+    // proposed のみ承認/却下可能
+    if (plan.status !== 'proposed') {
       return NextResponse.json(
-        { error: `ステータス「${plan.status}」のプランは承認/却下できません。draft のみ可能です。` },
+        { error: `ステータス「${plan.status}」のプランは承認/却下できません。proposed のみ可能です。` },
         { status: 409 },
       );
     }
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         .from('content_plans')
         .update({
           status: 'rejected',
-          reject_reason: body.reason || null,
+          proposal_reason: body.reason ? `[却下理由] ${body.reason}` : plan.proposal_reason,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)

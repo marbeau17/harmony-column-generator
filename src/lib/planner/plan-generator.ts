@@ -174,7 +174,7 @@ export async function selectSourceArticles(
  * コンテンツプランからSEOスコアを概算予測する（0〜100）。
  * 実際の記事生成前の見積もりなので、タイトル長・構成の妥当性等から概算する。
  */
-function predictSeoScore(plan: {
+export function predictSeoScore(plan: {
   keyword: string;
   subKeywords: string[];
   targetWordCount: number;
@@ -309,7 +309,7 @@ export async function generateContentPlans(
 /**
  * キーワード一覧からGemini APIで最適なコンテンツプランを提案させる
  */
-async function generatePlansFromKeywords(
+export async function generatePlansFromKeywords(
   keywords: KeywordSuggestion[],
 ): Promise<Omit<ContentPlan, 'sourceArticleIds' | 'sourceArticleTitles' | 'predictedSeoScore'>[]> {
   const themeDefinitionsText = Object.entries(THEME_DEFINITIONS)
