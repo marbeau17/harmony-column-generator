@@ -142,22 +142,23 @@ function replaceCtas(
 
   let changed = false;
 
-  ctaBlocks.each((_, el) => {
-    const $el = $(el);
-    const ctaKey = ($el.attr('data-cta-key') || '') as 'cta1' | 'cta2' | 'cta3';
-    const position = ($el.attr('data-cta-position') || 'intro') as 'intro' | 'mid' | 'end';
+  // data-cta-keyがない古い記事は位置（出現順）で推定
+  const keyMap: ('cta1' | 'cta2' | 'cta3')[] = ['cta1', 'cta2', 'cta3'];
+  const posMap: ('intro' | 'mid' | 'end')[] = ['intro', 'mid', 'end'];
 
-    if (!ctaKey || !ctaSettings[ctaKey]) return;
+  ctaBlocks.each((idx, el) => {
+    const $el = $(el);
+    const ctaKey = ($el.attr('data-cta-key') as 'cta1' | 'cta2' | 'cta3') || keyMap[idx] || 'cta1';
+    const position = ($el.attr('data-cta-position') as 'intro' | 'mid' | 'end') || posMap[idx] || 'intro';
 
     const config = ctaSettings[ctaKey];
-    // キャッチ・サブテキストは既存のものを保持（設定にテキストがある場合はそちらを優先）
+    if (!config) return;
+
     const existingCatch = $el.find('.harmony-cta-catch').text().trim();
     const existingSub = $el.find('.harmony-cta-sub').text().trim();
 
-    const catchText = (config as CtaConfig & { catchText?: string }).catchText || existingCatch || '';
-    const subText = (config as CtaConfig & { subText?: string }).subText || existingSub || '';
-
-    if (!catchText || !subText) return;
+    const catchText = (config as CtaConfig & { catchText?: string }).catchText || existingCatch || 'スピリチュアルカウンセリングのご案内';
+    const subText = (config as CtaConfig & { subText?: string }).subText || existingSub || 'あなたの心に寄り添います';
 
     const newHtml = buildCtaHtml(ctaKey, position, catchText, subText, slug, config);
     $el.replaceWith(newHtml);
