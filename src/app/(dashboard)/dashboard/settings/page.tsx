@@ -943,21 +943,54 @@ export default function SettingsPage() {
                 onClick={async () => {
                   const btn = document.getElementById('batch-img-btn') as HTMLButtonElement | null;
                   const msgEl = document.getElementById('batch-img-msg');
-                  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white mr-2"></span>生成中... しばらくお待ちください'; }
-                  if (msgEl) { msgEl.textContent = '⏳ 画像を一括生成中...（1記事あたり約1-2分かかります）'; msgEl.className = 'mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3 animate-pulse'; }
-                  console.log('[batch-images] Starting batch image generation...');
+                  if (btn) { btn.disabled = true; }
+
+                  console.log('[batch-images] Fetching articles that need images...');
+                  if (msgEl) { msgEl.innerHTML = '⏳ 画像が必要な記事を確認中...'; msgEl.className = 'mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3'; }
+
                   try {
-                    const res = await fetch('/api/articles/batch-generate-images', { method: 'POST' });
-                    console.log('[batch-images] Response status:', res.status);
-                    const data = await res.json();
-                    console.log('[batch-images] Response data:', data);
-                    if (!res.ok) throw new Error(data?.error ?? '一括画像生成に失敗しました');
-                    if (msgEl) { msgEl.textContent = `✅ ${data.message}`; msgEl.className = 'mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3'; }
+                    // Step 1: 画像が必要な記事のリストを取得
+                    const listRes = await fetch('/api/articles?limit=100');
+                    const listData = await listRes.json();
+                    const allArticles = listData.data || [];
+                    const needImages = allArticles.filter((a: Record<string, unknown>) => {
+                      const prompts = a.image_prompts as unknown[] | null;
+                      const files = a.image_files as unknown[] | null;
+                      return prompts && Array.isArray(prompts) && prompts.length > 0 && (!files || !Array.isArray(files) || files.length === 0);
+                    });
+
+                    console.log('[batch-images]', needImages.length, 'articles need images');
+                    if (needImages.length === 0) {
+                      if (msgEl) { msgEl.innerHTML = '✅ 画像生成が必要な記事はありません'; msgEl.className = 'mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3'; }
+                      if (btn) btn.disabled = false;
+                      return;
+                    }
+
+                    // Step 2: 1記事ずつ処理
+                    let success = 0, failed = 0;
+                    for (let i = 0; i < needImages.length; i++) {
+                      const article = needImages[i] as Record<string, unknown>;
+                      const title = (article.title as string || '(無題)').substring(0, 30);
+                      if (msgEl) { msgEl.innerHTML = `⏳ 画像生成中... (${i + 1}/${needImages.length}) 「${title}」<br><small class="text-gray-500">1記事あたり約1-2分かかります。ページを離れても処理は続きます。</small>`; }
+                      console.log('[batch-images]', i + 1, '/', needImages.length, ':', title);
+
+                      try {
+                        const res = await fetch('/api/articles/' + (article.id as string) + '/generate-images', { method: 'POST' });
+                        const data = await res.json();
+                        console.log('[batch-images] Result:', data);
+                        if (res.ok) { success++; } else { failed++; console.error('[batch-images] Failed:', data.error); }
+                      } catch (err) {
+                        failed++;
+                        console.error('[batch-images] Error:', err);
+                      }
+                    }
+
+                    if (msgEl) { msgEl.innerHTML = `✅ 完了: ${success}件成功${failed > 0 ? `、${failed}件失敗` : ''}`; msgEl.className = 'mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3'; }
                   } catch (err: unknown) {
                     console.error('[batch-images] Error:', err);
-                    if (msgEl) { msgEl.textContent = `❌ エラー: ${err instanceof Error ? err.message : String(err)}`; msgEl.className = 'mt-3 text-sm text-red-700 bg-red-50 rounded-lg p-3'; }
+                    if (msgEl) { msgEl.innerHTML = `❌ エラー: ${err instanceof Error ? err.message : String(err)}`; msgEl.className = 'mt-3 text-sm text-red-700 bg-red-50 rounded-lg p-3'; }
                   } finally {
-                    if (btn) { btn.disabled = false; btn.innerHTML = '画像を一括生成'; }
+                    if (btn) { btn.disabled = false; }
                   }
                 }}
                 id="batch-img-btn"
