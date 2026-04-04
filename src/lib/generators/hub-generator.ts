@@ -37,6 +37,18 @@ const SITE_NAME = 'Harmonyスピリチュアルコラム';
 const SITE_URL = 'https://harmony-spiritual.com';
 const COLUMNS_BASE = `${SITE_URL}/columns`;
 const BOOKING_URL = 'https://harmony-booking.web.app/';
+const GA4_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-TH2XJ24V3T';
+
+/** GA4タグを生成 */
+function buildGA4Tag(): string {
+  return `<script async src="https://www.googletagmanager.com/gtag/js?id=${GA4_ID}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', '${GA4_ID}');
+  </script>`;
+}
 
 /** テーマ slug → 日本語ラベル */
 const THEME_LABEL_MAP: Record<string, string> = {
@@ -308,6 +320,9 @@ export function generateHubPage(data: HubPageData): string {
   <title>${esc(pageTitle)}</title>
   <meta name="description" content="スピリチュアルカウンセラー小林由起子によるコラム一覧。ツインレイ・前世療法・チャクラヒーリングなど、魂の成長をサポートする情報をお届けします。"/>
   <link rel="canonical" href="${escAttr(canonicalPath)}"/>
+
+  <!-- Google Analytics 4 -->
+  ${buildGA4Tag()}
 
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet"/>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet"/>

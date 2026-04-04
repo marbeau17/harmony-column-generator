@@ -21,6 +21,17 @@ import type { Article } from '@/types/article';
 const SITE_URL = 'https://harmony-mc.com';
 const BOOKING_URL = 'https://harmony-booking.web.app/';
 const HUB_URL = `${SITE_URL}/column`;
+const GA4_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-TH2XJ24V3T';
+
+function buildGA4Tag(): string {
+  return `<script async src="https://www.googletagmanager.com/gtag/js?id=${GA4_ID}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', '${GA4_ID}');
+  </script>`;
+}
 
 const COUNSELOR = {
   name: '小林由起子',
@@ -296,6 +307,9 @@ export function generateArticleHtml(
   <meta name="description" content="${escAttr(metaDescription)}">
   ${keywords ? `<meta name="keywords" content="${escAttr(keywords)}">` : ''}
   <link rel="canonical" href="${escAttr(canonicalUrl)}">
+
+  <!-- Google Analytics 4 -->
+  ${buildGA4Tag()}
 
   <!-- OGP -->
   <meta property="og:title" content="${escAttr(title)} | スピリチュアルカウンセラー小林由起子">
