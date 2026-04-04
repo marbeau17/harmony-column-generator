@@ -37,14 +37,47 @@ export interface UploadResult {
  * 必須: FTP_HOST, FTP_USER, FTP_PASSWORD
  * 任意: FTP_PORT (default 21), FTP_REMOTE_PATH (default /public_html/column/columns/)
  */
-export function getFtpConfig(): FtpConfig {
+/**
+ * FTP設定を取得。優先順位:
+ * 1. DB settings テーブル（UIから設定）
+ * 2. 環境変数（.env.local）
+ */
+export async function getFtpConfig(): Promise<FtpConfig> {
+  // まずDBから取得を試みる
+  try {
+    const { createServiceRoleClient } = await import('@/lib/supabase/server');
+    const supabase = await createServiceRoleClient();
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'ftp')
+      .maybeSingle();
+
+    if (data?.value) {
+      const ftp = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+      if (ftp.host && ftp.user && ftp.password) {
+        return {
+          host: ftp.host,
+          user: ftp.user,
+          password: ftp.password,
+          port: ftp.port || 21,
+          secure: false,
+          remoteBasePath: ftp.remotePath || '/public_html/column/columns/',
+        };
+      }
+    }
+  } catch {
+    // DB取得失敗時は環境変数にフォールバック
+  }
+
+  // 環境変数から取得
   const host = process.env.FTP_HOST;
   const user = process.env.FTP_USER;
   const password = process.env.FTP_PASSWORD;
 
   if (!host || !user || !password) {
     throw new Error(
-      'FTP設定が不足しています。環境変数 FTP_HOST, FTP_USER, FTP_PASSWORD を設定してください。',
+      'FTP設定が不足しています。設定ページまたは環境変数でFTP接続情報を設定してください。',
     );
   }
 

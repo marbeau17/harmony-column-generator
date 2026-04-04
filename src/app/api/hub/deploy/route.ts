@@ -72,7 +72,7 @@ export async function POST() {
 
     let ftpConfig;
     try {
-      ftpConfig = getFtpConfig();
+      ftpConfig = await getFtpConfig();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error('deploy', 'FTP設定エラー', { error: message });
