@@ -22,28 +22,8 @@ export async function uploadCtaBannerImage(
 ): Promise<string> {
   const supabase = await createServiceRoleClient();
 
-  // バケットが存在しなければ作成
-  const { data: buckets } = await supabase.storage.listBuckets();
-  const bucketExists = buckets?.some((b) => b.name === BUCKET_NAME);
-
-  if (!bucketExists) {
-    const { error: createError } = await supabase.storage.createBucket(
-      BUCKET_NAME,
-      {
-        public: true,
-        fileSizeLimit: 10 * 1024 * 1024, // 10MB
-        allowedMimeTypes: [
-          'image/png',
-          'image/jpeg',
-          'image/webp',
-          'image/gif',
-        ],
-      },
-    );
-    if (createError) {
-      throw new Error(`バケット作成に失敗しました: ${createError.message}`);
-    }
-  }
+  // バケット 'article-images' は事前にSQL/ダッシュボードで作成済み
+  // listBuckets/createBucketはRLSで拒否されるためスキップ
 
   // 拡張子をMIMEタイプから決定
   const ext = mimeTypeToExtension(mimeType);
