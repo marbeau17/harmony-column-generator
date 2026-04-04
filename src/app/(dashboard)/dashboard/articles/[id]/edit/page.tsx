@@ -116,8 +116,25 @@ export default function ArticleEditPage() {
         setMetaDescription(a.meta_description ?? '');
         setKeyword(a.keyword ?? '');
         setTheme(a.theme ?? '');
-        // Use stage3_final_html > stage2_body_html
-        setBodyHtml(a.stage3_final_html ?? a.stage2_body_html ?? '');
+        // Use stage3_final_html > stage2_body_html, replace image placeholders
+        let html = a.stage3_final_html ?? a.stage2_body_html ?? '';
+        // Replace <!--IMAGE:position:filename--> placeholders with actual images
+        const imageFiles = a.image_files as { position: string; url: string; alt: string }[] | null;
+        if (imageFiles && Array.isArray(imageFiles)) {
+          for (const img of imageFiles) {
+            // Match various placeholder formats
+            const patterns = [
+              new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
+              new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
+              new RegExp(`IMAGE:${img.position}:[\\w.-]+`, 'g'),
+            ];
+            const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+            for (const pattern of patterns) {
+              html = html.replace(pattern, imgTag);
+            }
+          }
+        }
+        setBodyHtml(html);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : '不明なエラー');
       } finally {
