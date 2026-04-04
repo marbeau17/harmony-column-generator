@@ -53,7 +53,7 @@ function getArticlePath(id: string, status: string): string {
     case 'editing':
       return `/dashboard/articles/${id}/edit`;
     case 'published':
-      return `/dashboard/articles/${id}`;
+      return `/dashboard/articles/${id}/edit`;
     default:
       return `/dashboard/articles/${id}`;
   }
