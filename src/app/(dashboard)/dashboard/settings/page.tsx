@@ -56,9 +56,10 @@ const TABS: { key: TabKey; label: string }[] = [
 // ─── Gemini モデル選択肢 ─────────────────────────────────────────────────────
 
 const GEMINI_MODELS = [
-  { value: 'gemini-pro-latest', label: 'Gemini Pro Latest（推奨・記事生成）' },
+  { value: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro（推奨・記事生成）' },
+  { value: 'gemini-3-pro-image-preview', label: 'Nano Banana Pro（画像生成）' },
+  { value: 'gemini-pro-latest', label: 'Gemini Pro Latest' },
   { value: 'gemini-2.5-pro-preview-05-06', label: 'Gemini 2.5 Pro Preview' },
-  { value: 'gemini-2.5-flash-preview-04-17', label: 'Gemini 2.5 Flash Preview' },
   { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash（高速・低コスト）' },
 ];
 
@@ -71,7 +72,7 @@ const DEFAULT_BASIC: BasicSettings = {
 };
 
 const DEFAULT_AI: AISettings = {
-  gemini_model: 'gemini-pro-latest',
+  gemini_model: 'gemini-3.1-pro',
   default_char_count: 2000,
   default_persona: '',
   default_theme: '',
