@@ -29,7 +29,14 @@ import type { Stage1Input, Stage1OutlineResult } from '@/types/ai';
 // ─── リクエストスキーマ ─────────────────────────────────────────────────────
 
 const requestSchema = z.object({
-  articleId: z.string().uuid('記事IDはUUID形式で指定してください'),
+  articleId: z.string().uuid('記事IDはUUID形式で指定してください').optional(),
+  // 新規記事作成用パラメータ（articleIdがない場合に使用）
+  theme: z.string().optional(),
+  targetPersona: z.string().optional(),
+  keyword: z.string().optional(),
+  perspectiveType: z.string().optional(),
+  targetWordCount: z.number().int().min(500).max(10000).optional().default(2000),
+  sourceArticleId: z.string().uuid().optional(),
 });
 
 // ─── レスポンス検証 (AIの出力をバリデーション) ──────────────────────────────
@@ -75,7 +82,7 @@ const outlineResponseSchema = z.object({
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // 1. 認証チェック
-  const supabase = createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
@@ -99,41 +106,100 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
-  const { articleId } = parsed.data;
 
-  // 3. 記事を取得
-  const { data: article, error: articleError } = await supabase
-    .from('articles')
-    .select('*')
-    .eq('id', articleId)
-    .single();
+  let articleId: string;
+  let article: Record<string, unknown>;
 
-  if (articleError || !article) {
-    return NextResponse.json({ error: '記事が見つかりません' }, { status: 404 });
+  if (parsed.data.articleId) {
+    // ── モード1: 既存記事を使用 ──
+    articleId = parsed.data.articleId;
+
+    const { data: existingArticle, error: articleError } = await supabase
+      .from('articles')
+      .select('*')
+      .eq('id', articleId)
+      .single();
+
+    if (articleError || !existingArticle) {
+      return NextResponse.json({ error: '記事が見つかりません' }, { status: 404 });
+    }
+
+    // ステータスチェック (draft のみ構成案生成可能、outline_pending は再生成可能)
+    if (existingArticle.status !== 'draft' && existingArticle.status !== 'outline_pending') {
+      return NextResponse.json(
+        { error: `現在のステータス「${existingArticle.status}」では構成案を生成できません` },
+        { status: 409 },
+      );
+    }
+
+    article = existingArticle;
+  } else {
+    // ── モード2: 新規記事を作成してからアウトライン生成 ──
+    const { theme, targetPersona, keyword, perspectiveType, targetWordCount, sourceArticleId } = parsed.data;
+
+    if (!keyword?.trim()) {
+      return NextResponse.json(
+        { error: 'articleId または keyword が必要です' },
+        { status: 400 },
+      );
+    }
+
+    const insertPayload: Record<string, unknown> = {
+      keyword: keyword.trim(),
+      theme: theme || null,
+      persona: targetPersona || null,
+      perspective_type: perspectiveType || null,
+      target_word_count: targetWordCount,
+      source_article_id: sourceArticleId || null,
+      status: 'draft',
+    };
+
+    const { data: newArticle, error: insertError } = await supabase
+      .from('articles')
+      .insert(insertPayload)
+      .select('*')
+      .single();
+
+    if (insertError || !newArticle) {
+      logger.error('ai', 'stage1.article_create_failed', { insertError });
+      return NextResponse.json(
+        { error: '記事の作成に失敗しました' },
+        { status: 500 },
+      );
+    }
+
+    articleId = newArticle.id as string;
+    article = newArticle;
   }
 
-  // ステータスチェック (draft のみ構成案生成可能、outline_pending は再生成可能)
-  if (article.status !== 'draft' && article.status !== 'outline_pending') {
-    return NextResponse.json(
-      { error: `現在のステータス「${article.status}」では構成案を生成できません` },
-      { status: 409 },
-    );
+  // 4. 元記事の内容を取得（ある場合）
+  let sourceArticleContent: string | undefined;
+  if (article.source_article_id) {
+    const { data: sourceArticle } = await supabase
+      .from('source_articles')
+      .select('title, content')
+      .eq('id', article.source_article_id)
+      .single();
+    if (sourceArticle) {
+      sourceArticleContent = `【元記事タイトル】${sourceArticle.title}\n\n${sourceArticle.content}`;
+    }
   }
 
-  // 4. プロンプト組み立て
+  // 5. プロンプト組み立て
   const stage1Input: Stage1Input = {
-    keyword: article.keyword || '',
-    theme: article.theme || 'spiritual_intro',
-    targetPersona: article.persona || 'spiritual_beginner',
-    perspectiveType: article.perspective_type || 'concept_to_practice',
-    targetWordCount: article.target_word_count ?? 2000,
-    sourceArticleId: article.source_article_id || undefined,
+    keyword: (article.keyword as string) || '',
+    theme: (article.theme as string) || 'spiritual_intro',
+    targetPersona: (article.persona as string) || 'spiritual_beginner',
+    perspectiveType: (article.perspective_type as string) || 'concept_to_practice',
+    targetWordCount: (article.target_word_count as number) ?? 2000,
+    sourceArticleId: (article.source_article_id as string) || undefined,
+    sourceArticleContent,
   };
 
   const systemPrompt = buildStage1SystemPrompt(stage1Input);
   const userPrompt = buildStage1UserPrompt(stage1Input);
 
-  // 5. Gemini 呼び出し (JSON モード)
+  // 6. Gemini 呼び出し (JSON モード)
   logger.info('ai', 'stage1.generation_start', {
     articleId,
     keyword: article.keyword,
@@ -293,6 +359,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // 7. レスポンス返却
   return NextResponse.json({
     success: true,
+    articleId,
     outline: outlineResult,
   });
 }

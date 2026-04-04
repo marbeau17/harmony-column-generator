@@ -222,12 +222,15 @@ export default function ReviewPage() {
   const handleApproveEdit = async () => {
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/articles/${articleId}`, {
+      const res = await fetch(`/api/articles/${articleId}/transition`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'editing' }),
       });
-      if (!res.ok) throw new Error('ステータス更新に失敗しました');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error ?? 'ステータス更新に失敗しました');
+      }
       router.push(`/dashboard/articles/${articleId}/edit`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '予期せぬエラー');
@@ -241,12 +244,15 @@ export default function ReviewPage() {
   const handleGoToEdit = async () => {
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/articles/${articleId}`, {
+      const res = await fetch(`/api/articles/${articleId}/transition`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'editing' }),
       });
-      if (!res.ok) throw new Error('ステータス更新に失敗しました');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error ?? 'ステータス更新に失敗しました');
+      }
       router.push(`/dashboard/articles/${articleId}/edit`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '予期せぬエラー');

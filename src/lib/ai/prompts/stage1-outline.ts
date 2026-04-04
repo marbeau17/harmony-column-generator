@@ -130,6 +130,7 @@ export function buildStage1UserPrompt(input: Stage1Input): string {
 - **視点タイプ**: ${input.perspectiveType}
 - **目標文字数**: ${targetWordCount}文字
 ${input.sourceArticleId ? `- **元記事ID（視点変換元）**: ${input.sourceArticleId}` : ''}
+${input.sourceArticleContent ? `\n### 元記事の内容（視点変換元）\n以下の元記事を参考に、新しい視点でコラムの構成案を作成してください。\n\n${input.sourceArticleContent}\n` : ''}
 
 ### CTA情報
 - **CTA先URL**: ${CTA_URL}

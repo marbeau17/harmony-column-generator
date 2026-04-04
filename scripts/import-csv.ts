@@ -147,8 +147,8 @@ async function main() {
   type InsertRow = {
     title: string;
     content: string;
-    source_url: string;
-    published_date: string | null;
+    original_url: string;
+    published_at: string | null;
     word_count: number;
   };
 
@@ -178,8 +178,8 @@ async function main() {
     toInsert.push({
       title,
       content,
-      source_url: url,
-      published_date: date || null,
+      original_url: url,
+      published_at: date || null,
       word_count: countWords(content),
     });
   }

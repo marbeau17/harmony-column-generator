@@ -11,18 +11,18 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (!session) {
+  if (!user) {
     redirect('/login');
   }
 
   return (
     <DashboardShell
-      userName={session.user.user_metadata?.name ?? session.user.email ?? 'User'}
+      userName={user.user_metadata?.name ?? user.email ?? 'User'}
     >
       {children}
     </DashboardShell>

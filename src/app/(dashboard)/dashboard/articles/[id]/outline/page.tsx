@@ -178,20 +178,27 @@ export default function OutlinePage() {
     if (!article) return;
     setSubmitting(true);
     try {
-      // ステータス遷移: outline_pending → outline_approved
+      // 1. フィールド更新（タイトル、メタ、構成案の編集内容を保存）
       const updateRes = await fetch(`/api/articles/${articleId}`, {
-        method: 'POST',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status: 'outline_approved',
           title: editTitle,
           meta_description: editMeta,
           stage1_outline: article.stage1_outline,
         }),
       });
-      if (!updateRes.ok) throw new Error('ステータス更新に失敗しました');
+      if (!updateRes.ok) throw new Error('記事の更新に失敗しました');
 
-      // 本文生成開始
+      // 2. ステータス遷移: outline_pending → outline_approved
+      const transitionRes = await fetch(`/api/articles/${articleId}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'outline_approved' }),
+      });
+      if (!transitionRes.ok) throw new Error('ステータス遷移に失敗しました');
+
+      // 3. 本文生成開始（generate-body が outline_approved → body_generating を内部で処理）
       const genRes = await fetch(`/api/ai/generate-body`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -13,6 +13,8 @@ import { z } from 'zod';
 
 const listSourceArticlesQuerySchema = z.object({
   keyword: z.string().max(255).optional(),
+  theme: z.string().max(100).optional(),
+  include_preview: z.boolean().optional(),
   limit: z
     .number()
     .int()
@@ -31,12 +33,12 @@ const listSourceArticlesQuerySchema = z.object({
 export async function GET(request: NextRequest) {
   try {
     // 認証チェック
-    const supabase = createServerSupabaseClient();
+    const supabase = await createServerSupabaseClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 
@@ -44,6 +46,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const rawQuery = {
       keyword: searchParams.get('keyword') ?? undefined,
+      theme: searchParams.get('theme') ?? undefined,
+      include_preview: searchParams.get('include_preview') === 'true' ? true : undefined,
       limit: searchParams.get('limit')
         ? Number(searchParams.get('limit'))
         : undefined,
@@ -64,12 +68,21 @@ export async function GET(request: NextRequest) {
     // データ取得
     const { data, count } = await listSourceArticles(result.data);
 
+    // include_preview=true の場合、content の先頭200文字を preview として返す
+    const responseData = result.data.include_preview
+      ? data.map((row) => ({
+          ...row,
+          preview: row.content ? row.content.slice(0, 200) : null,
+        }))
+      : data;
+
     logger.info('api', 'listSourceArticles', {
       keyword: result.data.keyword,
+      theme: result.data.theme,
       count,
     });
 
-    return NextResponse.json({ data, count });
+    return NextResponse.json({ data: responseData, count });
   } catch (error) {
     logger.error('api', 'listSourceArticles', undefined, error);
     return NextResponse.json(

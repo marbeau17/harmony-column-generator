@@ -18,12 +18,12 @@ import { logger } from '@/lib/logger';
 export async function GET(request: NextRequest) {
   try {
     // 認証チェック
-    const supabase = createServerSupabaseClient();
+    const supabase = await createServerSupabaseClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 
@@ -58,7 +58,14 @@ export async function GET(request: NextRequest) {
       count,
     });
 
-    return NextResponse.json({ data, count });
+    return NextResponse.json({
+      data,
+      meta: {
+        total: count,
+        limit: result.data.limit ?? 20,
+        offset: result.data.offset ?? 0,
+      },
+    });
   } catch (error) {
     logger.error('api', 'listArticles', undefined, error);
     return NextResponse.json(
@@ -73,12 +80,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // 認証チェック
-    const supabase = createServerSupabaseClient();
+    const supabase = await createServerSupabaseClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 

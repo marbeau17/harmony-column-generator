@@ -28,12 +28,11 @@ export default async function sitemap(): Promise<SitemapEntry[]> {
   }
 
   try {
-    const supabase = createServiceRoleClient();
+    const supabase = await createServiceRoleClient();
     const { data, error } = await supabase
       .from('articles')
       .select('slug, published_at, updated_at')
       .eq('status', 'published')
-      .is('archived_at', null)
       .not('slug', 'is', null)
       .order('published_at', { ascending: false });
 

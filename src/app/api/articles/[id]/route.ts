@@ -1,6 +1,6 @@
 // ============================================================================
 // src/app/api/articles/[id]/route.ts
-// 記事詳細取得 / 記事更新 / 記事アーカイブ（論理削除） API
+// 記事詳細取得 / 記事更新 / 記事削除 API
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -8,7 +8,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import {
   getArticleById,
   updateArticle,
-  archiveArticle,
+  deleteArticle,
 } from '@/lib/db/articles';
 import { updateArticleSchema, validate } from '@/lib/validators/article';
 import { logger } from '@/lib/logger';
@@ -20,12 +20,12 @@ type RouteParams = { params: { id: string } };
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     // 認証チェック
-    const supabase = createServerSupabaseClient();
+    const supabase = await createServerSupabaseClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 
@@ -56,12 +56,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     // 認証チェック
-    const supabase = createServerSupabaseClient();
+    const supabase = await createServerSupabaseClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 
@@ -109,12 +109,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     // 認証チェック
-    const supabase = createServerSupabaseClient();
+    const supabase = await createServerSupabaseClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 
@@ -129,16 +129,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // 論理削除（アーカイブ）
-    const archived = await archiveArticle(id);
+    // 記事削除
+    await deleteArticle(id);
 
-    logger.info('api', 'archiveArticle', { articleId: id });
+    logger.info('api', 'deleteArticle', { articleId: id });
 
-    return NextResponse.json({ data: archived });
+    return NextResponse.json({ data: { id, deleted: true } });
   } catch (error) {
-    logger.error('api', 'archiveArticle', { articleId: params.id }, error);
+    logger.error('api', 'deleteArticle', { articleId: params.id }, error);
     return NextResponse.json(
-      { error: '記事のアーカイブに失敗しました' },
+      { error: '記事の削除に失敗しました' },
       { status: 500 },
     );
   }

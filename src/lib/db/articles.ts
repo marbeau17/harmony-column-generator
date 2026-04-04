@@ -24,16 +24,35 @@ const VALID_TRANSITIONS: Record<ArticleStatus, ArticleStatus[]> = {
 
 export interface ArticleRow {
   id: string;
-  title: string;
+  article_number: number;
+  title: string | null;
   slug: string | null;
   status: ArticleStatus;
-  outline: string | null;
-  body: string | null;
   source_article_id: string | null;
-  seo_title: string | null;
-  seo_description: string | null;
-  featured_image_url: string | null;
-  archived_at: string | null;
+  perspective_type: string | null;
+  meta_description: string | null;
+  seo_filename: string | null;
+  keyword: string | null;
+  theme: string | null;
+  persona: string | null;
+  target_word_count: number;
+  stage1_outline: unknown | null;
+  stage1_image_prompts: unknown | null;
+  stage2_body_html: string | null;
+  stage3_final_html: string | null;
+  published_html: string | null;
+  faq_data: unknown | null;
+  structured_data: unknown | null;
+  seo_score: unknown | null;
+  aio_score: unknown | null;
+  quick_answer: string | null;
+  image_prompts: unknown | null;
+  image_files: unknown;
+  cta_texts: unknown | null;
+  related_articles: unknown;
+  published_url: string | null;
+  published_at: string | null;
+  ai_generation_log: string | null;
   created_at: string;
   updated_at: string;
   [key: string]: any;
@@ -49,28 +68,29 @@ export interface ListArticlesFilter {
 export interface CreateArticleInput {
   title: string;
   slug?: string;
-  outline?: string;
-  body?: string;
   source_article_id?: string;
-  seo_title?: string;
-  seo_description?: string;
-  featured_image_url?: string;
+  perspective_type?: string;
+  meta_description?: string;
+  seo_filename?: string;
+  keyword?: string;
+  theme?: string;
+  persona?: string;
+  target_word_count?: number;
   [key: string]: any;
 }
 
 // ---------- CRUD ----------
 
 /**
- * 記事を ID で取得する。アーカイブ済みは除外。
+ * 記事を ID で取得する。
  */
 export async function getArticleById(id: string): Promise<ArticleRow | null> {
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   const { data, error } = await supabase
     .from('articles')
     .select('*')
     .eq('id', id)
-    .is('archived_at', null)
     .maybeSingle();
 
   if (error) {
@@ -82,18 +102,16 @@ export async function getArticleById(id: string): Promise<ArticleRow | null> {
 
 /**
  * ページネーション付き記事一覧を取得する。
- * アーカイブ済みは除外。
  */
 export async function listArticles(
   filter: ListArticlesFilter = {},
 ): Promise<{ data: ArticleRow[]; count: number }> {
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
   const { status, keyword, limit = 20, offset = 0 } = filter;
 
   let query = supabase
     .from('articles')
     .select('*', { count: 'exact' })
-    .is('archived_at', null)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -102,7 +120,7 @@ export async function listArticles(
   }
 
   if (keyword) {
-    query = query.or(`title.ilike.%${keyword}%,body.ilike.%${keyword}%`);
+    query = query.or(`title.ilike.%${keyword}%,keyword.ilike.%${keyword}%`);
   }
 
   const { data, error, count } = await query;
@@ -123,7 +141,7 @@ export async function listArticles(
 export async function createArticle(
   input: CreateArticleInput,
 ): Promise<ArticleRow> {
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   const { data, error } = await supabase
     .from('articles')
@@ -148,7 +166,7 @@ export async function updateArticle(
   id: string,
   fields: Partial<Omit<ArticleRow, 'id' | 'created_at' | 'status'>>,
 ): Promise<ArticleRow> {
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   const { data, error } = await supabase
     .from('articles')
@@ -157,7 +175,6 @@ export async function updateArticle(
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .is('archived_at', null)
     .select('*')
     .single();
 
@@ -193,17 +210,23 @@ export async function transitionArticleStatus(
     );
   }
 
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
+
+  // published への遷移時は published_at を自動設定
+  const timestampFields: Record<string, string> = {};
+  if (newStatus === 'published') {
+    timestampFields.published_at = new Date().toISOString();
+  }
 
   const { data, error } = await supabase
     .from('articles')
     .update({
       ...(extraFields ?? {}),
+      ...timestampFields,
       status: newStatus,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .is('archived_at', null)
     .select('*')
     .single();
 
@@ -215,25 +238,17 @@ export async function transitionArticleStatus(
 }
 
 /**
- * 記事を論理削除（アーカイブ）する。
+ * 記事を削除する。
  */
-export async function archiveArticle(id: string): Promise<ArticleRow> {
-  const supabase = createServiceRoleClient();
+export async function deleteArticle(id: string): Promise<void> {
+  const supabase = await createServiceRoleClient();
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('articles')
-    .update({
-      archived_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .is('archived_at', null)
-    .select('*')
-    .single();
+    .delete()
+    .eq('id', id);
 
   if (error) {
-    throw new Error(`archiveArticle failed: ${error.message}`);
+    throw new Error(`deleteArticle failed: ${error.message}`);
   }
-
-  return data as ArticleRow;
 }

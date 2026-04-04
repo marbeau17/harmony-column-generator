@@ -65,7 +65,7 @@ async function getPublishedArticles(
   }
 
   try {
-    const supabase = createServiceRoleClient();
+    const supabase = await createServiceRoleClient();
     const from = (page - 1) * PER_PAGE;
     const to = from + PER_PAGE - 1;
 
@@ -76,7 +76,6 @@ async function getPublishedArticles(
         { count: 'exact' },
       )
       .eq('status', 'published')
-      .is('archived_at', null)
       .order('published_at', { ascending: false });
 
     if (theme !== 'all') {

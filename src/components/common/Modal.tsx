@@ -6,14 +6,29 @@
 
 import { useEffect, useCallback, useRef } from 'react';
 
+type MaxWidth = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
+
+const MAX_WIDTH_MAP: Record<MaxWidth, string> = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-xl',
+  '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
+  '4xl': 'max-w-4xl',
+  '5xl': 'max-w-5xl',
+};
+
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  /** モーダルの最大幅。デフォルト '2xl' */
+  maxWidth?: MaxWidth;
 }
 
-export default function Modal({ isOpen, onClose, title, children }: ModalProps) {
+export default function Modal({ isOpen, onClose, title, children, maxWidth = '2xl' }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // ESC キーで閉じる
@@ -41,15 +56,18 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
     <div
       ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={(e) => {
-        if (e.target === overlayRef.current) onClose();
-      }}
     >
-      {/* オーバーレイ */}
-      <div className="absolute inset-0 bg-black/40 animate-[fadeIn_150ms_ease-out]" />
+      {/* オーバーレイ — クリックでモーダルを閉じる */}
+      <div
+        className="absolute inset-0 bg-black/40 animate-[fadeIn_150ms_ease-out]"
+        onClick={onClose}
+      />
 
-      {/* モーダル本体 */}
-      <div className="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-white rounded-xl shadow-2xl animate-[scaleIn_200ms_ease-out]">
+      {/* モーダル本体 — クリックイベントの伝播を止める */}
+      <div
+        className={`relative w-full ${MAX_WIDTH_MAP[maxWidth]} max-h-[85vh] flex flex-col bg-white rounded-xl shadow-2xl animate-[scaleIn_200ms_ease-out]`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* ヘッダー */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900 truncate">

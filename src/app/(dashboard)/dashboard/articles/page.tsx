@@ -122,8 +122,10 @@ export default function ArticlesPage() {
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '—';
     const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('ja-JP', {
       year: 'numeric',
       month: '2-digit',

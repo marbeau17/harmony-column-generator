@@ -8,7 +8,12 @@ export interface SourceArticleRow {
   content: string;
   original_url: string | null;
   published_at: string | null;
-  used: boolean;
+  word_count: number;
+  themes: string[];
+  keywords: string[];
+  emotional_tone: string | null;
+  spiritual_concepts: string[];
+  is_processed: boolean;
   created_at: string;
   updated_at: string;
   [key: string]: any;
@@ -16,6 +21,7 @@ export interface SourceArticleRow {
 
 export interface ListSourceArticlesFilter {
   keyword?: string;
+  theme?: string;
   limit?: number;
   offset?: number;
 }
@@ -35,8 +41,8 @@ export interface ImportSourceArticleInput {
 export async function listSourceArticles(
   filter: ListSourceArticlesFilter = {},
 ): Promise<{ data: SourceArticleRow[]; count: number }> {
-  const supabase = createServiceRoleClient();
-  const { keyword, limit = 20, offset = 0 } = filter;
+  const supabase = await createServiceRoleClient();
+  const { keyword, theme, limit = 20, offset = 0 } = filter;
 
   let query = supabase
     .from('source_articles')
@@ -48,6 +54,10 @@ export async function listSourceArticles(
     query = query.or(
       `title.ilike.%${keyword}%,content.ilike.%${keyword}%`,
     );
+  }
+
+  if (theme) {
+    query = query.contains('themes', [theme]);
   }
 
   const { data, error, count } = await query;
@@ -68,7 +78,7 @@ export async function listSourceArticles(
 export async function getSourceArticleById(
   id: string,
 ): Promise<SourceArticleRow | null> {
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   const { data, error } = await supabase
     .from('source_articles')
@@ -84,8 +94,7 @@ export async function getSourceArticleById(
 }
 
 /**
- * 元記事をバッチインポートする（upsert）。
- * original_url が一致する行は更新、それ以外は新規挿入。
+ * 元記事をバッチインポートする。
  */
 export async function importSourceArticles(
   articles: ImportSourceArticleInput[],
@@ -94,24 +103,20 @@ export async function importSourceArticles(
     return { inserted: 0, total: 0 };
   }
 
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   const rows = articles.map((a) => ({
     title: a.title,
     content: a.content,
     original_url: a.original_url ?? null,
     published_at: a.published_at ?? null,
-    used: false,
+    is_processed: false,
   }));
 
-  // original_url をユニークキーとして upsert する。
-  // original_url が無い行は常に insert される。
+  // original_url / title ともにUNIQUE制約がないため、単純な insert を使用する。
   const { data, error } = await supabase
     .from('source_articles')
-    .upsert(rows, {
-      onConflict: 'original_url',
-      ignoreDuplicates: false,
-    })
+    .insert(rows)
     .select('id');
 
   if (error) {
@@ -131,12 +136,12 @@ export async function importSourceArticles(
 export async function getRandomUnusedSource(
   theme?: string,
 ): Promise<SourceArticleRow | null> {
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   let query = supabase
     .from('source_articles')
     .select('*')
-    .eq('used', false);
+    .eq('is_processed', false);
 
   if (theme) {
     query = query.or(
@@ -148,7 +153,7 @@ export async function getRandomUnusedSource(
   const countQuery = supabase
     .from('source_articles')
     .select('id', { count: 'exact', head: true })
-    .eq('used', false);
+    .eq('is_processed', false);
 
   if (theme) {
     countQuery.or(

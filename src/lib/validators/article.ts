@@ -72,13 +72,17 @@ const relatedArticleSchema = z.object({
 
 export const updateArticleSchema = z.object({
   title: z.string().max(500, 'タイトルは500文字以内で入力してください').optional(),
+  slug: z.string().max(255).optional(),
   meta_description: z
     .string()
     .max(500, 'メタディスクリプションは500文字以内で入力してください')
     .optional(),
   keyword: z.string().min(1).max(255).optional(),
   theme: z.string().min(1).max(100).optional(),
+  stage1_outline: z.unknown().optional(),
   stage3_final_html: z.string().optional(),
+  published_html: z.string().optional(),
+  published_at: z.string().optional(),
   related_articles: z.array(relatedArticleSchema).optional(),
   image_files: z.unknown().optional(),
   cta_texts: z.unknown().optional(),

@@ -75,15 +75,21 @@ export default function PreviewPane({ content }: PreviewPaneProps) {
 </html>`;
   }, [content]);
 
-  // Write to iframe
+  // Write to iframe (SSR 時は document が存在しないのでガード)
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const iframe = iframeRef.current;
     if (!iframe) return;
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (doc) {
-      doc.open();
-      doc.write(fullHtml);
-      doc.close();
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(fullHtml);
+        doc.close();
+      }
+    } catch (e) {
+      // sandbox 制約等でアクセスできない場合は無視
+      console.warn('PreviewPane: iframe write failed', e);
     }
   }, [fullHtml]);
 

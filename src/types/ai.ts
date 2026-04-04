@@ -46,6 +46,8 @@ export interface GeminiResponse {
 export interface Stage1Input {
   /** 元記事ID（リライト時） */
   sourceArticleId?: string;
+  /** 元記事の内容（source_articlesから取得、プロンプトに含める） */
+  sourceArticleContent?: string;
   /** メインキーワード */
   keyword: string;
   /** テーマ（例: チャクラ、瞑想、エネルギーワーク、天使、タロット等） */

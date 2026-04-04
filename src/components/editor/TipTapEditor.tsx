@@ -16,7 +16,7 @@ import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import Highlight from '@tiptap/extension-highlight';
 import { Node, mergeAttributes } from '@tiptap/core';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ─── HTML Comment Marker preservation ───────────────────────────────────────
 // TipTap/ProseMirror strips HTML comments during parsing. To protect markers
@@ -320,7 +320,12 @@ export default function TipTapEditor({
   onChange,
   editable = true,
 }: TipTapEditorProps) {
+  const [mounted, setMounted] = useState(false);
   const suppressOnChange = useRef(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -362,7 +367,8 @@ export default function TipTapEditor({
     }
   }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!editor) {
+  // SSR や hydration 前はプレースホルダーを表示
+  if (!mounted || !editor) {
     return (
       <div className="h-96 bg-gray-50 dark:bg-gray-900 animate-pulse rounded" />
     );

@@ -27,10 +27,10 @@ const GEMINI_API_KEY = () => {
 };
 
 const GEMINI_MODEL = () =>
-  process.env.GEMINI_MODEL || 'gemini-pro-3.1';
+  process.env.GEMINI_MODEL || 'gemini-pro-latest';
 
 const GEMINI_IMAGE_MODEL = () =>
-  process.env.GEMINI_IMAGE_MODEL || 'banana-pro';
+  process.env.GEMINI_IMAGE_MODEL || 'gemini-3-pro-image-preview';
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 

@@ -149,6 +149,7 @@ export interface SourceArticle {
   published_at: string | null;
   themes: string[];
   keywords: string[];
+  theme_category?: string;
   is_processed: boolean;
   created_at: string;
 }

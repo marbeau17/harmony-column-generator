@@ -1,13 +1,14 @@
 'use client';
 
 import React from 'react';
+import type { ArticleStatus } from '@/types/article';
 
 interface StatusBadgeProps {
-  status: string;
+  status: ArticleStatus | (string & {});
   size?: 'sm' | 'md';
 }
 
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+const STATUS_CONFIG: Record<ArticleStatus, { label: string; className: string }> = {
   draft: {
     label: '下書き',
     className: 'bg-slate-100 text-slate-700',
@@ -39,7 +40,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
 };
 
 export default function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
-  const config = STATUS_CONFIG[status] ?? {
+  const config = STATUS_CONFIG[status as ArticleStatus] ?? {
     label: status,
     className: 'bg-gray-100 text-gray-700',
   };

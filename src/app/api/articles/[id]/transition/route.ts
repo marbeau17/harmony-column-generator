@@ -29,12 +29,12 @@ type RouteParams = { params: { id: string } };
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     // 認証チェック
-    const supabase = createServerSupabaseClient();
+    const supabase = await createServerSupabaseClient();
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 

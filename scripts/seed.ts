@@ -28,93 +28,23 @@ const settings = [
 ];
 
 const personas = [
-  {
-    name: '美咲',
-    description: '30代女性。都会で働くキャリアウーマン。ストレス解消にスピリチュアルに興味を持ち始めた。',
-    tone: '親しみやすく、少しカジュアル',
-    age_range: '30-39',
-    interests: 'ヨガ、瞑想、アロマテラピー、自己啓発',
-  },
-  {
-    name: '裕子',
-    description: '40代女性。子育てが一段落し、自分の時間を取り戻したいと感じている主婦。',
-    tone: '優しく包み込むような語り口',
-    age_range: '40-49',
-    interests: 'ハーブティー、パワーストーン、占い、ガーデニング',
-  },
-  {
-    name: '恵理',
-    description: '50代女性。更年期を迎え、心身の不調をスピリチュアルな視点で改善したいと考えている。',
-    tone: '落ち着いた大人の語り口',
-    age_range: '50-59',
-    interests: '温泉、気功、東洋医学、瞑想リトリート',
-  },
-  {
-    name: '彩花',
-    description: '20代女性。SNSでスピリチュアル系インフルエンサーをフォローしている。直感で動くタイプ。',
-    tone: '明るくポップ、共感を重視',
-    age_range: '20-29',
-    interests: 'タロット、オラクルカード、月のリズム、マインドフルネス',
-  },
-  {
-    name: '和子',
-    description: '60代女性。人生の後半戦を豊かに過ごしたいと願うシニア世代。',
-    tone: '穏やかで慈愛に満ちた語り口',
-    age_range: '60-69',
-    interests: '写経、神社仏閣巡り、座禅、読書',
-  },
-  {
-    name: '真由美',
-    description: '45歳女性。離婚を経験し、自分自身を見つめ直す旅の途中。',
-    tone: '寄り添うような温かい語り口',
-    age_range: '40-49',
-    interests: 'カウンセリング、インナーチャイルド、ヒーリング、旅行',
-  },
-  {
-    name: '奈々',
-    description: '35歳女性。スピリチュアルビジネスに興味があり、自分でもサービスを始めたいと思っている。',
-    tone: '前向きでエネルギッシュ',
-    age_range: '30-39',
-    interests: '起業、コーチング、エネルギーワーク、ブランディング',
-  },
+  { name: '美咲', description: '30代女性。都会で働くキャリアウーマン。', tone_guide: '親しみやすく、少しカジュアル', age_range: '30-39', search_patterns: ['ヨガ', '瞑想', 'アロマ'] },
+  { name: '裕子', description: '40代女性。子育てが一段落した主婦。', tone_guide: '優しく包み込むような語り口', age_range: '40-49', search_patterns: ['パワーストーン', '占い'] },
+  { name: '恵理', description: '50代女性。心身の不調を改善したい。', tone_guide: '落ち着いた大人の語り口', age_range: '50-59', search_patterns: ['気功', '東洋医学', '瞑想'] },
+  { name: '彩花', description: '20代女性。SNSでスピリチュアル系をフォロー。', tone_guide: '明るくポップ、共感を重視', age_range: '20-29', search_patterns: ['タロット', 'オラクルカード'] },
+  { name: '和子', description: '60代女性。人生の後半を豊かに過ごしたい。', tone_guide: '穏やかで慈愛に満ちた語り口', age_range: '60-69', search_patterns: ['写経', '神社仏閣'] },
+  { name: '真由美', description: '45歳女性。離婚を経験し自分を見つめ直す。', tone_guide: '寄り添うような温かい語り口', age_range: '40-49', search_patterns: ['カウンセリング', 'ヒーリング'] },
+  { name: '奈々', description: '35歳女性。スピリチュアルビジネスに興味。', tone_guide: '前向きでエネルギッシュ', age_range: '30-39', search_patterns: ['起業', 'コーチング'] },
 ];
 
 const themes = [
-  {
-    name: 'スピリチュアルな目覚め',
-    description: '魂の成長、覚醒、自己発見に関するテーマ',
-    keywords: '目覚め,覚醒,気づき,魂の成長,ハイヤーセルフ',
-  },
-  {
-    name: 'ヒーリングと癒し',
-    description: '心身の癒し、エネルギーヒーリング、セルフケアに関するテーマ',
-    keywords: 'ヒーリング,癒し,浄化,エネルギー,レイキ,セルフケア',
-  },
-  {
-    name: '引き寄せの法則',
-    description: '願望実現、アファメーション、ポジティブシンキングに関するテーマ',
-    keywords: '引き寄せ,願望実現,アファメーション,波動,豊かさ',
-  },
-  {
-    name: '人間関係とソウルメイト',
-    description: '魂のつながり、ツインレイ、人間関係の浄化に関するテーマ',
-    keywords: 'ソウルメイト,ツインレイ,人間関係,ご縁,カルマ',
-  },
-  {
-    name: '自然とつながる暮らし',
-    description: '自然のリズム、月の満ち欠け、季節の行事に関するテーマ',
-    keywords: '自然,月,季節,グラウンディング,アーシング',
-  },
-  {
-    name: '直感とサイキック能力',
-    description: '直感力の開発、第六感、チャネリングに関するテーマ',
-    keywords: '直感,第六感,チャクラ,サードアイ,チャネリング',
-  },
-  {
-    name: '日本の精神文化',
-    description: '神道、仏教、和の心、日本古来のスピリチュアリティに関するテーマ',
-    keywords: '神社,仏閣,禅,お祓い,言霊,和の心',
-  },
+  { name: 'スピリチュアルな目覚め', slug: 'soul-mission', category: 'spiritual', energy_method: '光', description: '魂の成長、覚醒、自己発見に関するテーマ' },
+  { name: 'ヒーリングと癒し', slug: 'healing', category: 'healing', energy_method: '水', description: '心身の癒し、エネルギーヒーリング、セルフケアに関するテーマ' },
+  { name: '引き寄せの法則', slug: 'self-growth', category: 'self_growth', energy_method: '火', description: '願望実現、アファメーション、ポジティブシンキングに関するテーマ' },
+  { name: '人間関係とソウルメイト', slug: 'relationships', category: 'relationships', energy_method: '風', description: '魂のつながり、ツインレイ、人間関係の浄化に関するテーマ' },
+  { name: '自然とつながる暮らし', slug: 'daily-awareness', category: 'daily', energy_method: '地', description: '自然のリズム、月の満ち欠け、季節の行事に関するテーマ' },
+  { name: '直感とサイキック能力', slug: 'spiritual-intro', category: 'spiritual', energy_method: '空', description: '直感力の開発、第六感、チャネリングに関するテーマ' },
+  { name: '日本の精神文化', slug: 'grief-care', category: 'grief_care', energy_method: '地', description: '神道、仏教、和の心、日本古来のスピリチュアリティに関するテーマ' },
 ];
 
 // ---------------------------------------------------------------------------

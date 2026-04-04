@@ -1,28 +1,24 @@
 import { createServerClient } from '@supabase/ssr';
+import type { CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-export function createServerSupabaseClient() {
-  const cookieStore = cookies();
+export async function createServerSupabaseClient() {
+  const cookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
+        getAll() {
+          return cookieStore.getAll();
         },
-        set(name: string, value: string, options: any) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           try {
-            cookieStore.set({ name, value, ...options });
-          } catch (e) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
             // Server Componentからの呼び出し時は set が使えないため無視
-          }
-        },
-        remove(name: string, options: any) {
-          try {
-            cookieStore.set({ name, value: '', ...options });
-          } catch (e) {
-            // Server Component からの呼び出し時は set が使えないため無視
           }
         },
       },
@@ -31,15 +27,19 @@ export function createServerSupabaseClient() {
 }
 
 // Service Role用（管理操作用）
-export function createServiceRoleClient() {
+export async function createServiceRoleClient() {
+  const cookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
       cookies: {
-        get: () => undefined,
-        set: () => {},
-        remove: () => {},
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll() {
+          // Service Role ではcookieの書き込みは不要
+        },
       },
     }
   );

@@ -107,7 +107,7 @@ ${bodyHtml}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // 1. 認証チェック
-  const supabase = createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     return NextResponse.json({ error: '認証が必要です' }, { status: 401 });

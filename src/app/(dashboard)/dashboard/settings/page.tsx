@@ -103,10 +103,20 @@ export default function SettingsPage() {
       if (!res.ok) return;
       const data = await res.json();
 
-      if (data.basic) setBasic({ ...DEFAULT_BASIC, ...data.basic });
-      if (data.ai) setAI({ ...DEFAULT_AI, ...data.ai });
-      if (data.cta) setCTA({ ...DEFAULT_CTA, ...data.cta });
-      if (data.seo) setSEO({ ...DEFAULT_SEO, ...data.seo });
+      // API は { basic: {...}, ai: {...}, cta: {...}, seo: {...} } を返す
+      // 各 value は JSONB なのでオブジェクトとして取得済み
+      if (data.basic && typeof data.basic === 'object') {
+        setBasic({ ...DEFAULT_BASIC, ...data.basic });
+      }
+      if (data.ai && typeof data.ai === 'object') {
+        setAI({ ...DEFAULT_AI, ...data.ai });
+      }
+      if (data.cta && typeof data.cta === 'object') {
+        setCTA({ ...DEFAULT_CTA, ...data.cta });
+      }
+      if (data.seo && typeof data.seo === 'object') {
+        setSEO({ ...DEFAULT_SEO, ...data.seo });
+      }
     } catch {
       // ignore — use defaults
     } finally {
@@ -268,7 +278,7 @@ export default function SettingsPage() {
               <label className={labelClass}>
                 デフォルト文字数:{' '}
                 <span className="text-brand-600 font-semibold">
-                  {ai.default_char_count.toLocaleString()}
+                  {(ai.default_char_count ?? 2000).toLocaleString()}
                 </span>
               </label>
               <input

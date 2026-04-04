@@ -12,7 +12,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import TipTapEditor from '@/components/editor/TipTapEditor';
 import PreviewPane from '@/components/editor/PreviewPane';
-import type { Article, ArticleStatus, ThemeCategory } from '@/types/article';
+import type { Article } from '@/types/article';
 
 // ─── Theme labels ───────────────────────────────────────────────────────────
 
@@ -115,8 +115,8 @@ export default function ArticleEditPage() {
         setMetaDescription(a.meta_description ?? '');
         setKeyword(a.keyword ?? '');
         setTheme(a.theme ?? '');
-        // Use stage3_final_html > stage2_body_html > content
-        setBodyHtml(a.stage3_final_html ?? a.stage2_body_html ?? a.content ?? '');
+        // Use stage3_final_html > stage2_body_html
+        setBodyHtml(a.stage3_final_html ?? a.stage2_body_html ?? '');
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : '不明なエラー');
       } finally {
@@ -134,7 +134,6 @@ export default function ArticleEditPage() {
         meta_description: metaDescription || undefined,
         keyword,
         theme,
-        content: bodyHtml,
         stage3_final_html: bodyHtml,
       }
     : null;
@@ -152,23 +151,35 @@ export default function ArticleEditPage() {
 
   const handleSaveDraft = useCallback(async () => {
     if (!autoSaveData) return;
-    await forceSave({ ...autoSaveData, status: 'editing' as ArticleStatus });
+    await forceSave(autoSaveData);
   }, [autoSaveData, forceSave]);
 
   const handlePublish = useCallback(async () => {
     setPublishing(true);
     try {
-      const res = await fetch(`/api/articles/${articleId}`, {
+      // 1. フィールド更新（最終HTML・メタ情報を保存）
+      const updateRes = await fetch(`/api/articles/${articleId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...autoSaveData,
-          status: 'published' as ArticleStatus,
           published_html: bodyHtml,
           published_at: new Date().toISOString(),
         }),
       });
-      if (!res.ok) throw new Error('公開に失敗しました');
+      if (!updateRes.ok) throw new Error('記事の保存に失敗しました');
+
+      // 2. ステータス遷移: editing → published
+      const transitionRes = await fetch(`/api/articles/${articleId}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'published' }),
+      });
+      if (!transitionRes.ok) {
+        const errJson = await transitionRes.json().catch(() => ({}));
+        throw new Error(errJson?.error ?? 'ステータス遷移に失敗しました');
+      }
+
       setPublishDialogOpen(false);
       router.push(`/dashboard/articles/${articleId}`);
     } catch {
@@ -351,7 +362,7 @@ export default function ArticleEditPage() {
           <span>
             文字数: <strong className="text-gray-700">{charCount.toLocaleString()}</strong>
           </span>
-          {article.target_word_count > 0 && (
+          {article.target_word_count != null && article.target_word_count > 0 && (
             <span>
               目標:{' '}
               <strong className="text-gray-700">

@@ -40,7 +40,7 @@ function IconSparkles() {
 // --- ダッシュボードページ ---
 
 export default async function DashboardPage() {
-  const supabase = createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient();
 
   // 並列でデータ取得
   const [
@@ -54,14 +54,12 @@ export default async function DashboardPage() {
     supabase
       .from('articles')
       .select('id', { count: 'exact', head: true })
-      .eq('status', 'published')
-      .is('archived_at', null),
+      .eq('status', 'published'),
     // 下書き数
     supabase
       .from('articles')
       .select('id', { count: 'exact', head: true })
-      .eq('status', 'draft')
-      .is('archived_at', null),
+      .eq('status', 'draft'),
     // 元記事数
     supabase
       .from('source_articles')
@@ -70,20 +68,18 @@ export default async function DashboardPage() {
     supabase
       .from('articles')
       .select('id', { count: 'exact', head: true })
-      .in('status', ['body_review', 'editing', 'published'])
-      .is('archived_at', null),
+      .in('status', ['body_review', 'editing', 'published']),
     // 最近の記事5件
     supabase
       .from('articles')
       .select('id, title, status, created_at, updated_at')
-      .is('archived_at', null)
       .order('updated_at', { ascending: false })
       .limit(5),
   ]);
 
   const publishedCount = publishedResult.count ?? 0;
   const draftCount = draftResult.count ?? 0;
-  const sourceCount = sourceCountResult.count ?? 1499;
+  const sourceCount = sourceCountResult.count ?? 0;
   const generatedCount = generatedResult.count ?? 0;
   const recentArticles = recentArticlesResult.data ?? [];
 
@@ -147,14 +143,16 @@ export default async function DashboardPage() {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-gray-900">
-                      {article.title}
+                      {article.title || '(タイトル未設定)'}
                     </p>
                     <p className="mt-0.5 text-xs text-gray-400">
-                      {new Date(article.updated_at).toLocaleDateString('ja-JP', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
+                      {article.updated_at
+                        ? new Date(article.updated_at).toLocaleDateString('ja-JP', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                        : '—'}
                     </p>
                   </div>
                   <div className="ml-4 flex-shrink-0">

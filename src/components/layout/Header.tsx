@@ -52,9 +52,14 @@ export default function Header({ userName }: HeaderProps) {
   }, []);
 
   const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push('/login');
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('サインアウトに失敗しました', e);
+    } finally {
+      router.push('/login');
+    }
   };
 
   const title = resolveTitle(pathname);

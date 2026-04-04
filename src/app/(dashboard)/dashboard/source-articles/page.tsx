@@ -12,17 +12,23 @@ import Modal from '@/components/common/Modal';
 interface SourceArticle {
   id: string;
   title: string;
-  body: string;
+  content: string;
+  original_url: string | null;
   published_at: string | null;
-  char_count: number;
-  used: boolean;
+  word_count: number | null;
+  is_processed: boolean;
+  themes: string[];
+  keywords: string[];
+  emotional_tone: string | null;
+  spiritual_concepts: string[];
+  theme_category: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-interface PaginatedResponse {
+interface ListResponse {
   data: SourceArticle[];
-  total: number;
-  page: number;
-  per_page: number;
+  count: number;
 }
 
 interface Stats {
@@ -57,46 +63,46 @@ export default function SourceArticlesPage() {
 
   // ─── データ取得 ─────────────────────────────────────────────────────────
 
+  // NOTE: /api/source-articles/stats エンドポイントは未実装のため、
+  // 一覧取得結果から簡易的に統計を算出する。
+  // 将来 stats API が実装されたらそちらに切り替える。
+  const updateStatsFromArticles = useCallback(
+    (allArticles: SourceArticle[], totalCount: number) => {
+      // 現在ページの記事から processed 数を取得（概算）
+      // 正確な統計は stats API 実装後に対応
+      const used = allArticles.filter((a) => a.is_processed).length;
+      setStats({ total: totalCount, used, unused: totalCount - used });
+    },
+    [],
+  );
+
   const fetchArticles = useCallback(async () => {
     setLoading(true);
     try {
+      const offset = (page - 1) * PER_PAGE;
       const params = new URLSearchParams({
-        page: String(page),
-        per_page: String(PER_PAGE),
+        limit: String(PER_PAGE),
+        offset: String(offset),
       });
-      if (keyword) params.set('q', keyword);
+      if (keyword) params.set('keyword', keyword);
 
       const res = await fetch(`/api/source-articles?${params}`);
       if (!res.ok) throw new Error('取得に失敗しました');
-      const json: PaginatedResponse = await res.json();
+      const json: ListResponse = await res.json();
 
       setArticles(json.data);
-      setTotalPages(Math.max(1, Math.ceil(json.total / json.per_page)));
+      setTotalPages(Math.max(1, Math.ceil(json.count / PER_PAGE)));
+      updateStatsFromArticles(json.data, json.count);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [page, keyword]);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await fetch('/api/source-articles/stats');
-      if (!res.ok) return;
-      const json: Stats = await res.json();
-      setStats(json);
-    } catch {
-      // ignore
-    }
-  }, []);
+  }, [page, keyword, updateStatsFromArticles]);
 
   useEffect(() => {
     fetchArticles();
   }, [fetchArticles]);
-
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
 
   // ─── 検索 ──────────────────────────────────────────────────────────────
 
@@ -136,7 +142,6 @@ export default function SourceArticlesPage() {
 
       // リフレッシュ
       fetchArticles();
-      fetchStats();
     } catch (err: any) {
       setImportProgress(`エラー: ${err.message}`);
     } finally {
@@ -338,17 +343,17 @@ export default function SourceArticlesPage() {
                       {formatDate(article.published_at)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                      {article.char_count.toLocaleString()}
+                      {(article.word_count ?? 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          article.used
+                          article.is_processed
                             ? 'bg-slate-100 text-slate-600'
                             : 'bg-emerald-100 text-emerald-700'
                         }`}
                       >
-                        {article.used ? '使用済み' : '未使用'}
+                        {article.is_processed ? '使用済み' : '未使用'}
                       </span>
                     </td>
                   </tr>
@@ -413,19 +418,19 @@ export default function SourceArticlesPage() {
           <div className="space-y-4">
             <div className="flex flex-wrap gap-3 text-sm text-gray-500">
               <span>公開日: {formatDate(preview.published_at)}</span>
-              <span>文字数: {preview.char_count.toLocaleString()}</span>
+              <span>文字数: {(preview.word_count ?? 0).toLocaleString()}</span>
               <span
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                  preview.used
+                  preview.is_processed
                     ? 'bg-slate-100 text-slate-600'
                     : 'bg-emerald-100 text-emerald-700'
                 }`}
               >
-                {preview.used ? '使用済み' : '未使用'}
+                {preview.is_processed ? '使用済み' : '未使用'}
               </span>
             </div>
             <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
-              {preview.body}
+              {preview.content}
             </div>
           </div>
         )}

@@ -17,14 +17,13 @@ const SITE_URL = 'https://harmony-mc.com';
 // ─── データ取得 ─────────────────────────────────────────────────────────────
 
 async function getArticleBySlug(slug: string): Promise<Article | null> {
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   const { data, error } = await supabase
     .from('articles')
     .select('*')
     .eq('slug', slug)
     .eq('status', 'published')
-    .is('archived_at', null)
     .maybeSingle();
 
   if (error || !data) return null;
@@ -35,13 +34,12 @@ async function getRelatedArticles(
   article: Article,
   limit = 3,
 ): Promise<Pick<Article, 'id' | 'title' | 'slug' | 'keyword' | 'theme'>[]> {
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   const { data } = await supabase
     .from('articles')
     .select('id, title, slug, keyword, theme')
     .eq('status', 'published')
-    .is('archived_at', null)
     .neq('id', article.id)
     .eq('theme', article.theme)
     .order('published_at', { ascending: false })
@@ -53,8 +51,7 @@ async function getRelatedArticles(
       .from('articles')
       .select('id, title, slug, keyword, theme')
       .eq('status', 'published')
-      .is('archived_at', null)
-      .neq('id', article.id)
+        .neq('id', article.id)
       .order('published_at', { ascending: false })
       .limit(limit);
 
@@ -79,14 +76,13 @@ export async function generateStaticParams() {
   }
 
   try {
-    const supabase = createServiceRoleClient();
+    const supabase = await createServiceRoleClient();
 
     const { data } = await supabase
       .from('articles')
       .select('slug')
       .eq('status', 'published')
-      .is('archived_at', null)
-      .not('slug', 'is', null);
+        .not('slug', 'is', null);
 
     return (data ?? []).map((row) => ({
     slug: row.slug as string,

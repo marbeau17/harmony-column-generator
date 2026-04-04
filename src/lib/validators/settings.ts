@@ -5,18 +5,67 @@
 
 import { z } from 'zod';
 
-// ─── 設定更新スキーマ ────────────────────────────────────────────────────────
+// ─── セクション別スキーマ ───────────────────────────────────────────────────
 
-export const updateSettingsSchema = z.object({
-  target_word_count: z
+const basicSettingsSchema = z.object({
+  site_name: z.string().optional(),
+  author_name: z.string().optional(),
+  author_profile: z.string().optional(),
+});
+
+const aiSettingsSchema = z.object({
+  gemini_model: z.string().min(1).optional(),
+  default_char_count: z
     .number()
     .int('目標文字数は整数で指定してください')
     .min(500, '目標文字数は500以上で指定してください')
-    .max(10000, '目標文字数は10000以下で指定してください')
+    .max(5000, '目標文字数は5000以下で指定してください')
     .optional(),
-  gemini_model: z.string().min(1).optional(),
-  default_persona: z.string().min(1).optional(),
-  cta_url: z.string().url('有効なURLを入力してください').optional(),
+  default_persona: z.string().optional(),
+  default_theme: z.string().optional(),
 });
+
+const ctaSettingsSchema = z.object({
+  cta_url: z.string().url('有効なURLを入力してください').optional().or(z.literal('')),
+  cta_intro: z.string().optional(),
+  cta_middle: z.string().optional(),
+  cta_ending: z.string().optional(),
+});
+
+const seoSettingsSchema = z.object({
+  author_jsonld: z.string().optional(),
+  disclaimer: z.string().optional(),
+});
+
+const sectionSchemas = {
+  basic: basicSettingsSchema,
+  ai: aiSettingsSchema,
+  cta: ctaSettingsSchema,
+  seo: seoSettingsSchema,
+} as const;
+
+export type SettingsSection = keyof typeof sectionSchemas;
+
+// ─── 設定更新スキーマ（section + data） ─────────────────────────────────────
+
+export const updateSettingsSchema = z.object({
+  section: z.enum(['basic', 'ai', 'cta', 'seo']),
+  data: z.record(z.unknown()),
+});
+
+/**
+ * セクションに応じたデータのバリデーションを行う
+ */
+export function validateSectionData(section: SettingsSection, data: unknown) {
+  const schema = sectionSchemas[section];
+  if (!schema) {
+    return { success: false as const, error: `不明なセクション: ${section}` };
+  }
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    return { success: false as const, error: result.error.flatten() };
+  }
+  return { success: true as const, data: result.data };
+}
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
