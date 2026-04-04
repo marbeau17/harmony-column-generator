@@ -124,6 +124,7 @@ export async function POST(request: NextRequest) {
       .from('generation_queue')
       .select('*, content_plan:content_plans(*)')
       .in('step', processingSteps)
+      .is('error_message', null)
       .order('priority', { ascending: true })
       .order('created_at', { ascending: true })
       .limit(1)
