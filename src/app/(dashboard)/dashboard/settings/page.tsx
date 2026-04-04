@@ -977,8 +977,8 @@ export default function SettingsPage() {
                       try {
                         const res = await fetch('/api/articles/' + (article.id as string) + '/generate-images', { method: 'POST' });
                         const data = await res.json();
-                        console.log('[batch-images] Result:', data);
-                        if (res.ok) { success++; } else { failed++; console.error('[batch-images] Failed:', data.error); }
+                        console.log('[batch-images] Result:', JSON.stringify(data));
+                        if (data.success || (data.images && data.images.length > 0)) { success++; } else { failed++; console.error('[batch-images] Failed:', data.error, data.errors); }
                       } catch (err) {
                         failed++;
                         console.error('[batch-images] Error:', err);
