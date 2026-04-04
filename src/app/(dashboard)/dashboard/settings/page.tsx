@@ -852,24 +852,27 @@ export default function SettingsPage() {
               </p>
               <button
                 onClick={async () => {
+                  const btn = document.getElementById('batch-img-btn');
+                  if (btn) btn.textContent = '生成中... しばらくお待ちください';
+                  const msgEl = document.getElementById('batch-img-msg');
+                  if (msgEl) { msgEl.textContent = '画像を一括生成中...（1記事あたり約1-2分かかります）'; msgEl.className = 'mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3'; }
                   try {
-                    setSaving(true);
-                    setDeployMessage('画像を一括生成中...（数分かかる場合があります）');
                     const res = await fetch('/api/articles/batch-generate-images', { method: 'POST' });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data?.error ?? '一括画像生成に失敗しました');
-                    setDeployMessage(`${data.message}`);
+                    if (msgEl) { msgEl.textContent = `✅ ${data.message}`; msgEl.className = 'mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3'; }
                   } catch (err: unknown) {
-                    setDeployMessage(`エラー: ${err instanceof Error ? err.message : String(err)}`);
+                    if (msgEl) { msgEl.textContent = `❌ エラー: ${err instanceof Error ? err.message : String(err)}`; msgEl.className = 'mt-3 text-sm text-red-700 bg-red-50 rounded-lg p-3'; }
                   } finally {
-                    setSaving(false);
+                    if (btn) btn.textContent = '画像を一括生成';
                   }
                 }}
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
+                id="batch-img-btn"
+                className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700"
               >
                 画像を一括生成
               </button>
+              <div id="batch-img-msg" className="mt-3 text-sm hidden"></div>
             </div>
 
             <hr className="border-gray-100" />
