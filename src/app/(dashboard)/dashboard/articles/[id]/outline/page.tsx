@@ -200,13 +200,15 @@ export default function OutlinePage() {
       });
       if (!updateRes.ok) throw new Error('記事の更新に失敗しました');
 
-      // 2. ステータス遷移: outline_pending → outline_approved
-      const transitionRes = await fetch(`/api/articles/${articleId}/transition`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'outline_approved' }),
-      });
-      if (!transitionRes.ok) throw new Error('ステータス遷移に失敗しました');
+      // 2. ステータス遷移: outline_pending → outline_approved（既にapprovedならスキップ）
+      if (article.status !== 'outline_approved') {
+        const transitionRes = await fetch(`/api/articles/${articleId}/transition`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'outline_approved' }),
+        });
+        if (!transitionRes.ok) throw new Error('ステータス遷移に失敗しました');
+      }
 
       // 3. 本文生成開始（generate-body が outline_approved → body_generating を内部で処理）
       const genRes = await fetch(`/api/ai/generate-body`, {
