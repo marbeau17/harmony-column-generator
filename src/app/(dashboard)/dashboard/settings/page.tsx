@@ -21,11 +21,19 @@ interface AISettings {
   default_theme: string;
 }
 
+interface CtaItemSettings {
+  url: string;
+  buttonText: string;
+  catchText: string;
+  subText: string;
+  bannerUrl: string;
+  bannerAlt: string;
+}
+
 interface CTASettings {
-  cta_url: string;
-  cta_intro: string;
-  cta_middle: string;
-  cta_ending: string;
+  cta1: CtaItemSettings;
+  cta2: CtaItemSettings;
+  cta3: CtaItemSettings;
 }
 
 interface SEOSettings {
@@ -69,11 +77,34 @@ const DEFAULT_AI: AISettings = {
   default_theme: '',
 };
 
+const DEFAULT_CTA_ITEM: CtaItemSettings = {
+  url: '',
+  buttonText: '',
+  catchText: '',
+  subText: '',
+  bannerUrl: '',
+  bannerAlt: '',
+};
+
 const DEFAULT_CTA: CTASettings = {
-  cta_url: 'https://harmony-booking.web.app/',
-  cta_intro: '',
-  cta_middle: '',
-  cta_ending: '',
+  cta1: {
+    ...DEFAULT_CTA_ITEM,
+    url: 'https://harmony-mc.com/counseling/',
+    buttonText: 'カウンセリングについて詳しく見る',
+    bannerAlt: 'スピリチュアルカウンセリングのご案内',
+  },
+  cta2: {
+    ...DEFAULT_CTA_ITEM,
+    url: 'https://harmony-mc.com/system/',
+    buttonText: 'ご予約の流れを確認する',
+    bannerAlt: 'カウンセリングご予約の流れ',
+  },
+  cta3: {
+    ...DEFAULT_CTA_ITEM,
+    url: 'https://harmony-booking.web.app/',
+    buttonText: 'カウンセリングを予約する',
+    bannerAlt: 'カウンセリングのご予約',
+  },
 };
 
 const DEFAULT_SEO: SEOSettings = {
@@ -149,7 +180,11 @@ export default function SettingsPage() {
         setAI({ ...DEFAULT_AI, ...data.ai });
       }
       if (data.cta && typeof data.cta === 'object') {
-        setCTA({ ...DEFAULT_CTA, ...data.cta });
+        setCTA({
+          cta1: { ...DEFAULT_CTA.cta1, ...(data.cta.cta1 || {}) },
+          cta2: { ...DEFAULT_CTA.cta2, ...(data.cta.cta2 || {}) },
+          cta3: { ...DEFAULT_CTA.cta3, ...(data.cta.cta3 || {}) },
+        });
       }
       if (data.seo && typeof data.seo === 'object') {
         setSEO({ ...DEFAULT_SEO, ...data.seo });
@@ -367,54 +402,276 @@ export default function SettingsPage() {
 
         {/* ─── CTA 設定 ─── */}
         {activeTab === 'cta' && (
-          <div className="space-y-5 max-w-xl">
-            <div>
-              <label className={labelClass}>CTA URL</label>
-              <input
-                type="url"
-                value={cta.cta_url}
-                onChange={(e) =>
-                  setCTA({ ...cta, cta_url: e.target.value })
-                }
-                placeholder="https://harmony-booking.web.app/"
-                className={inputClass}
-              />
+          <div className="space-y-8 max-w-2xl">
+            {/* CTA1: カウンセリング説明ページ */}
+            <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-800">
+                  CTA1 - 導入部（カウンセリング説明ページ）
+                </h3>
+                <span className="text-xs text-gray-400 bg-blue-50 text-blue-600 px-2 py-0.5 rounded">情報提供</span>
+              </div>
+              <div>
+                <label className={labelClass}>リンク先 URL</label>
+                <input
+                  type="url"
+                  value={cta.cta1.url}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta1: { ...cta.cta1, url: e.target.value } })
+                  }
+                  placeholder="https://harmony-mc.com/counseling/"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>ボタンテキスト</label>
+                <input
+                  type="text"
+                  value={cta.cta1.buttonText}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta1: { ...cta.cta1, buttonText: e.target.value } })
+                  }
+                  placeholder="カウンセリングについて詳しく見る"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>キャッチコピー（上書き用・空欄でテーマ別自動選択）</label>
+                <textarea
+                  rows={2}
+                  value={cta.cta1.catchText}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta1: { ...cta.cta1, catchText: e.target.value } })
+                  }
+                  placeholder="テーマ別テンプレートから自動選択されます"
+                  className={textareaClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>サブテキスト（上書き用・空欄でテーマ別自動選択）</label>
+                <textarea
+                  rows={2}
+                  value={cta.cta1.subText}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta1: { ...cta.cta1, subText: e.target.value } })
+                  }
+                  placeholder="テーマ別テンプレートから自動選択されます"
+                  className={textareaClass}
+                />
+              </div>
+              {cta.cta1.bannerUrl && (
+                <div>
+                  <label className={labelClass}>バナー画像プレビュー</label>
+                  <img
+                    src={cta.cta1.bannerUrl}
+                    alt={cta.cta1.bannerAlt || 'CTA1バナー'}
+                    className="w-full rounded-lg border border-gray-200"
+                  />
+                </div>
+              )}
             </div>
-            <div>
-              <label className={labelClass}>CTA 文言 - 導入部</label>
-              <textarea
-                rows={3}
-                value={cta.cta_intro}
-                onChange={(e) =>
-                  setCTA({ ...cta, cta_intro: e.target.value })
-                }
-                placeholder="記事の導入部分に挿入する CTA テキスト..."
-                className={textareaClass}
-              />
+
+            {/* CTA2: 予約の流れページ */}
+            <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-800">
+                  CTA2 - 中盤（予約の流れページ）
+                </h3>
+                <span className="text-xs text-gray-400 bg-amber-50 text-amber-600 px-2 py-0.5 rounded">検討促進</span>
+              </div>
+              <div>
+                <label className={labelClass}>リンク先 URL</label>
+                <input
+                  type="url"
+                  value={cta.cta2.url}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta2: { ...cta.cta2, url: e.target.value } })
+                  }
+                  placeholder="https://harmony-mc.com/system/"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>ボタンテキスト</label>
+                <input
+                  type="text"
+                  value={cta.cta2.buttonText}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta2: { ...cta.cta2, buttonText: e.target.value } })
+                  }
+                  placeholder="ご予約の流れを確認する"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>キャッチコピー（上書き用・空欄でテーマ別自動選択）</label>
+                <textarea
+                  rows={2}
+                  value={cta.cta2.catchText}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta2: { ...cta.cta2, catchText: e.target.value } })
+                  }
+                  placeholder="テーマ別テンプレートから自動選択されます"
+                  className={textareaClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>サブテキスト（上書き用・空欄でテーマ別自動選択）</label>
+                <textarea
+                  rows={2}
+                  value={cta.cta2.subText}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta2: { ...cta.cta2, subText: e.target.value } })
+                  }
+                  placeholder="テーマ別テンプレートから自動選択されます"
+                  className={textareaClass}
+                />
+              </div>
+              {cta.cta2.bannerUrl && (
+                <div>
+                  <label className={labelClass}>バナー画像プレビュー</label>
+                  <img
+                    src={cta.cta2.bannerUrl}
+                    alt={cta.cta2.bannerAlt || 'CTA2バナー'}
+                    className="w-full rounded-lg border border-gray-200"
+                  />
+                </div>
+              )}
             </div>
-            <div>
-              <label className={labelClass}>CTA 文言 - 中盤</label>
-              <textarea
-                rows={3}
-                value={cta.cta_middle}
-                onChange={(e) =>
-                  setCTA({ ...cta, cta_middle: e.target.value })
-                }
-                placeholder="記事の中盤に挿入する CTA テキスト..."
-                className={textareaClass}
-              />
+
+            {/* CTA3: 予約ページ */}
+            <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-800">
+                  CTA3 - 末尾（予約ページ）
+                </h3>
+                <span className="text-xs text-gray-400 bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded">コンバージョン</span>
+              </div>
+              <div>
+                <label className={labelClass}>リンク先 URL</label>
+                <input
+                  type="url"
+                  value={cta.cta3.url}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta3: { ...cta.cta3, url: e.target.value } })
+                  }
+                  placeholder="https://harmony-booking.web.app/"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>ボタンテキスト</label>
+                <input
+                  type="text"
+                  value={cta.cta3.buttonText}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta3: { ...cta.cta3, buttonText: e.target.value } })
+                  }
+                  placeholder="カウンセリングを予約する"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>キャッチコピー（上書き用・空欄でテーマ別自動選択）</label>
+                <textarea
+                  rows={2}
+                  value={cta.cta3.catchText}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta3: { ...cta.cta3, catchText: e.target.value } })
+                  }
+                  placeholder="テーマ別テンプレートから自動選択されます"
+                  className={textareaClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>サブテキスト（上書き用・空欄でテーマ別自動選択）</label>
+                <textarea
+                  rows={2}
+                  value={cta.cta3.subText}
+                  onChange={(e) =>
+                    setCTA({ ...cta, cta3: { ...cta.cta3, subText: e.target.value } })
+                  }
+                  placeholder="テーマ別テンプレートから自動選択されます"
+                  className={textareaClass}
+                />
+              </div>
+              {cta.cta3.bannerUrl && (
+                <div>
+                  <label className={labelClass}>バナー画像プレビュー</label>
+                  <img
+                    src={cta.cta3.bannerUrl}
+                    alt={cta.cta3.bannerAlt || 'CTA3バナー'}
+                    className="w-full rounded-lg border border-gray-200"
+                  />
+                </div>
+              )}
             </div>
-            <div>
-              <label className={labelClass}>CTA 文言 - 末尾</label>
-              <textarea
-                rows={3}
-                value={cta.cta_ending}
-                onChange={(e) =>
-                  setCTA({ ...cta, cta_ending: e.target.value })
-                }
-                placeholder="記事の末尾に挿入する CTA テキスト..."
-                className={textareaClass}
-              />
+
+            {/* アクションボタン */}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setCTA(DEFAULT_CTA)}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+              >
+                デフォルトに戻す
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    setSaving(true);
+                    setSaveMessage('バナー画像を生成中...');
+                    const res = await fetch('/api/cta/generate-banners', { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data?.error ?? 'バナー生成に失敗しました');
+                    // 生成結果をCTA設定に反映
+                    if (data.banners) {
+                      const updated = { ...cta };
+                      for (const banner of data.banners) {
+                        const key = banner.position as 'cta1' | 'cta2' | 'cta3';
+                        if (updated[key]) {
+                          updated[key] = {
+                            ...updated[key],
+                            bannerUrl: banner.url,
+                            bannerAlt: banner.alt || updated[key].bannerAlt,
+                          };
+                        }
+                      }
+                      setCTA(updated);
+                    }
+                    setSaveMessage(`バナー画像を${data.banners?.length ?? 0}枚生成しました`);
+                    setTimeout(() => setSaveMessage(null), 5000);
+                  } catch (err: any) {
+                    setSaveMessage(`エラー: ${err.message}`);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
+              >
+                {saving && (
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                )}
+                バナー画像を再生成
+              </button>
             </div>
           </div>
         )}

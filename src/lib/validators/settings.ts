@@ -25,11 +25,19 @@ const aiSettingsSchema = z.object({
   default_theme: z.string().optional(),
 });
 
+const ctaItemSchema = z.object({
+  url: z.string().url('有効なURLを入力してください').optional().or(z.literal('')),
+  buttonText: z.string().optional(),
+  catchText: z.string().optional(),
+  subText: z.string().optional(),
+  bannerUrl: z.string().optional(),
+  bannerAlt: z.string().optional(),
+});
+
 const ctaSettingsSchema = z.object({
-  cta_url: z.string().url('有効なURLを入力してください').optional().or(z.literal('')),
-  cta_intro: z.string().optional(),
-  cta_middle: z.string().optional(),
-  cta_ending: z.string().optional(),
+  cta1: ctaItemSchema.optional(),
+  cta2: ctaItemSchema.optional(),
+  cta3: ctaItemSchema.optional(),
 });
 
 const seoSettingsSchema = z.object({

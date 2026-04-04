@@ -24,17 +24,47 @@ describe('selectCtaTexts', () => {
 });
 
 describe('buildCtaHtml', () => {
-  const html = buildCtaHtml('intro', 'キャッチコピー', 'サブテキスト', 'test-slug');
+  it('CTA1はcounselingページのURLが含まれる', () => {
+    const html = buildCtaHtml('cta1', 'intro', 'キャッチコピー', 'サブテキスト', 'test-slug');
+    expect(html).toContain('harmony-mc.com/counseling/');
+    expect(html).toContain('utm_content=cta1_information');
+    expect(html).toContain('カウンセリングについて詳しく見る');
+  });
 
-  it('HTMLにharmony-booking.web.appのURLが含まれる', () => {
+  it('CTA2はsystemページのURLが含まれる', () => {
+    const html = buildCtaHtml('cta2', 'mid', 'キャッチコピー', 'サブテキスト', 'test-slug');
+    expect(html).toContain('harmony-mc.com/system/');
+    expect(html).toContain('utm_content=cta2_consideration');
+    expect(html).toContain('ご予約の流れを確認する');
+  });
+
+  it('CTA3はbookingページのURLが含まれる', () => {
+    const html = buildCtaHtml('cta3', 'end', 'キャッチコピー', 'サブテキスト', 'test-slug');
     expect(html).toContain('harmony-booking.web.app');
+    expect(html).toContain('utm_content=cta3_conversion');
+    expect(html).toContain('カウンセリングを予約する');
   });
 
   it('UTMパラメータが含まれる', () => {
+    const html = buildCtaHtml('cta1', 'intro', 'キャッチコピー', 'サブテキスト', 'test-slug');
     expect(html).toContain('utm_source=column');
     expect(html).toContain('utm_medium=cta');
     expect(html).toContain('utm_campaign=test-slug');
-    expect(html).toContain('utm_content=intro');
+  });
+
+  it('バナー画像URLが指定された場合にバナーHTMLが含まれる', () => {
+    const html = buildCtaHtml('cta1', 'intro', 'キャッチ', 'サブ', 'test-slug', {
+      bannerUrl: 'https://example.com/banner.webp',
+      bannerAlt: 'テストバナー',
+    });
+    expect(html).toContain('harmony-cta-banner');
+    expect(html).toContain('https://example.com/banner.webp');
+    expect(html).toContain('テストバナー');
+  });
+
+  it('バナー画像URLが空の場合にバナーHTMLが含まれない', () => {
+    const html = buildCtaHtml('cta1', 'intro', 'キャッチ', 'サブ', 'test-slug');
+    expect(html).not.toContain('harmony-cta-banner');
   });
 });
 

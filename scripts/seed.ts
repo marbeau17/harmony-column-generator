@@ -25,6 +25,35 @@ const settings = [
   { key: 'cta_url', value: 'https://harmony-booking.web.app/' },
   { key: 'site_name', value: 'Spiritual Harmony' },
   { key: 'author_name', value: '小林由起子' },
+  {
+    key: 'cta',
+    value: JSON.stringify({
+      cta1: {
+        url: 'https://harmony-mc.com/counseling/',
+        buttonText: 'カウンセリングについて詳しく見る',
+        catchText: '',
+        subText: '',
+        bannerUrl: '',
+        bannerAlt: 'スピリチュアルカウンセリングのご案内',
+      },
+      cta2: {
+        url: 'https://harmony-mc.com/system/',
+        buttonText: 'ご予約の流れを確認する',
+        catchText: '',
+        subText: '',
+        bannerUrl: '',
+        bannerAlt: 'カウンセリングご予約の流れ',
+      },
+      cta3: {
+        url: 'https://harmony-booking.web.app/',
+        buttonText: 'カウンセリングを予約する',
+        catchText: '',
+        subText: '',
+        bannerUrl: '',
+        bannerAlt: 'カウンセリングのご予約',
+      },
+    }),
+  },
 ];
 
 const personas = [

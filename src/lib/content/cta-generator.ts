@@ -2,12 +2,66 @@ import * as cheerio from 'cheerio';
 
 // =============================================================================
 // CTA自動配置エンジン
+// 3段階ファネル: 情報提供(counseling) → 検討促進(system) → コンバージョン(booking)
 // =============================================================================
 
-export const CTA_URL = 'https://harmony-booking.web.app/';
+// ─── CTA URL定数 ────────────────────────────────────────────────────────────
 
-// テーマ別CTA文言テンプレート
-// 各テーマに cta1_intro / cta2_mid / cta3_end の3パターン
+export const CTA_URLS = {
+  counseling: 'https://harmony-mc.com/counseling/',
+  system: 'https://harmony-mc.com/system/',
+  booking: 'https://harmony-booking.web.app/',
+};
+
+// ─── CTA デフォルト設定 ──────────────────────────────────────────────────────
+
+export const CTA_DEFAULTS = {
+  cta1: {
+    url: CTA_URLS.counseling,
+    buttonText: 'カウンセリングについて詳しく見る',
+    position: 'intro' as const,
+    purpose: 'information', // 情報提供
+    bannerUrl: '',
+    bannerAlt: 'スピリチュアルカウンセリングのご案内',
+  },
+  cta2: {
+    url: CTA_URLS.system,
+    buttonText: 'ご予約の流れを確認する',
+    position: 'mid' as const,
+    purpose: 'consideration', // 検討促進
+    bannerUrl: '',
+    bannerAlt: 'カウンセリングご予約の流れ',
+  },
+  cta3: {
+    url: CTA_URLS.booking,
+    buttonText: 'カウンセリングを予約する',
+    position: 'end' as const,
+    purpose: 'conversion', // コンバージョン
+    bannerUrl: '',
+    bannerAlt: 'カウンセリングのご予約',
+  },
+};
+
+// ─── CTA設定の型 ─────────────────────────────────────────────────────────────
+
+export interface CtaConfig {
+  url: string;
+  buttonText: string;
+  position: 'intro' | 'mid' | 'end';
+  purpose: string;
+  bannerUrl: string;
+  bannerAlt: string;
+}
+
+export interface CtaSettingsAll {
+  cta1: CtaConfig;
+  cta2: CtaConfig;
+  cta3: CtaConfig;
+}
+
+// ─── テーマ別CTA文言テンプレート ──────────────────────────────────────────────
+// 各テーマに cta1_intro(説明ページ向け) / cta2_mid(流れページ向け) / cta3_end(予約向け) の3パターン
+
 export const CTA_TEMPLATES: Record<
   string,
   {
@@ -18,100 +72,100 @@ export const CTA_TEMPLATES: Record<
 > = {
   soul_mission: {
     cta1_intro: {
-      catch: 'あなたの魂が本当に求めている使命を、一緒に見つけませんか？',
-      sub: '心の奥にある声に耳を傾ける、特別なカウンセリングをご用意しています。',
+      catch: 'スピリチュアルカウンセリングでは、魂の使命についても丁寧にお伝えしています。',
+      sub: 'あなたの魂が本当に求めている道を知りたい方は、まずカウンセリングの内容をご覧ください。',
     },
     cta2_mid: {
-      catch: '使命に気づいた時、人生は大きく動き出します。',
-      sub: 'あなただけの魂の道筋を、プロのカウンセラーがサポートします。',
+      catch: 'カウンセリングの流れや準備についてはこちらをご覧ください。',
+      sub: '初めての方でも安心して受けていただけるよう、丁寧にご説明しています。',
     },
     cta3_end: {
-      catch: '今日が、魂の使命に目覚める日になるかもしれません。',
-      sub: 'まずは気軽にご相談ください。あなたの一歩を心よりお待ちしています。',
+      catch: 'あなたの魂の声を聴く時間を、由起子にお任せください。',
+      sub: '使命に目覚める一歩を、心よりお待ちしています。',
     },
   },
   relationships: {
     cta1_intro: {
-      catch: '人間関係の悩み、ひとりで抱えていませんか？',
-      sub: '心のプロが、あなたの人間関係を丁寧に紐解きます。',
+      catch: 'スピリチュアルカウンセリングでは、人間関係の根本にある魂のつながりについてもお伝えしています。',
+      sub: '大切な人との関係に悩んでいる方は、まずカウンセリングの内容をご覧ください。',
     },
     cta2_mid: {
-      catch: '関係性のパターンに気づくことで、人生は変わり始めます。',
-      sub: 'カウンセリングで、より深い人間関係を築くヒントを見つけましょう。',
+      catch: 'カウンセリングではどんなことが分かるのか、流れをご紹介しています。',
+      sub: 'お気持ちの整理から始められますので、安心してお越しください。',
     },
     cta3_end: {
-      catch: '大切な人との関係を、もっと豊かにしたいあなたへ。',
-      sub: '一歩踏み出す勇気を、私たちが支えます。お気軽にご予約ください。',
+      catch: '大切な人との関係を、魂のレベルから見つめ直してみませんか。',
+      sub: 'あなたの一歩を、由起子が温かくお迎えします。',
     },
   },
   grief_care: {
     cta1_intro: {
-      catch: '大切な存在を失った悲しみに、寄り添わせてください。',
-      sub: 'グリーフケア専門のカウンセラーが、あなたの心を優しく受け止めます。',
+      catch: 'スピリチュアルカウンセリングでは、大切な方とのつながりについても丁寧にお伝えしています。',
+      sub: '悲しみの中にいる方へ、まずはカウンセリングでどんなことができるかをご覧ください。',
     },
     cta2_mid: {
-      catch: '悲しみは、愛の深さの証です。',
-      sub: '安心できる場所で、あなたの想いをそのまま語ってみませんか。',
+      catch: 'カウンセリングの流れや当日の過ごし方についてはこちらをご覧ください。',
+      sub: 'あなたのペースを大切にしながら、安心できる空間をお作りします。',
     },
     cta3_end: {
-      catch: '悲しみの先に、穏やかな光が見える日まで。',
-      sub: 'あなたのペースで大丈夫です。いつでもご相談ください。',
+      catch: '悲しみの先に、穏やかな光を見つける時間を過ごしませんか。',
+      sub: 'あなたの想いを、由起子がそっと受け止めます。',
     },
   },
   self_growth: {
     cta1_intro: {
-      catch: '「もっと自分らしく生きたい」その想いを形にしませんか？',
-      sub: 'あなたの内なる成長を加速させる、パーソナルカウンセリング。',
+      catch: 'スピリチュアルカウンセリングでは、あなたの内なる成長の道筋についてもお伝えしています。',
+      sub: '自分らしく生きるためのヒントを知りたい方は、まずカウンセリングの内容をご覧ください。',
     },
     cta2_mid: {
-      catch: '自分を知ることが、変化への第一歩です。',
-      sub: 'プロのサポートで、あなたの可能性を最大限に引き出します。',
+      catch: 'カウンセリングの具体的な流れや準備についてはこちらをご確認ください。',
+      sub: '初めての方にも分かりやすくご案内していますので、ご安心ください。',
     },
     cta3_end: {
-      catch: '新しい自分に出会う旅を、今日から始めてみませんか。',
-      sub: 'まずは無料相談から。あなたの成長を全力で応援します。',
+      catch: '新しい自分に出会う旅を、由起子と一緒に始めてみませんか。',
+      sub: 'あなたの成長を、魂のレベルからサポートします。',
     },
   },
   healing: {
     cta1_intro: {
-      catch: '心が疲れた時、安心して休める場所があります。',
-      sub: '癒しのプロフェッショナルが、あなたの心を丁寧にケアします。',
+      catch: 'スピリチュアルカウンセリングでは、心の深いところにある疲れについても丁寧にお伝えしています。',
+      sub: '癒しを求めている方は、まずカウンセリングの内容をご覧ください。',
     },
     cta2_mid: {
-      catch: '本当の癒しは、自分自身を受け入れることから始まります。',
-      sub: 'カウンセリングで、心の深いところから癒される体験を。',
+      catch: 'カウンセリングの流れや当日の過ごし方についてはこちらをご覧ください。',
+      sub: 'リラックスした状態で受けていただけるよう、丁寧にご案内しています。',
     },
     cta3_end: {
-      catch: 'あなたの心に、温かな光を取り戻しませんか。',
-      sub: 'ゆっくりで大丈夫。あなたのタイミングでお越しください。',
+      catch: 'あなたの心に、温かな光を取り戻す時間を過ごしませんか。',
+      sub: 'ゆっくりで大丈夫。由起子があなたのタイミングでお待ちしています。',
     },
   },
   daily: {
     cta1_intro: {
-      catch: '日々の暮らしの中に、心のゆとりを見つけませんか？',
-      sub: 'ちょっとした悩みでも、話すだけで心が軽くなることがあります。',
+      catch: 'スピリチュアルカウンセリングでは、日々の暮らしに潜む気づきについてもお伝えしています。',
+      sub: '毎日をもっと心地よく過ごしたい方は、まずカウンセリングの内容をご覧ください。',
     },
     cta2_mid: {
-      catch: '毎日をもっと心地よく過ごすためのヒント、一緒に探しましょう。',
-      sub: '暮らしに寄り添うカウンセリングで、日常が変わります。',
+      catch: 'カウンセリングの流れやご準備についてはこちらをご覧ください。',
+      sub: 'ちょっとした悩みでも、安心してお話しいただける場所です。',
     },
     cta3_end: {
-      catch: '心が軽くなる一歩を、今日踏み出してみませんか。',
-      sub: 'お気軽にご予約ください。あなたのペースを大切にします。',
+      catch: '心が軽くなる一歩を、由起子と一緒に踏み出してみませんか。',
+      sub: 'あなたのペースを大切に、温かくお迎えします。',
     },
   },
   introduction: {
     cta1_intro: {
-      catch: 'スピリチュアルカウンセリングに興味を持ったあなたへ。',
-      sub: '初めての方でも安心。丁寧にご説明しながら進めます。',
+      catch: 'スピリチュアルカウンセリングでは、初めての方にも分かりやすく丁寧にお伝えしています。',
+      sub: '「ちょっと気になる」方は、まずカウンセリングの内容をご覧ください。',
     },
     cta2_mid: {
-      catch: '「ちょっと気になる」その気持ちを大切にしてください。',
-      sub: '体験してみることで、新しい世界が広がるかもしれません。',
+      catch: 'カウンセリングの具体的な流れや当日の準備についてはこちらをご覧ください。',
+      sub: '初めてでも安心して受けていただけるよう、丁寧にご説明しています。',
     },
     cta3_end: {
       catch: 'あなたの「気になる」が、人生を変えるきっかけになるかもしれません。',
-      sub: 'まずはお試しください。心よりお待ちしています。',
+      sub: '由起子が心を込めてお迎えします。まずはお気軽にご予約ください。',
     },
   },
 };
@@ -144,25 +198,40 @@ export function selectCtaTexts(
 
 /**
  * CTAのHTMLブロックを生成する
+ * @param ctaKey CTA識別子 (cta1, cta2, cta3)
  * @param position CTA配置位置
  * @param catchText キャッチコピー
  * @param subText サブテキスト
  * @param articleSlug 記事スラッグ（UTMパラメータ用）
+ * @param ctaConfig CTA設定（URL, ボタンテキスト, バナー等）
  * @returns CTA HTMLブロック
  */
 export function buildCtaHtml(
+  ctaKey: 'cta1' | 'cta2' | 'cta3',
   position: 'intro' | 'mid' | 'end',
   catchText: string,
   subText: string,
-  articleSlug: string
+  articleSlug: string,
+  ctaConfig?: Partial<CtaConfig>
 ): string {
-  const utmUrl = `${CTA_URL}?utm_source=column&utm_medium=cta&utm_campaign=${encodeURIComponent(articleSlug)}&utm_content=${position}`;
+  const defaults = CTA_DEFAULTS[ctaKey];
+  const url = ctaConfig?.url || defaults.url;
+  const buttonText = ctaConfig?.buttonText || defaults.buttonText;
+  const bannerUrl = ctaConfig?.bannerUrl || defaults.bannerUrl;
+  const bannerAlt = ctaConfig?.bannerAlt || defaults.bannerAlt;
+  const purpose = ctaConfig?.purpose || defaults.purpose;
 
-  return `<div class="harmony-cta" data-cta-position="${position}">
-  <div class="harmony-cta-inner">
+  const utmUrl = `${url}?utm_source=column&utm_medium=cta&utm_campaign=${encodeURIComponent(articleSlug)}&utm_content=${ctaKey}_${purpose}`;
+
+  const bannerHtml = bannerUrl
+    ? `\n  <div class="harmony-cta-banner">\n    <img src="${escapeHtml(bannerUrl)}" alt="${escapeHtml(bannerAlt)}" loading="lazy" />\n  </div>`
+    : '';
+
+  return `<div class="harmony-cta" data-cta-position="${position}" data-cta-key="${ctaKey}">
+  <div class="harmony-cta-inner">${bannerHtml}
     <p class="harmony-cta-catch">${escapeHtml(catchText)}</p>
     <p class="harmony-cta-sub">${escapeHtml(subText)}</p>
-    <a href="${utmUrl}" class="harmony-cta-btn" target="_blank" rel="noopener">カウンセリングを予約する</a>
+    <a href="${utmUrl}" class="harmony-cta-btn" target="_blank" rel="noopener">${escapeHtml(buttonText)}</a>
   </div>
 </div>`;
 }
@@ -171,15 +240,16 @@ export function buildCtaHtml(
  * 記事HTMLにCTAを3箇所自動挿入する
  *
  * 配置ロジック:
- * - CTA1: 1番目のH2タグの直前
- * - CTA2: 中間のH2タグの直前
- * - CTA3: 最後のH2セクション末尾（最後のH2タグ内の末尾）
+ * - CTA1: 1番目のH2タグの直前（情報提供 → カウンセリング説明ページ）
+ * - CTA2: 中間のH2タグの直前（検討促進 → 予約の流れページ）
+ * - CTA3: 最後のH2セクション末尾（コンバージョン → 予約ページ）
  *
  * H2が1つ以下の場合はフォールバック配置を行う
  *
  * @param html 記事HTML
  * @param ctaTexts selectCtaTexts の戻り値
  * @param articleSlug 記事スラッグ
+ * @param ctaSettings オプション: 管理画面から設定されたCTA設定
  * @returns CTA挿入済みHTML
  */
 export function insertCtasIntoHtml(
@@ -189,15 +259,16 @@ export function insertCtasIntoHtml(
     cta2: { catch: string; sub: string };
     cta3: { catch: string; sub: string };
   },
-  articleSlug: string
+  articleSlug: string,
+  ctaSettings?: Partial<CtaSettingsAll>
 ): string {
   const $ = cheerio.load(html);
   const h2Elements = $('h2');
   const h2Count = h2Elements.length;
 
-  const cta1Html = buildCtaHtml('intro', ctaTexts.cta1.catch, ctaTexts.cta1.sub, articleSlug);
-  const cta2Html = buildCtaHtml('mid', ctaTexts.cta2.catch, ctaTexts.cta2.sub, articleSlug);
-  const cta3Html = buildCtaHtml('end', ctaTexts.cta3.catch, ctaTexts.cta3.sub, articleSlug);
+  const cta1Html = buildCtaHtml('cta1', 'intro', ctaTexts.cta1.catch, ctaTexts.cta1.sub, articleSlug, ctaSettings?.cta1);
+  const cta2Html = buildCtaHtml('cta2', 'mid', ctaTexts.cta2.catch, ctaTexts.cta2.sub, articleSlug, ctaSettings?.cta2);
+  const cta3Html = buildCtaHtml('cta3', 'end', ctaTexts.cta3.catch, ctaTexts.cta3.sub, articleSlug, ctaSettings?.cta3);
 
   if (h2Count === 0) {
     // H2がない場合: 先頭・中間・末尾に配置
