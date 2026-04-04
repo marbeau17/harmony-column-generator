@@ -941,27 +941,31 @@ export default function SettingsPage() {
               </p>
               <button
                 onClick={async () => {
-                  const btn = document.getElementById('batch-img-btn');
-                  if (btn) btn.textContent = '生成中... しばらくお待ちください';
+                  const btn = document.getElementById('batch-img-btn') as HTMLButtonElement | null;
                   const msgEl = document.getElementById('batch-img-msg');
-                  if (msgEl) { msgEl.textContent = '画像を一括生成中...（1記事あたり約1-2分かかります）'; msgEl.className = 'mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3'; }
+                  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white mr-2"></span>生成中... しばらくお待ちください'; }
+                  if (msgEl) { msgEl.textContent = '⏳ 画像を一括生成中...（1記事あたり約1-2分かかります）'; msgEl.className = 'mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3 animate-pulse'; }
+                  console.log('[batch-images] Starting batch image generation...');
                   try {
                     const res = await fetch('/api/articles/batch-generate-images', { method: 'POST' });
+                    console.log('[batch-images] Response status:', res.status);
                     const data = await res.json();
+                    console.log('[batch-images] Response data:', data);
                     if (!res.ok) throw new Error(data?.error ?? '一括画像生成に失敗しました');
                     if (msgEl) { msgEl.textContent = `✅ ${data.message}`; msgEl.className = 'mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3'; }
                   } catch (err: unknown) {
+                    console.error('[batch-images] Error:', err);
                     if (msgEl) { msgEl.textContent = `❌ エラー: ${err instanceof Error ? err.message : String(err)}`; msgEl.className = 'mt-3 text-sm text-red-700 bg-red-50 rounded-lg p-3'; }
                   } finally {
-                    if (btn) btn.textContent = '画像を一括生成';
+                    if (btn) { btn.disabled = false; btn.innerHTML = '画像を一括生成'; }
                   }
                 }}
                 id="batch-img-btn"
-                className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700"
+                className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-wait"
               >
                 画像を一括生成
               </button>
-              <div id="batch-img-msg" className="mt-3 text-sm hidden"></div>
+              <div id="batch-img-msg" className="mt-3 text-sm"></div>
             </div>
 
             <hr className="border-gray-100" />
