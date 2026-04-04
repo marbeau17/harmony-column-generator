@@ -27,7 +27,7 @@ const GEMINI_API_KEY = () => {
 };
 
 const GEMINI_MODEL = () =>
-  process.env.GEMINI_MODEL || 'gemini-3.1-pro';
+  process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview';
 
 const GEMINI_IMAGE_MODEL = () =>
   process.env.GEMINI_IMAGE_MODEL || 'gemini-3-pro-image-preview';
