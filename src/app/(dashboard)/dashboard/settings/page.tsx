@@ -546,7 +546,7 @@ export default function SettingsPage() {
                   <img
                     src={cta.cta1.bannerUrl}
                     alt={cta.cta1.bannerAlt || 'CTA1バナー'}
-                    className="w-full rounded-lg border border-gray-200"
+                    className="w-full max-h-32 object-cover rounded-lg border border-gray-200"
                   />
                 </div>
               )}
@@ -617,7 +617,7 @@ export default function SettingsPage() {
                   <img
                     src={cta.cta2.bannerUrl}
                     alt={cta.cta2.bannerAlt || 'CTA2バナー'}
-                    className="w-full rounded-lg border border-gray-200"
+                    className="w-full max-h-32 object-cover rounded-lg border border-gray-200"
                   />
                 </div>
               )}
@@ -688,7 +688,7 @@ export default function SettingsPage() {
                   <img
                     src={cta.cta3.bannerUrl}
                     alt={cta.cta3.bannerAlt || 'CTA3バナー'}
-                    className="w-full rounded-lg border border-gray-200"
+                    className="w-full max-h-32 object-cover rounded-lg border border-gray-200"
                   />
                 </div>
               )}

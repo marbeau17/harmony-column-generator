@@ -965,8 +965,7 @@ ul, ol {
 }
 .harmony-cta-banner img {
   width: 100%;
-  height: auto;
-  max-height: 200px;
+  height: 120px;
   object-fit: cover;
   display: block;
   border-radius: 8px;
