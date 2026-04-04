@@ -518,23 +518,61 @@ export default function PlannerPage() {
     setTimeout(() => setActionMessage(null), 4000);
   };
 
-  // ── Queue processing ───────────────────────────────────────────
+  // ── Queue processing (loops until all items completed/failed) ──
   const handleStartQueue = async () => {
     setQueueRunning(true);
     setQueueAllCompleted(false);
-    try {
-      await fetch('/api/queue/process', { method: 'POST' });
-    } catch {
-      // silent
-    }
-    // Requirement 3: 3-second polling for real-time updates
+
+    // Start polling for UI updates
     if (!pollingRef.current) {
       pollingRef.current = setInterval(() => {
         fetchQueue();
         fetchPlans();
       }, 3000);
     }
-    fetchQueue();
+
+    // Process queue items one step at a time until nothing left
+    let maxIterations = 100; // safety limit
+    while (maxIterations-- > 0) {
+      try {
+        const res = await fetch('/api/queue/process', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+
+        // No more items to process
+        if (res.status === 404 || data.processed === false || data.message?.includes('処理対象')) {
+          console.log('[queue] All items processed');
+          break;
+        }
+
+        if (!res.ok) {
+          console.error('[queue] Process error:', data.error);
+          // Continue to try next item even if one fails
+        }
+
+        // Refresh UI after each step
+        await fetchQueue();
+        await fetchPlans();
+      } catch (err) {
+        console.error('[queue] Process fetch error:', err);
+        break;
+      }
+    }
+
+    setQueueRunning(false);
+    await fetchQueue();
+    await fetchPlans();
+
+    // Check if all completed
+    const allDone = queue.every(q => q.step === 'completed' || q.step === 'failed');
+    if (allDone && queue.length > 0) {
+      setQueueAllCompleted(true);
+    }
+
+    // Stop polling
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
   };
 
   // Requirement 5: retry a failed queue item
