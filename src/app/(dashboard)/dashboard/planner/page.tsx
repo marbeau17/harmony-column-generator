@@ -426,8 +426,11 @@ export default function PlannerPage() {
   };
 
   // ── Approve / Reject ───────────────────────────────────────────
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
   const handleApprove = async (id: string, reject = false) => {
     try {
+      setActionMessage(reject ? '却下中...' : '承認中...');
       const res = await fetch(`/api/plans/${id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,10 +439,18 @@ export default function PlannerPage() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         console.error('[planner] approve/reject failed:', data.error);
+        setActionMessage(`エラー: ${data.error || '処理に失敗しました'}`);
+        setTimeout(() => setActionMessage(null), 5000);
+        return;
       }
+      setActionMessage(reject ? '却下しました' : '承認しました！生成キューに追加されました');
       await fetchPlans();
+      await fetchQueue();
+      setTimeout(() => setActionMessage(null), 3000);
     } catch (err) {
       console.error('[planner] approve/reject error:', err);
+      setActionMessage('通信エラーが発生しました');
+      setTimeout(() => setActionMessage(null), 5000);
     }
   };
 
@@ -535,6 +546,13 @@ export default function PlannerPage() {
           <p className="mt-1 text-sm text-gray-500">
             AIがキーワードリサーチからプラン提案まで自動で行います
           </p>
+          {actionMessage && (
+            <div className={`mt-2 rounded-lg px-4 py-2 text-sm font-medium ${
+              actionMessage.startsWith('エラー') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
+            }`}>
+              {actionMessage}
+            </div>
+          )}
         </div>
         <button
           onClick={() => setShowCountDialog(true)}
