@@ -44,7 +44,8 @@ function extractHeadings($: cheerio.CheerioAPI): TocEntry[] {
 
 function buildTocHtml(entries: TocEntry[]): string {
   let html = '<nav class="article-toc">\n';
-  html += '  <h2 class="article-toc-title">この記事の目次</h2>\n';
+  html += '  <details open>\n';
+  html += '    <summary class="article-toc-title">この記事の目次</summary>\n';
   html += '  <ol class="article-toc-list">\n';
 
   let inH3List = false;
@@ -82,6 +83,7 @@ function buildTocHtml(entries: TocEntry[]): string {
   }
 
   html += '  </ol>\n';
+  html += '  </details>\n';
   html += '</nav>';
 
   return html;
