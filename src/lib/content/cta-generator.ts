@@ -21,24 +21,18 @@ export const CTA_DEFAULTS = {
     buttonText: 'カウンセリングについて詳しく見る',
     position: 'intro' as const,
     purpose: 'information', // 情報提供
-    bannerUrl: '',
-    bannerAlt: 'スピリチュアルカウンセリングのご案内',
   },
   cta2: {
     url: CTA_URLS.system,
     buttonText: 'ご予約の流れを確認する',
     position: 'mid' as const,
     purpose: 'consideration', // 検討促進
-    bannerUrl: '',
-    bannerAlt: 'カウンセリングご予約の流れ',
   },
   cta3: {
     url: CTA_URLS.booking,
     buttonText: 'カウンセリングを予約する',
     position: 'end' as const,
     purpose: 'conversion', // コンバージョン
-    bannerUrl: '',
-    bannerAlt: 'カウンセリングのご予約',
   },
 };
 
@@ -49,8 +43,10 @@ export interface CtaConfig {
   buttonText: string;
   position: 'intro' | 'mid' | 'end';
   purpose: string;
-  bannerUrl: string;
-  bannerAlt: string;
+  /** @deprecated バナー画像は廃止済み。後方互換のため残存 */
+  bannerUrl?: string;
+  /** @deprecated バナー画像は廃止済み。後方互換のため残存 */
+  bannerAlt?: string;
 }
 
 export interface CtaSettingsAll {
@@ -196,40 +192,28 @@ export function selectCtaTexts(
   };
 }
 
-// ─── CTAアイコン（SVGインライン） ──────────────────────────────────────────
+// ─── CTAバッジラベル ─────────────────────────────────────────────────────
 
-const CTA_ICONS: Record<string, string> = {
-  // CTA1: 情報提供 — ブックアイコン
-  cta1: '<svg class="harmony-cta-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
-  // CTA2: 検討促進 — ステップアイコン
-  cta2: '<svg class="harmony-cta-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>',
-  // CTA3: コンバージョン — カレンダーアイコン
-  cta3: '<svg class="harmony-cta-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>',
-};
-
-// ─── CTAラベル（バナー上部のステップ表示） ──────────────────────────────────
-
-const CTA_LABELS: Record<string, string> = {
-  cta1: 'カウンセリングを知る',
+const CTA_BADGES: Record<string, string> = {
+  cta1: 'カウンセリングについて',
   cta2: 'ご予約の流れ',
-  cta3: 'カウンセリングを予約する',
+  cta3: 'ご予約はこちら',
 };
 
 /**
- * CTAのHTMLブロックを生成する（ヒーローカード型）
+ * CTAのHTMLブロックを生成する（CSSオンリーデザイン）
  *
- * 新デザイン:
- * - バナー画像をカード背景として使用
- * - 半透明オーバーレイでテキストの可読性を確保
- * - アイコンでCTAの目的を視覚的に表現
- * - data-cta-key属性でCSSから色分け
+ * デザイン:
+ * - バナー画像不使用 — CSSグラデーションのみ
+ * - data-cta-key属性でCSSから3種類を色分け
+ * - コンパクトで記事の流れを妨げない
  *
  * @param ctaKey CTA識別子 (cta1, cta2, cta3)
  * @param position CTA配置位置
  * @param catchText キャッチコピー
  * @param subText サブテキスト
  * @param articleSlug 記事スラッグ（UTMパラメータ用）
- * @param ctaConfig CTA設定（URL, ボタンテキスト, バナー等）
+ * @param ctaConfig CTA設定（URL, ボタンテキスト等）
  * @returns CTA HTMLブロック
  */
 export function buildCtaHtml(
@@ -243,34 +227,18 @@ export function buildCtaHtml(
   const defaults = CTA_DEFAULTS[ctaKey];
   const url = ctaConfig?.url || defaults.url;
   const buttonText = ctaConfig?.buttonText || defaults.buttonText;
-  const bannerUrl = ctaConfig?.bannerUrl || defaults.bannerUrl;
-  const bannerAlt = ctaConfig?.bannerAlt || defaults.bannerAlt;
   const purpose = ctaConfig?.purpose || defaults.purpose;
 
   const utmUrl = `${url}?utm_source=column&utm_medium=cta&utm_campaign=${encodeURIComponent(articleSlug)}&utm_content=${ctaKey}_${purpose}`;
 
-  const icon = CTA_ICONS[ctaKey] || '';
-  const label = CTA_LABELS[ctaKey] || '';
+  const badge = CTA_BADGES[ctaKey] || '';
 
-  // バナー画像がある場合: 背景画像として使用するヒーローカード型
-  // バナー画像がない場合: グラデーション背景のフォールバック
-  const bgStyle = bannerUrl
-    ? ` style="background-image:url('${escapeHtml(bannerUrl)}')"`
-    : '';
-
-  // SEO用: 非表示imgタグでalt textを保持（背景画像にはaltがないため）
-  const seoImg = bannerUrl
-    ? `\n    <img class="harmony-cta-seo-img" src="${escapeHtml(bannerUrl)}" alt="${escapeHtml(bannerAlt)}" loading="lazy" />`
-    : '';
-
-  return `<div class="harmony-cta" data-cta-position="${position}" data-cta-key="${ctaKey}"${bgStyle}>
-  <div class="harmony-cta-overlay">
-    <div class="harmony-cta-inner">${seoImg}
-      <span class="harmony-cta-label">${icon} ${escapeHtml(label)}</span>
-      <p class="harmony-cta-catch">${escapeHtml(catchText)}</p>
-      <p class="harmony-cta-sub">${escapeHtml(subText)}</p>
-      <a href="${utmUrl}" class="harmony-cta-btn" target="_blank" rel="noopener">${escapeHtml(buttonText)}</a>
-    </div>
+  return `<div class="harmony-cta harmony-cta-${ctaKey.slice(-1)}" data-cta-position="${position}" data-cta-key="${ctaKey}">
+  <div class="harmony-cta-inner">
+    <div class="harmony-cta-badge">${escapeHtml(badge)}</div>
+    <p class="harmony-cta-catch">${escapeHtml(catchText)}</p>
+    <p class="harmony-cta-sub">${escapeHtml(subText)}</p>
+    <a href="${utmUrl}" class="harmony-cta-btn" target="_blank" rel="noopener">${escapeHtml(buttonText)}</a>
   </div>
 </div>`;
 }

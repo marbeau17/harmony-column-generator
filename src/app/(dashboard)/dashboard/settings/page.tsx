@@ -26,8 +26,6 @@ interface CtaItemSettings {
   buttonText: string;
   catchText: string;
   subText: string;
-  bannerUrl: string;
-  bannerAlt: string;
 }
 
 interface CTASettings {
@@ -83,8 +81,6 @@ const DEFAULT_CTA_ITEM: CtaItemSettings = {
   buttonText: '',
   catchText: '',
   subText: '',
-  bannerUrl: '',
-  bannerAlt: '',
 };
 
 const DEFAULT_CTA: CTASettings = {
@@ -92,19 +88,16 @@ const DEFAULT_CTA: CTASettings = {
     ...DEFAULT_CTA_ITEM,
     url: 'https://harmony-mc.com/counseling/',
     buttonText: 'カウンセリングについて詳しく見る',
-    bannerAlt: 'スピリチュアルカウンセリングのご案内',
   },
   cta2: {
     ...DEFAULT_CTA_ITEM,
     url: 'https://harmony-mc.com/system/',
     buttonText: 'ご予約の流れを確認する',
-    bannerAlt: 'カウンセリングご予約の流れ',
   },
   cta3: {
     ...DEFAULT_CTA_ITEM,
     url: 'https://harmony-booking.web.app/',
     buttonText: 'カウンセリングを予約する',
-    bannerAlt: 'カウンセリングのご予約',
   },
 };
 
@@ -540,16 +533,6 @@ export default function SettingsPage() {
                   className={textareaClass}
                 />
               </div>
-              {cta.cta1.bannerUrl && (
-                <div>
-                  <label className={labelClass}>バナー画像プレビュー</label>
-                  <img
-                    src={cta.cta1.bannerUrl}
-                    alt={cta.cta1.bannerAlt || 'CTA1バナー'}
-                    className="w-full max-h-32 object-cover rounded-lg border border-gray-200"
-                  />
-                </div>
-              )}
             </div>
 
             {/* CTA2: 予約の流れページ */}
@@ -611,16 +594,6 @@ export default function SettingsPage() {
                   className={textareaClass}
                 />
               </div>
-              {cta.cta2.bannerUrl && (
-                <div>
-                  <label className={labelClass}>バナー画像プレビュー</label>
-                  <img
-                    src={cta.cta2.bannerUrl}
-                    alt={cta.cta2.bannerAlt || 'CTA2バナー'}
-                    className="w-full max-h-32 object-cover rounded-lg border border-gray-200"
-                  />
-                </div>
-              )}
             </div>
 
             {/* CTA3: 予約ページ */}
@@ -682,16 +655,6 @@ export default function SettingsPage() {
                   className={textareaClass}
                 />
               </div>
-              {cta.cta3.bannerUrl && (
-                <div>
-                  <label className={labelClass}>バナー画像プレビュー</label>
-                  <img
-                    src={cta.cta3.bannerUrl}
-                    alt={cta.cta3.bannerAlt || 'CTA3バナー'}
-                    className="w-full max-h-32 object-cover rounded-lg border border-gray-200"
-                  />
-                </div>
-              )}
             </div>
 
             {/* アクションボタン */}
@@ -701,78 +664,6 @@ export default function SettingsPage() {
                 className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
               >
                 デフォルトに戻す
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    setSaving(true);
-                    setSaveMessage('バナー画像を生成中...（数分かかる場合があります）');
-                    const res = await fetch('/api/cta/generate-banners', { method: 'POST' });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data?.error ?? 'バナー生成に失敗しました');
-                    // 生成結果をCTA設定に反映
-                    let updatedCta = { ...cta };
-                    if (data.banners) {
-                      for (const banner of data.banners) {
-                        const key = banner.position as 'cta1' | 'cta2' | 'cta3';
-                        if (updatedCta[key]) {
-                          updatedCta[key] = {
-                            ...updatedCta[key],
-                            bannerUrl: banner.url,
-                            bannerAlt: banner.alt || updatedCta[key].bannerAlt,
-                          };
-                        }
-                      }
-                      setCTA(updatedCta);
-                    }
-
-                    // バナーURL を含むCTA設定を自動保存
-                    setSaveMessage('バナー画像を保存中...');
-                    const saveRes = await fetch('/api/settings', {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ section: 'cta', data: updatedCta }),
-                    });
-                    if (!saveRes.ok) {
-                      console.warn('[settings] CTA auto-save after banner generation failed');
-                    }
-
-                    const errorInfo = data.errors?.length
-                      ? ` (${data.errors.length}件失敗)`
-                      : '';
-                    setSaveMessage(`バナー画像を${data.banners?.length ?? 0}枚生成・保存しました${errorInfo}`);
-                    setTimeout(() => setSaveMessage(null), 8000);
-                  } catch (err: any) {
-                    setSaveMessage(`エラー: ${err.message}`);
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
-              >
-                {saving && (
-                  <svg
-                    className="h-4 w-4 animate-spin"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
-                )}
-                バナー画像を再生成
               </button>
               <button
                 onClick={async () => {
