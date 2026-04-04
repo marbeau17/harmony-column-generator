@@ -27,39 +27,71 @@ a {
   text-decoration: none;
 }
 
-/* CTA Styles for editor/preview */
+/* ─── CTA Styles for editor/preview (Hero Card) ─── */
 .harmony-cta {
   margin: 2rem 0;
-  background: linear-gradient(135deg, #f5ebe0, #faf3ed);
-  border: 1px solid #d4a574;
   border-radius: 12px;
   overflow: hidden;
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #f5ebe0;
+  min-height: 180px;
 }
-.harmony-cta-banner {
-  width: 100%;
-  max-height: 80px;
-  overflow: hidden;
-}
-.harmony-cta-banner img {
-  width: 100%;
-  height: 80px;
-  object-fit: cover;
-  display: block;
+.harmony-cta-overlay {
+  background: linear-gradient(180deg, rgba(83,53,43,0.35) 0%, rgba(83,53,43,0.82) 100%);
+  padding: 1.5rem;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .harmony-cta-inner {
-  padding: 1rem 1.5rem;
   text-align: center;
+  max-width: 520px;
+}
+.harmony-cta-seo-img {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+.harmony-cta-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 20px;
+  padding: 0.2rem 0.75rem;
+  margin-bottom: 0.6rem;
+}
+.harmony-cta-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 .harmony-cta-catch {
   font-size: 1rem;
   font-weight: 600;
-  color: #53352b;
+  color: #fff;
   margin: 0 0 0.3rem;
+  line-height: 1.6;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 .harmony-cta-sub {
   font-size: 0.85rem;
-  color: #8b6f5e;
+  color: rgba(255,255,255,0.88);
   margin: 0 0 0.8rem;
+  line-height: 1.5;
 }
 .harmony-cta-btn {
   display: inline-block;
@@ -70,9 +102,41 @@ a {
   text-decoration: none;
   font-weight: 600;
   font-size: 0.9rem;
+  transition: background 0.3s ease, transform 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 .harmony-cta-btn:hover {
   background: #53352b;
+  transform: translateY(-1px);
+}
+/* CTA色分け: CTA1 ブラウンゴールド */
+.harmony-cta[data-cta-key="cta1"] .harmony-cta-btn {
+  background: #b39578;
+}
+.harmony-cta[data-cta-key="cta1"] .harmony-cta-label {
+  border-color: rgba(212,165,116,0.5);
+}
+/* CTA色分け: CTA2 ラベンダー */
+.harmony-cta[data-cta-key="cta2"] .harmony-cta-btn {
+  background: #9b8bb4;
+}
+.harmony-cta[data-cta-key="cta2"] .harmony-cta-btn:hover {
+  background: #7a6a96;
+}
+.harmony-cta[data-cta-key="cta2"] .harmony-cta-label {
+  border-color: rgba(155,139,180,0.5);
+}
+/* CTA色分け: CTA3 ローズゴールド（最強CTA） */
+.harmony-cta[data-cta-key="cta3"] .harmony-cta-btn {
+  background: linear-gradient(135deg, #c4856e, #d4a574);
+  font-size: 1rem;
+  padding: 0.7rem 2.2rem;
+}
+.harmony-cta[data-cta-key="cta3"] .harmony-cta-btn:hover {
+  background: linear-gradient(135deg, #a86d58, #b39578);
+}
+.harmony-cta[data-cta-key="cta3"] .harmony-cta-label {
+  border-color: rgba(196,133,110,0.5);
 }
 
 /* TOC (Table of Contents) */

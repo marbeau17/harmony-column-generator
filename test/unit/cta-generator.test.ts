@@ -52,19 +52,32 @@ describe('buildCtaHtml', () => {
     expect(html).toContain('utm_campaign=test-slug');
   });
 
-  it('バナー画像URLが指定された場合にバナーHTMLが含まれる', () => {
+  it('バナー画像URLが指定された場合に背景画像とSEO imgが含まれる', () => {
     const html = buildCtaHtml('cta1', 'intro', 'キャッチ', 'サブ', 'test-slug', {
       bannerUrl: 'https://example.com/banner.webp',
       bannerAlt: 'テストバナー',
     });
-    expect(html).toContain('harmony-cta-banner');
-    expect(html).toContain('https://example.com/banner.webp');
+    expect(html).toContain("background-image:url('https://example.com/banner.webp')");
+    expect(html).toContain('harmony-cta-seo-img');
     expect(html).toContain('テストバナー');
   });
 
-  it('バナー画像URLが空の場合にバナーHTMLが含まれない', () => {
+  it('バナー画像URLが空の場合に背景画像が含まれない', () => {
     const html = buildCtaHtml('cta1', 'intro', 'キャッチ', 'サブ', 'test-slug');
-    expect(html).not.toContain('harmony-cta-banner');
+    expect(html).not.toContain('background-image');
+    expect(html).not.toContain('harmony-cta-seo-img');
+  });
+
+  it('CTAラベルとアイコンが含まれる', () => {
+    const html = buildCtaHtml('cta1', 'intro', 'キャッチ', 'サブ', 'test-slug');
+    expect(html).toContain('harmony-cta-label');
+    expect(html).toContain('harmony-cta-icon');
+    expect(html).toContain('カウンセリングを知る');
+  });
+
+  it('半透明オーバーレイ要素が含まれる', () => {
+    const html = buildCtaHtml('cta1', 'intro', 'キャッチ', 'サブ', 'test-slug');
+    expect(html).toContain('harmony-cta-overlay');
   });
 });
 

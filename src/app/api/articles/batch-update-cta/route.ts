@@ -154,6 +154,7 @@ function replaceCtas(
     const config = ctaSettings[ctaKey];
     if (!config) return;
 
+    // 新構造(.harmony-cta-overlay > .harmony-cta-inner)と旧構造(.harmony-cta-inner直下)の両方に対応
     const existingCatch = $el.find('.harmony-cta-catch').text().trim();
     const existingSub = $el.find('.harmony-cta-sub').text().trim();
 
