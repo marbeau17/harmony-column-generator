@@ -842,6 +842,38 @@ export default function SettingsPage() {
 
             <hr className="border-gray-100" />
 
+            {/* 一括画像生成 */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">
+                一括画像生成（Banana Pro）
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                画像プロンプトはあるが画像が未生成の全記事に対して、Banana Proで画像を一括生成します。
+              </p>
+              <button
+                onClick={async () => {
+                  try {
+                    setSaving(true);
+                    setDeployMessage('画像を一括生成中...（数分かかる場合があります）');
+                    const res = await fetch('/api/articles/batch-generate-images', { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data?.error ?? '一括画像生成に失敗しました');
+                    setDeployMessage(`${data.message}`);
+                  } catch (err: unknown) {
+                    setDeployMessage(`エラー: ${err instanceof Error ? err.message : String(err)}`);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
+              >
+                画像を一括生成
+              </button>
+            </div>
+
+            <hr className="border-gray-100" />
+
             {/* ハブページ再生成 */}
             <div>
               <h3 className="text-sm font-semibold text-gray-800 mb-1">
