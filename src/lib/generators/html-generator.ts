@@ -333,6 +333,7 @@ export function getTemplateCSS(): string {
     #floating-top-btn.show { opacity: 1; visibility: visible; }
     #floating-top-btn:hover { background-color: #b39578; transform: scale(1.1); }
     #floating-top-btn i { font-size: 18px; margin-bottom: 2px; }
+    .site-copyright { text-align: center; padding: 1.5rem 0; background: #53352b; color: rgba(255,255,255,0.7); font-size: 0.8rem; border-top: 3px solid #b39578; }
     @media (max-width: 600px) {
       body { padding-top: 50px; }
       #sticky-nav a { font-size: 10px; padding: 6px 4px; }
@@ -477,6 +478,8 @@ ${buildCounselorCard()}
 ${buildDisclaimer()}
 
   <footer>&copy; ${year} ${esc(SITE_NAME)}. All rights reserved.</footer>
+
+  <div class="site-copyright">Copyright &copy; スピリチュアルハーモニー All Rights Reserved.</div>
 
   <div id="back-to-top"><i class="fas fa-chevron-up"></i></div>
   <button id="floating-top-btn" onclick="scrollToTop()"><i class="fas fa-chevron-up"></i><span>TOP</span></button>

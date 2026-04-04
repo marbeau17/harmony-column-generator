@@ -524,6 +524,9 @@ export function generateArticleHtml(
     </div>
   </footer>
 
+  <!-- Scroll to Top Button -->
+  <button class="scroll-to-top-btn" id="scrollToTopBtn" aria-label="トップに戻る">&uarr;</button>
+
   <script src="./js/hub.js"></script>
 </body>
 </html>`;

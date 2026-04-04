@@ -77,6 +77,17 @@ const PREVIEW_CSS = `
   .article-toc-list li { padding: 0.2rem 0; }
   .article-toc-list li a { color: #53352b; text-decoration: none; font-size: 14px; }
   .article-toc-list ol { list-style: none; padding-left: 1.2rem; margin: 0.2rem 0 0; }
+
+  /* Related Articles */
+  .related-articles { margin: 2rem 0; }
+  .related-articles-title { font-size: 1.1rem; font-weight: 600; color: #53352b; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #b39578; }
+  .related-articles-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .related-article-card { display: block; border-radius: 8px; overflow: hidden; border: 1px solid #e8ddd0; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; }
+  .related-article-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(83,53,43,0.1); }
+  .related-article-thumb { height: 120px; background: linear-gradient(135deg, #f5ebe0, #e8ddd0); overflow: hidden; }
+  .related-article-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .related-article-name { font-size: 0.85rem; font-weight: 600; color: #53352b; padding: 0.75rem; margin: 0; line-height: 1.4; }
+  .related-article-theme { display: inline-block; font-size: 0.7rem; color: #b39578; padding: 0 0.75rem 0.75rem; }
 `;
 
 // ─── Component ──────────────────────────────────────────────────────────────

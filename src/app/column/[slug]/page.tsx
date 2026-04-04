@@ -11,6 +11,7 @@ import { generateOgpMeta } from '@/lib/seo/meta-generator';
 import type { Article } from '@/types/article';
 import ScrollDepthTracker from '@/components/common/ScrollDepthTracker';
 import CtaTracker from '@/components/common/CtaTracker';
+import ScrollToTop from '@/components/common/ScrollToTop';
 
 // ─── 定数 ───────────────────────────────────────────────────────────────────
 
@@ -32,41 +33,69 @@ async function getArticleBySlug(slug: string): Promise<Article | null> {
   return data as Article;
 }
 
+/** テーマ slug → 日本語ラベル */
+const THEME_LABELS: Record<string, string> = {
+  soul_mission: '魂の使命',
+  relationships: '人間関係',
+  grief_care: 'グリーフケア',
+  self_growth: '自己成長',
+  healing: 'ヒーリング',
+  daily_awareness: '日常の気づき',
+  spiritual_intro: 'スピリチュアル入門',
+};
+
+type RelatedArticle = Pick<Article, 'id' | 'title' | 'slug' | 'keyword' | 'theme' | 'image_files'>;
+
 async function getRelatedArticles(
   article: Article,
   limit = 3,
-): Promise<Pick<Article, 'id' | 'title' | 'slug' | 'keyword' | 'theme'>[]> {
+): Promise<RelatedArticle[]> {
   const supabase = await createServiceRoleClient();
 
+  // 同テーマの記事を取得
   const { data } = await supabase
     .from('articles')
-    .select('id, title, slug, keyword, theme')
+    .select('id, title, slug, keyword, theme, image_files')
     .eq('status', 'published')
     .neq('id', article.id)
     .eq('theme', article.theme)
     .order('published_at', { ascending: false })
     .limit(limit);
 
-  if (!data || data.length === 0) {
-    // テーマが一致する記事がなければ最新記事を取得
+  const sameTheme = (data ?? []) as RelatedArticle[];
+
+  // 同テーマが limit 件未満なら最新記事で補完
+  if (sameTheme.length < limit) {
+    const excludeIds = [article.id, ...sameTheme.map((a) => a.id)];
+    const remaining = limit - sameTheme.length;
+
     const { data: fallback } = await supabase
       .from('articles')
-      .select('id, title, slug, keyword, theme')
+      .select('id, title, slug, keyword, theme, image_files')
       .eq('status', 'published')
-        .neq('id', article.id)
+      .not('id', 'in', `(${excludeIds.join(',')})`)
       .order('published_at', { ascending: false })
-      .limit(limit);
+      .limit(remaining);
 
-    return (fallback ?? []) as Pick<
-      Article,
-      'id' | 'title' | 'slug' | 'keyword' | 'theme'
-    >[];
+    return [...sameTheme, ...((fallback ?? []) as RelatedArticle[])];
   }
 
-  return data as Pick<
-    Article,
-    'id' | 'title' | 'slug' | 'keyword' | 'theme'
-  >[];
+  return sameTheme;
+}
+
+/** 関連記事のサムネイルURLを取得 */
+function getRelatedThumbnailUrl(imageFiles: Article['image_files']): string | null {
+  if (!imageFiles) return null;
+  try {
+    const files = Array.isArray(imageFiles) ? imageFiles : JSON.parse(String(imageFiles));
+    if (Array.isArray(files) && files.length > 0) {
+      const first = files[0] as Record<string, string>;
+      return first.url ?? first.src ?? null;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 // ─── SSG: generateStaticParams ──────────────────────────────────────────────
@@ -338,27 +367,30 @@ export default async function ColumnArticlePage({ params }: PageProps) {
           {/* CTA 3: 予約 */}
           <CtaBlock type="booking" position="bottom" />
 
-          {/* 関連記事 */}
+          {/* 合わせて読みたい記事 */}
           {relatedArticles.length > 0 && (
-            <section className="mt-12">
-              <h2 className="mb-6 text-xl font-bold text-[var(--color-dark)]">
-                関連コラム
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-3">
-                {relatedArticles.map((related) => (
-                  <a
-                    key={related.id}
-                    href={`/column/${related.slug ?? related.id}`}
-                    className="group block rounded-lg border border-[var(--color-gold)]/20 bg-white p-4 shadow-sm transition hover:shadow-md"
-                  >
-                    <span className="mb-2 inline-block text-xs text-[var(--color-primary)]">
-                      {related.keyword}
-                    </span>
-                    <h3 className="text-sm font-semibold leading-snug text-[var(--color-dark)] group-hover:text-[var(--color-primary)]">
-                      {related.title}
-                    </h3>
-                  </a>
-                ))}
+            <section className="related-articles mt-12">
+              <h2 className="related-articles-title">合わせて読みたい記事</h2>
+              <div className="related-articles-grid">
+                {relatedArticles.map((related) => {
+                  const thumb = getRelatedThumbnailUrl(related.image_files);
+                  const themeLabel = THEME_LABELS[related.theme] ?? related.theme;
+                  return (
+                    <a
+                      key={related.id}
+                      href={`/column/${related.slug ?? related.id}`}
+                      className="related-article-card"
+                    >
+                      <div className="related-article-thumb">
+                        {thumb ? (
+                          <img src={thumb} alt={related.title ?? ''} />
+                        ) : null}
+                      </div>
+                      <h3 className="related-article-name">{related.title}</h3>
+                      <span className="related-article-theme">{themeLabel}</span>
+                    </a>
+                  );
+                })}
               </div>
             </section>
           )}
@@ -377,9 +409,12 @@ export default async function ColumnArticlePage({ params }: PageProps) {
         </main>
 
         {/* フッター */}
-        <footer className="mt-8 border-t border-[var(--color-gold)]/20 py-8 text-center text-xs text-[var(--color-primary)]">
-          <p>&copy; Harmony スピリチュアルコラム. All rights reserved.</p>
+        <footer className="site-copyright">
+          Copyright &copy; スピリチュアルハーモニー All Rights Reserved.
         </footer>
+
+        {/* トップに戻るボタン */}
+        <ScrollToTop />
       </div>
     </>
   );

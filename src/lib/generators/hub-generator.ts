@@ -160,6 +160,7 @@ function getHubCSS(): string {
 
     /* フッター */
     footer { text-align: center; padding: 20px 0; color: #888; font-size: 12px; border-top: 1px solid #e8d5c4; margin-top: 40px; }
+    .site-copyright { text-align: center; padding: 1.5rem 0; background: #53352b; color: rgba(255,255,255,0.7); font-size: 0.8rem; border-top: 3px solid #b39578; }
 
     /* レスポンシブ */
     @media (max-width: 768px) {
@@ -372,6 +373,8 @@ ${sidebarHtml}
   </div>
 
   <footer>&copy; ${year} ${esc(SITE_NAME)}. All rights reserved.</footer>
+
+  <div class="site-copyright">Copyright &copy; スピリチュアルハーモニー All Rights Reserved.</div>
 </body>
 </html>`;
 

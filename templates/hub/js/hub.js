@@ -133,11 +133,32 @@
   }
 
   /* ----------------------------------------
+     Scroll to Top Button
+     ---------------------------------------- */
+  function initScrollToTop() {
+    var btn = document.getElementById('scrollToTopBtn');
+    if (!btn) return;
+
+    window.addEventListener('scroll', function () {
+      if (window.scrollY > 300) {
+        btn.classList.add('show');
+      } else {
+        btn.classList.remove('show');
+      }
+    });
+
+    btn.addEventListener('click', function () {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+
+  /* ----------------------------------------
      Initialize
      ---------------------------------------- */
   document.addEventListener('DOMContentLoaded', function () {
     initCategoryFilter();
     initMobileNav();
     initSmoothScroll();
+    initScrollToTop();
   });
 })();

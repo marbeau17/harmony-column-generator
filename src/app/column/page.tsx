@@ -371,8 +371,8 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
       </main>
 
       {/* フッター */}
-      <footer className="mt-8 border-t border-[#b39578]/20 py-8 text-center text-xs text-[#b39578]">
-        <p>&copy; Harmony スピリチュアルコラム. All rights reserved.</p>
+      <footer className="site-copyright">
+        Copyright &copy; スピリチュアルハーモニー All Rights Reserved.
       </footer>
     </div>
   );
