@@ -151,6 +151,10 @@ export default function SettingsPage() {
   const [deployMessage, setDeployMessage] = useState<string | null>(null);
   const [deployProgress, setDeployProgress] = useState(0); // 0-100
 
+  // ハイライト一括適用 state
+  const [highlightRunning, setHighlightRunning] = useState(false);
+  const [highlightMessage, setHighlightMessage] = useState<string | null>(null);
+
   const handleRebuild = async () => {
     setDeploying('rebuild');
     setDeployMessage(null);
@@ -1051,6 +1055,53 @@ export default function SettingsPage() {
                 )}
                 FTP デプロイ
               </button>
+            </div>
+
+            <hr className="border-gray-100" />
+
+            {/* ハイライト一括適用 */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">
+                ハイライトマーカー一括適用
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                全記事の重要箇所にAIで蛍光ペン風ハイライトを追加します（Gemini APIを使用・コストが発生します）。
+                既にハイライト済みの記事はスキップされます。
+              </p>
+              <button
+                onClick={async () => {
+                  if (!confirm('全記事にハイライトを一括適用します。Gemini APIのコストが発生しますがよろしいですか？')) return;
+                  setHighlightRunning(true);
+                  setHighlightMessage(null);
+                  try {
+                    const res = await fetch('/api/articles/batch-add-highlights', { method: 'POST' });
+                    const data = await res.json().catch(() => null);
+                    if (!res.ok) throw new Error(data?.error ?? 'ハイライト適用に失敗しました');
+                    setHighlightMessage(
+                      `完了: ${data?.updated ?? 0}件更新 / ${data?.skipped ?? 0}件スキップ / 全${data?.total ?? 0}件${data?.errors?.length ? ` (エラー: ${data.errors.length}件)` : ''}`
+                    );
+                  } catch (err: unknown) {
+                    setHighlightMessage(`エラー: ${err instanceof Error ? err.message : String(err)}`);
+                  } finally {
+                    setHighlightRunning(false);
+                  }
+                }}
+                disabled={highlightRunning || deploying !== 'idle'}
+                className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-50"
+              >
+                {highlightRunning && (
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                )}
+                全記事にハイライトを追加
+              </button>
+              {highlightMessage && (
+                <div className={`mt-2 rounded-lg p-3 text-sm ${highlightMessage.startsWith('エラー') ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+                  {highlightMessage}
+                </div>
+              )}
             </div>
 
             {/* プログレスバー */}

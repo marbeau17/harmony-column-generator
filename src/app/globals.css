@@ -181,6 +181,16 @@ a {
 .article-toc-list li a:hover { color: #b39578; text-decoration: underline; }
 .article-toc-list ol { list-style: none; padding-left: 1.2rem; margin: 0.2rem 0 0; }
 
+/* ─── Highlight Markers (蛍光ペン風マーカー) ─── */
+.marker-yellow {
+  background: linear-gradient(transparent 60%, #fff3b0 60%);
+  padding: 0 2px;
+}
+.marker-pink {
+  background: linear-gradient(transparent 60%, #ffd6e0 60%);
+  padding: 0 2px;
+}
+
 /* Modal animations */
 @keyframes fadeIn {
   from { opacity: 0; }
