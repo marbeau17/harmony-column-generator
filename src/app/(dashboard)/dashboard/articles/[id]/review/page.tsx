@@ -176,6 +176,8 @@ export default function ReviewPage() {
   const [regenerating, setRegenerating] = useState(false);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingStartRef = useRef<number | null>(null);
+  const [pollingTimeout, setPollingTimeout] = useState(false);
 
   // ─── データ取得 ───────────────────────────────────────────────────────
 
@@ -204,10 +206,18 @@ export default function ReviewPage() {
   useEffect(() => {
     // body_generating の場合、3秒間隔でポーリング
     if (article?.status === 'body_generating') {
+      pollingStartRef.current = Date.now();
+      setPollingTimeout(false);
+
       pollingRef.current = setInterval(async () => {
+        // 180秒（3分）でタイムアウト表示
+        if (pollingStartRef.current && Date.now() - pollingStartRef.current > 180_000) {
+          setPollingTimeout(true);
+        }
         const updated = await fetchArticle();
         if (updated && updated.status !== 'body_generating') {
           if (pollingRef.current) clearInterval(pollingRef.current);
+          setPollingTimeout(false);
         }
       }, 3000);
     }
@@ -239,27 +249,8 @@ export default function ReviewPage() {
     }
   };
 
-  // ─── 編集画面へ（ステータス遷移付き） ─────────────────────────────────
-
-  const handleGoToEdit = async () => {
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/articles/${articleId}/transition`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'editing' }),
-      });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson?.error ?? 'ステータス更新に失敗しました');
-      }
-      router.push(`/dashboard/articles/${articleId}/edit`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '予期せぬエラー');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  // handleGoToEdit は handleApproveEdit と同一のため統合
+  const handleGoToEdit = handleApproveEdit;
 
   // ─── 本文再生成 ──────────────────────────────────────────────────────
 
@@ -346,6 +337,17 @@ export default function ReviewPage() {
           <p className="mt-2 text-sm text-violet-600">
             3秒ごとにステータスを確認しています。このページを開いたままお待ちください。
           </p>
+          {pollingTimeout && (
+            <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              生成に通常より時間がかかっています。引き続き待つか、ページを再読み込みしてください。
+              <button
+                className="ml-2 underline hover:text-amber-900"
+                onClick={() => { setLoading(true); fetchArticle(); }}
+              >
+                再読み込み
+              </button>
+            </div>
+          )}
           <div className="mt-6 flex items-center gap-2">
             <div className="h-2 w-2 animate-bounce rounded-full bg-violet-400" style={{ animationDelay: '0ms' }} />
             <div className="h-2 w-2 animate-bounce rounded-full bg-violet-400" style={{ animationDelay: '150ms' }} />

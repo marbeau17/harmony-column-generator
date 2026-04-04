@@ -209,9 +209,20 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
         {/* 記事一覧 */}
         {articles.length === 0 ? (
           <div className="py-20 text-center">
+            <p className="mb-2 text-4xl">&#x1F4DD;</p>
             <p className="text-lg text-[#b39578]">
-              まだ公開されたコラムがありません。
+              {currentTheme !== 'all'
+                ? `「${getThemeLabel(currentTheme)}」のコラムはまだありません。`
+                : 'まだ公開されたコラムがありません。'}
             </p>
+            {currentTheme !== 'all' && (
+              <Link
+                href="/column"
+                className="mt-4 inline-block rounded-full border border-[#b39578]/30 px-5 py-2 text-sm text-[#53352b] hover:bg-[#b39578]/10 transition"
+              >
+                全てのコラムを見る
+              </Link>
+            )}
           </div>
         ) : (
           <>
@@ -224,7 +235,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                   <Link
                     key={article.id}
                     href={`/column/${slug}`}
-                    className="group block overflow-hidden rounded-xl border border-[#b39578]/20 bg-white shadow-sm transition hover:shadow-md"
+                    className="group block overflow-hidden rounded-xl border border-[#b39578]/20 bg-white shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-1"
                   >
                     {/* サムネイル */}
                     <div className="relative aspect-[16/9] w-full overflow-hidden">
@@ -301,23 +312,48 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                   </Link>
                 )}
 
-                {/* ページ番号 */}
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                  (pageNum) => (
-                    <Link
-                      key={pageNum}
-                      href={`/column?page=${pageNum}${currentTheme !== 'all' ? `&theme=${currentTheme}` : ''}`}
-                      className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                        pageNum === currentPage
-                          ? 'bg-[#53352b] text-white'
-                          : 'border border-[#b39578]/30 text-[#53352b] hover:bg-[#b39578]/10'
-                      }`}
-                      aria-current={pageNum === currentPage ? 'page' : undefined}
-                    >
-                      {pageNum}
-                    </Link>
-                  ),
-                )}
+                {/* ページ番号（省略表示対応） */}
+                {(() => {
+                  const pages: (number | '...')[] = [];
+                  if (totalPages <= 7) {
+                    for (let i = 1; i <= totalPages; i++) pages.push(i);
+                  } else {
+                    pages.push(1);
+                    if (currentPage > 3) pages.push('...');
+                    for (
+                      let i = Math.max(2, currentPage - 1);
+                      i <= Math.min(totalPages - 1, currentPage + 1);
+                      i++
+                    ) {
+                      pages.push(i);
+                    }
+                    if (currentPage < totalPages - 2) pages.push('...');
+                    pages.push(totalPages);
+                  }
+                  return pages.map((pageNum, idx) =>
+                    pageNum === '...' ? (
+                      <span
+                        key={`ellipsis-${idx}`}
+                        className="px-2 py-2 text-sm text-[#b39578]"
+                      >
+                        ...
+                      </span>
+                    ) : (
+                      <Link
+                        key={pageNum}
+                        href={`/column?page=${pageNum}${currentTheme !== 'all' ? `&theme=${currentTheme}` : ''}`}
+                        className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                          pageNum === currentPage
+                            ? 'bg-[#53352b] text-white'
+                            : 'border border-[#b39578]/30 text-[#53352b] hover:bg-[#b39578]/10'
+                        }`}
+                        aria-current={pageNum === currentPage ? 'page' : undefined}
+                      >
+                        {pageNum}
+                      </Link>
+                    ),
+                  );
+                })()}
 
                 {/* 次ページ */}
                 {currentPage < totalPages && (

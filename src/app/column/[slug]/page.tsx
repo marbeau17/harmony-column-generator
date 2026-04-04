@@ -9,6 +9,8 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateFullSchema } from '@/lib/seo/structured-data';
 import { generateOgpMeta } from '@/lib/seo/meta-generator';
 import type { Article } from '@/types/article';
+import ScrollDepthTracker from '@/components/common/ScrollDepthTracker';
+import CtaTracker from '@/components/common/CtaTracker';
 
 // ─── 定数 ───────────────────────────────────────────────────────────────────
 
@@ -145,6 +147,54 @@ export async function generateMetadata({
   };
 }
 
+// ─── CTA コンポーネント ─────────────────────────────────────────────────────
+
+type CtaType = 'counseling' | 'system' | 'booking';
+
+const CTA_CONFIG: Record<CtaType, { title: string; description: string; buttonText: string; href: string }> = {
+  counseling: {
+    title: 'スピリチュアルカウンセリングのご案内',
+    description: '霊視・前世リーディングで、あなたの魂の目的や人生の課題を読み解きます。',
+    buttonText: 'カウンセリング詳細を見る',
+    href: `${SITE_URL}/counseling`,
+  },
+  system: {
+    title: 'カウンセリングの流れ・料金',
+    description: 'オンライン・対面カウンセリングの詳細、料金、所要時間をご案内します。',
+    buttonText: '料金・システムを見る',
+    href: `${SITE_URL}/system`,
+  },
+  booking: {
+    title: 'ご予約はこちら',
+    description: 'お気軽にお問い合わせください。あなたに合ったカウンセリングをご提案します。',
+    buttonText: '予約する',
+    href: `${SITE_URL}/booking`,
+  },
+};
+
+function CtaBlock({ type, position }: { type: CtaType; position: string }) {
+  const cta = CTA_CONFIG[type];
+  return (
+    <aside
+      className="harmony-cta my-10 rounded-xl border border-[var(--color-gold)]/30 bg-gradient-to-r from-white to-[var(--color-gold)]/5 p-6 shadow-sm"
+      data-cta-position={position}
+    >
+      <h3 className="mb-2 text-lg font-bold text-[var(--color-dark)]">
+        {cta.title}
+      </h3>
+      <p className="mb-4 text-sm leading-relaxed text-[var(--color-primary)]">
+        {cta.description}
+      </p>
+      <a
+        href={cta.href}
+        className="inline-block rounded-full bg-[var(--color-dark)] px-6 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
+      >
+        {cta.buttonText}
+      </a>
+    </aside>
+  );
+}
+
 // ─── ページコンポーネント ───────────────────────────────────────────────────
 
 export default async function ColumnArticlePage({ params }: PageProps) {
@@ -178,6 +228,10 @@ export default async function ColumnArticlePage({ params }: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLd }}
       />
+
+      {/* トラッキング */}
+      <ScrollDepthTracker />
+      <CtaTracker />
 
       <div className="min-h-screen bg-[var(--color-bg)]">
         {/* パンくずリスト */}
@@ -227,6 +281,9 @@ export default async function ColumnArticlePage({ params }: PageProps) {
               )}
             </header>
 
+            {/* CTA 1: カウンセリング案内 */}
+            <CtaBlock type="counseling" position="top" />
+
             {/* 記事本文 */}
             <div
               className="prose prose-lg max-w-none
@@ -243,6 +300,9 @@ export default async function ColumnArticlePage({ params }: PageProps) {
               dangerouslySetInnerHTML={{ __html: htmlContent }}
             />
           </article>
+
+          {/* CTA 2: 料金・システム */}
+          <CtaBlock type="system" position="middle" />
 
           {/* 著者プロフィールカード */}
           <aside className="mt-12 rounded-xl border border-[var(--color-gold)]/30 bg-white p-6 shadow-sm">
@@ -274,6 +334,9 @@ export default async function ColumnArticlePage({ params }: PageProps) {
               </div>
             </div>
           </aside>
+
+          {/* CTA 3: 予約 */}
+          <CtaBlock type="booking" position="bottom" />
 
           {/* 関連記事 */}
           {relatedArticles.length > 0 && (

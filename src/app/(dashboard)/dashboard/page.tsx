@@ -49,6 +49,7 @@ export default async function DashboardPage() {
     sourceCountResult,
     generatedResult,
     recentArticlesResult,
+    queuePendingResult,
   ] = await Promise.all([
     // 公開記事数
     supabase
@@ -75,6 +76,11 @@ export default async function DashboardPage() {
       .select('id, title, status, created_at, updated_at')
       .order('updated_at', { ascending: false })
       .limit(5),
+    // キュー処理中の件数
+    supabase
+      .from('generation_queue')
+      .select('id', { count: 'exact', head: true })
+      .not('step', 'in', '("completed","failed")'),
   ]);
 
   const publishedCount = publishedResult.count ?? 0;
@@ -82,6 +88,7 @@ export default async function DashboardPage() {
   const sourceCount = sourceCountResult.count ?? 0;
   const generatedCount = generatedResult.count ?? 0;
   const recentArticles = recentArticlesResult.data ?? [];
+  const queuePendingCount = queuePendingResult.count ?? 0;
 
   return (
     <div className="space-y-8">
@@ -93,27 +100,50 @@ export default async function DashboardPage() {
         </p>
       </div>
 
+      {/* キュー処理中インジケーター */}
+      {queuePendingCount > 0 && (
+        <div className="flex items-center gap-3 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+          <span className="relative flex h-3 w-3">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex h-3 w-3 rounded-full bg-amber-500" />
+          </span>
+          <p className="text-sm text-amber-800">
+            <span className="font-medium">{queuePendingCount}件</span>の記事がキュー処理中です
+          </p>
+          <Link
+            href="/dashboard/planner"
+            className="ml-auto text-sm font-medium text-amber-700 hover:text-amber-900"
+          >
+            確認する &rarr;
+          </Link>
+        </div>
+      )}
+
       {/* StatCard 4つ横並び */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="公開記事数"
           value={publishedCount}
           icon={<IconGlobe />}
+          href="/dashboard/articles?status=published"
         />
         <StatCard
           title="下書き数"
           value={draftCount}
           icon={<IconPencil />}
+          href="/dashboard/articles?status=draft"
         />
         <StatCard
           title="元記事数"
           value={sourceCount.toLocaleString()}
           icon={<IconDocument />}
+          href="/dashboard/source-articles"
         />
         <StatCard
           title="生成済み数"
           value={generatedCount}
           icon={<IconSparkles />}
+          href="/dashboard/articles"
         />
       </div>
 
@@ -130,8 +160,17 @@ export default async function DashboardPage() {
         </div>
 
         {recentArticles.length === 0 ? (
-          <div className="px-6 py-12 text-center text-sm text-gray-400">
-            まだ記事がありません
+          <div className="flex flex-col items-center px-6 py-12 text-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+            </svg>
+            <p className="mt-3 text-sm text-gray-400">まだ記事がありません</p>
+            <Link
+              href="/dashboard/planner"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600"
+            >
+              AIプランナーで始めましょう
+            </Link>
           </div>
         ) : (
           <ul className="divide-y divide-gray-50">

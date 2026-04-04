@@ -98,6 +98,7 @@ export default function ArticleEditPage() {
   // UI state
   const [metaPanelOpen, setMetaPanelOpen] = useState(false);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [publishSuccessOpen, setPublishSuccessOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
   // ─── Fetch article ──────────────────────────────────────────────────────
@@ -144,6 +145,18 @@ export default function ArticleEditPage() {
     !loading && !!article,
   );
 
+  // ─── ページ離脱防止（未保存の変更がある場合） ─────────────────────────
+  useEffect(() => {
+    if (!article) return;
+    const hasUnsaved = saveStatus === 'saving' || publishing;
+    if (!hasUnsaved) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [article, saveStatus, publishing]);
+
   // ─── Character count ───────────────────────────────────────────────────
   const charCount = bodyHtml.replace(/<[^>]+>/g, '').replace(/\s+/g, '').length;
 
@@ -181,7 +194,7 @@ export default function ArticleEditPage() {
       }
 
       setPublishDialogOpen(false);
-      router.push(`/dashboard/articles/${articleId}`);
+      setPublishSuccessOpen(true);
     } catch {
       alert('公開に失敗しました。もう一度お試しください。');
     } finally {
@@ -237,14 +250,47 @@ export default function ArticleEditPage() {
   if (error || !article) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <p className="text-red-600 font-medium">{error || '記事が見つかりません'}</p>
-          <button
-            onClick={() => router.push('/dashboard/articles')}
-            className="mt-4 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            記事一覧に戻る
-          </button>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center max-w-md">
+          <p className="text-red-700 font-medium">{error || '記事が見つかりません'}</p>
+          <div className="mt-4 flex items-center justify-center gap-3">
+            {error && (
+              <button
+                onClick={() => {
+                  setError(null);
+                  setLoading(true);
+                  const load = async () => {
+                    try {
+                      const res = await fetch(`/api/articles/${articleId}`);
+                      if (!res.ok) throw new Error('記事の取得に失敗しました');
+                      const json = await res.json();
+                      const a = json.data as Article;
+                      setArticle(a);
+                      setTitle(a.title ?? '');
+                      setSlug(a.slug ?? '');
+                      setMetaDescription(a.meta_description ?? '');
+                      setKeyword(a.keyword ?? '');
+                      setTheme(a.theme ?? '');
+                      setBodyHtml(a.stage3_final_html ?? a.stage2_body_html ?? '');
+                    } catch (err: unknown) {
+                      setError(err instanceof Error ? err.message : '不明なエラー');
+                    } finally {
+                      setLoading(false);
+                    }
+                  };
+                  load();
+                }}
+                className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 transition-colors"
+              >
+                再試行
+              </button>
+            )}
+            <button
+              onClick={() => router.push('/dashboard/articles')}
+              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              記事一覧に戻る
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -329,7 +375,13 @@ export default function ArticleEditPage() {
 
           {/* Publish */}
           <button
-            onClick={() => setPublishDialogOpen(true)}
+            onClick={() => {
+              if (charCount === 0) {
+                alert('本文が空です。公開するには本文を入力してください。');
+                return;
+              }
+              setPublishDialogOpen(true);
+            }}
             className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
           >
             公開
@@ -568,6 +620,11 @@ export default function ArticleEditPage() {
             <p className="text-sm text-gray-500 mb-4">
               ステータスが「published」に変更されます。公開後も編集は可能です。
             </p>
+            {!title && (
+              <p className="text-sm text-amber-600 mb-2">
+                タイトルが未設定です。公開前に設定を推奨します。
+              </p>
+            )}
             <div className="text-sm text-gray-600 mb-4 p-3 bg-gray-50 rounded-lg">
               <p>
                 <strong>タイトル:</strong> {title || '(未設定)'}
@@ -593,6 +650,40 @@ export default function ArticleEditPage() {
                 className="px-4 py-2 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-50"
               >
                 {publishing ? '公開中...' : '公開する'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Publish success dialog ─────────────────────────────────────────── */}
+      {publishSuccessOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+              <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">
+              記事を公開しました
+            </h2>
+            <p className="text-sm text-gray-500 mb-6">
+              「{title || '無題の記事'}」が正常に公開されました。
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => router.push(`/dashboard/articles/${articleId}`)}
+                className="w-full px-4 py-2.5 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
+              >
+                記事を見る
+              </button>
+              <button
+                onClick={() => router.push('/dashboard/articles')}
+                className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                ダッシュボードに戻る
               </button>
             </div>
           </div>

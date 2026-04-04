@@ -14,6 +14,9 @@ import {
 } from '@/lib/generators/hub-generator';
 import { logger } from '@/lib/logger';
 
+// Vercel Serverless 最大実行時間を60秒に設定
+export const maxDuration = 60;
+
 export async function POST() {
   try {
     // 認証チェック
@@ -59,7 +62,10 @@ export async function POST() {
     const message = err instanceof Error ? err.message : String(err);
     logger.error('generator', 'ハブページ生成エラー', { error: message });
     return NextResponse.json(
-      { error: `ハブページ生成に失敗しました: ${message}` },
+      {
+        error: 'ハブページ生成に失敗しました',
+        ...(process.env.NODE_ENV === 'development' ? { detail: message } : {}),
+      },
       { status: 500 },
     );
   }

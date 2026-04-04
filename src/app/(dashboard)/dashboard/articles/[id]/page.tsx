@@ -121,6 +121,7 @@ export default function ArticleDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [imagePromptLoading, setImagePromptLoading] = useState(false);
+  const [imageGenLoading, setImageGenLoading] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // ─── データ取得 ─────────────────────────────────────────────────────────
@@ -225,6 +226,24 @@ export default function ArticleDetailPage() {
       setError(err instanceof Error ? err.message : '予期せぬエラー');
     } finally {
       setImagePromptLoading(false);
+    }
+  };
+
+  // ─── 画像生成（プロンプトから画像を生成） ────────────────────────────────
+
+  const handleGenerateImages = async () => {
+    setImageGenLoading(true);
+    try {
+      const res = await fetch(`/api/articles/${articleId}/generate-images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error('画像生成に失敗しました');
+      await fetchArticle();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '予期せぬエラー');
+    } finally {
+      setImageGenLoading(false);
     }
   };
 
@@ -362,20 +381,31 @@ export default function ArticleDetailPage() {
         );
 
       case 'published':
-        return article.published_url ? (
-          <a
-            href={article.published_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg bg-green-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-green-600"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-            公開URLを開く
-          </a>
-        ) : (
-          <span className="text-sm text-green-600 font-medium">公開済み</span>
+        return (
+          <div className="flex items-center gap-3">
+            {article.published_url && (
+              <a
+                href={article.published_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-green-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-green-600"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                公開URLを開く
+              </a>
+            )}
+            <button
+              className="rounded-lg border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-600 transition-colors hover:bg-brand-50"
+              onClick={() => router.push(`/dashboard/articles/${articleId}/edit`)}
+            >
+              再編集
+            </button>
+            {!article.published_url && (
+              <span className="text-sm text-green-600 font-medium">公開済み</span>
+            )}
+          </div>
         );
 
       default:
@@ -538,20 +568,39 @@ export default function ArticleDetailPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
             画像プロンプト
           </h2>
-          <button
-            className="rounded-lg border border-brand-200 px-4 py-2 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={handleGenerateImagePrompts}
-            disabled={imagePromptLoading}
-          >
-            {imagePromptLoading ? (
-              <span className="flex items-center gap-2">
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600" />
-                生成中...
-              </span>
-            ) : (
-              '画像プロンプト生成'
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-lg border border-brand-200 px-4 py-2 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={handleGenerateImagePrompts}
+              disabled={imagePromptLoading || imageGenLoading}
+            >
+              {imagePromptLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600" />
+                  生成中...
+                </span>
+              ) : (
+                '画像プロンプト生成'
+              )}
+            </button>
+            {/* 画像プロンプトが存在する場合のみ画像生成ボタンを表示 */}
+            {(article.image_prompts && Array.isArray(article.image_prompts) && (article.image_prompts as unknown[]).length > 0) && (
+              <button
+                className="rounded-lg bg-brand-500 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={handleGenerateImages}
+                disabled={imageGenLoading || imagePromptLoading}
+              >
+                {imageGenLoading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    画像生成中...
+                  </span>
+                ) : (
+                  '画像を生成'
+                )}
+              </button>
             )}
-          </button>
+          </div>
         </div>
 
         {/* 記事直下の画像プロンプト */}

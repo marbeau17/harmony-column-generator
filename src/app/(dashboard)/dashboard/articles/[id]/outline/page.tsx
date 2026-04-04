@@ -133,6 +133,16 @@ export default function OutlinePage() {
   const [editMeta, setEditMeta] = useState('');
   const [editingMeta, setEditingMeta] = useState(false);
 
+  // ── ページ離脱防止（処理中） ──────────────────────────────────────────
+  useEffect(() => {
+    if (!submitting && !regenerating) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [submitting, regenerating]);
+
   // ─── データ取得 ───────────────────────────────────────────────────────
 
   const fetchArticle = useCallback(async () => {

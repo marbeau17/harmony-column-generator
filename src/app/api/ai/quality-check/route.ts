@@ -17,6 +17,9 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { generateJson } from '@/lib/ai/gemini-client';
 import { logger } from '@/lib/logger';
 
+// Vercel Serverless 最大実行時間を60秒に設定
+export const maxDuration = 60;
+
 // ─── 品質チェック結果の型 ───────────────────────────────────────────────────
 
 interface QualityIssue {
@@ -230,7 +233,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const errMsg = err instanceof Error ? err.message : String(err);
     logger.error('ai', 'quality_check_failed', { articleId, error: errMsg });
     return NextResponse.json(
-      { error: `品質チェックに失敗しました: ${errMsg}` },
+      {
+        error: '品質チェックに失敗しました',
+        ...(process.env.NODE_ENV === 'development' ? { detail: errMsg } : {}),
+      },
       { status: 500 },
     );
   }

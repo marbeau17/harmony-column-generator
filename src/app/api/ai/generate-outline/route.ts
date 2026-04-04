@@ -26,6 +26,9 @@ import {
 import { logger } from '@/lib/logger';
 import type { Stage1Input, Stage1OutlineResult } from '@/types/ai';
 
+// Vercel Serverless 最大実行時間を60秒に設定
+export const maxDuration = 60;
+
 // ─── リクエストスキーマ ─────────────────────────────────────────────────────
 
 const requestSchema = z.object({
@@ -299,7 +302,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const errMsg = error instanceof Error ? error.message : String(error);
     logger.error('ai', 'stage1.generation_failed', { articleId, errorMessage: errMsg }, error);
     return NextResponse.json(
-      { error: errMsg || 'AI による構成案生成に失敗しました。しばらく待ってから再試行してください。' },
+      {
+        error: 'AI による構成案生成に失敗しました。しばらく待ってから再試行してください。',
+        ...(process.env.NODE_ENV === 'development' ? { detail: errMsg } : {}),
+      },
       { status: 502 },
     );
   }

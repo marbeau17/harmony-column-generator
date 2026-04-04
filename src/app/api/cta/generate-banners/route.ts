@@ -123,7 +123,7 @@ async function generateImageWithRetry(
   try {
     return await generateImage(prompt, { timeoutMs });
   } catch (firstError) {
-    console.warn('[cta-banners] First attempt failed, retrying...', {
+    logger.warn('ai', 'cta_generate_banners.retry', {
       error:
         firstError instanceof Error ? firstError.message : String(firstError),
     });

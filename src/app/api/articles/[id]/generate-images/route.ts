@@ -18,6 +18,9 @@ import { generateImage } from '@/lib/ai/gemini-client';
 import { uploadImage } from '@/lib/storage/image-storage';
 import { logger } from '@/lib/logger';
 
+// Vercel Serverless 最大実行時間を300秒に設定
+export const maxDuration = 300;
+
 // ─── 型定義 ────────────────────────────────────────────────────────────────
 
 interface ImagePromptItem {
@@ -164,7 +167,10 @@ export async function POST(
           errorMessage: updateError.message,
         });
         return NextResponse.json(
-          { error: `画像生成は成功しましたが、DB保存に失敗しました: ${updateError.message}` },
+          {
+            error: '画像生成は成功しましたが、DB保存に失敗しました',
+            ...(process.env.NODE_ENV === 'development' ? { detail: updateError.message } : {}),
+          },
           { status: 500 },
         );
       }
@@ -205,7 +211,7 @@ async function generateImageWithRetry(
   try {
     return await generateImage(prompt, { timeoutMs });
   } catch (firstError) {
-    console.warn('[generate-images] First attempt failed, retrying...', {
+    logger.warn('ai', 'generate_images.retry', {
       error: firstError instanceof Error ? firstError.message : String(firstError),
     });
 

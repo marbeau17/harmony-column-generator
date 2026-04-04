@@ -25,6 +25,8 @@ const settings = [
   { key: 'cta_url', value: 'https://harmony-booking.web.app/' },
   { key: 'site_name', value: 'Spiritual Harmony' },
   { key: 'author_name', value: '小林由起子' },
+  { key: 'ga_id', value: 'G-TH2XJ24V3T' },
+  { key: 'gtm_id', value: 'GT-W6KD34W3' },
   {
     key: 'cta',
     value: JSON.stringify({

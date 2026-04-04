@@ -5,27 +5,77 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, ChevronRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 // ─── pathname → タイトル マッピング ─────────────────────────────────────────
 
 const TITLES: Record<string, string> = {
-  '/dashboard':              'ダッシュボード',
-  '/dashboard/articles/new': '記事作成',
-  '/dashboard/articles':     '記事一覧',
+  '/dashboard':                 'ダッシュボード',
+  '/dashboard/planner':         'AIプランナー',
+  '/dashboard/articles/new':    '記事作成',
+  '/dashboard/articles':        '記事一覧',
   '/dashboard/source-articles': '元記事管理',
-  '/dashboard/settings':     '設定',
+  '/dashboard/settings':        '設定',
 };
 
 function resolveTitle(pathname: string): string {
-  // 完全一致を優先、次にプレフィックス一致
   if (TITLES[pathname]) return TITLES[pathname];
+  // 記事個別ページの判定
+  if (/^\/dashboard\/articles\/[^/]+\/edit$/.test(pathname)) return '記事編集';
+  if (/^\/dashboard\/articles\/[^/]+\/outline$/.test(pathname)) return '構成案レビュー';
+  if (/^\/dashboard\/articles\/[^/]+\/review$/.test(pathname)) return '本文レビュー';
+  if (/^\/dashboard\/articles\/[^/]+$/.test(pathname)) return '記事詳細';
   const match = Object.entries(TITLES)
     .filter(([key]) => key !== '/dashboard' && pathname.startsWith(key))
     .sort((a, b) => b[0].length - a[0].length)[0];
   return match?.[1] ?? 'ダッシュボード';
+}
+
+// ─── パンくずリスト生成 ─────────────────────────────────────────────────────
+
+interface Breadcrumb {
+  label: string;
+  href?: string;
+}
+
+function buildBreadcrumbs(pathname: string): Breadcrumb[] {
+  const crumbs: Breadcrumb[] = [{ label: 'ダッシュボード', href: '/dashboard' }];
+
+  if (pathname === '/dashboard') return crumbs;
+
+  if (pathname.startsWith('/dashboard/planner')) {
+    crumbs.push({ label: 'AIプランナー' });
+    return crumbs;
+  }
+
+  if (pathname.startsWith('/dashboard/source-articles')) {
+    crumbs.push({ label: '元記事管理' });
+    return crumbs;
+  }
+
+  if (pathname.startsWith('/dashboard/settings')) {
+    crumbs.push({ label: '設定' });
+    return crumbs;
+  }
+
+  if (pathname.startsWith('/dashboard/articles')) {
+    if (pathname === '/dashboard/articles') {
+      crumbs.push({ label: '記事一覧' });
+    } else if (pathname === '/dashboard/articles/new') {
+      crumbs.push({ label: '記事一覧', href: '/dashboard/articles' });
+      crumbs.push({ label: '記事作成' });
+    } else {
+      crumbs.push({ label: '記事一覧', href: '/dashboard/articles' });
+      const title = resolveTitle(pathname);
+      crumbs.push({ label: title });
+    }
+    return crumbs;
+  }
+
+  return crumbs;
 }
 
 // ─── Header ─────────────────────────────────────────────────────────────────
@@ -63,13 +113,32 @@ export default function Header({ userName }: HeaderProps) {
   };
 
   const title = resolveTitle(pathname);
+  const breadcrumbs = buildBreadcrumbs(pathname);
 
   return (
     <header className="sticky top-0 z-20 flex items-center justify-between h-14 px-6 bg-white border-b border-slate-200">
-      {/* Page title */}
-      <h1 className="text-base font-semibold text-slate-800 truncate">
-        {title}
-      </h1>
+      {/* Breadcrumb + Page title */}
+      <div className="min-w-0 flex-1">
+        {breadcrumbs.length > 1 && (
+          <nav aria-label="パンくずリスト" className="flex items-center gap-1 text-xs text-slate-400 mb-0.5">
+            {breadcrumbs.map((crumb, i) => (
+              <span key={i} className="flex items-center gap-1">
+                {i > 0 && <ChevronRight className="w-3 h-3" />}
+                {crumb.href ? (
+                  <Link href={crumb.href} className="hover:text-slate-600 transition-colors">
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span className="text-slate-500 font-medium">{crumb.label}</span>
+                )}
+              </span>
+            ))}
+          </nav>
+        )}
+        <h1 className="text-base font-semibold text-slate-800 truncate leading-tight">
+          {title}
+        </h1>
+      </div>
 
       {/* User menu */}
       <div className="relative" ref={menuRef}>

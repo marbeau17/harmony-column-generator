@@ -14,6 +14,7 @@ import { z } from 'zod';
 const listSourceArticlesQuerySchema = z.object({
   keyword: z.string().max(255).optional(),
   theme: z.string().max(100).optional(),
+  theme_category: z.string().max(100).optional(),
   include_preview: z.boolean().optional(),
   limit: z
     .number()
@@ -47,6 +48,7 @@ export async function GET(request: NextRequest) {
     const rawQuery = {
       keyword: searchParams.get('keyword') ?? undefined,
       theme: searchParams.get('theme') ?? undefined,
+      theme_category: searchParams.get('theme_category') ?? undefined,
       include_preview: searchParams.get('include_preview') === 'true' ? true : undefined,
       limit: searchParams.get('limit')
         ? Number(searchParams.get('limit'))

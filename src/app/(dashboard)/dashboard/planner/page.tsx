@@ -5,6 +5,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import {
   Sparkles,
   ChevronDown,
@@ -17,6 +18,8 @@ import {
   RefreshCw,
   AlertCircle,
   RotateCcw,
+  CheckCircle2,
+  ArrowRight,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -36,13 +39,14 @@ interface ContentPlan {
   status: PlanStatus;
 }
 
-type QueueStep = 'pending' | 'outline' | 'body' | 'images' | 'seo_check' | 'completed';
+type QueueStep = 'pending' | 'outline' | 'body' | 'images' | 'seo_check' | 'completed' | 'failed';
 
 interface QueueItem {
   id: string;
   plan_id: string;
   plan_name: string;
   current_step: QueueStep;
+  error_message?: string;
 }
 
 // Generation progress tracking
@@ -111,6 +115,7 @@ const QUEUE_STEP_LABELS: Record<QueueStep, string> = {
   images:    '画像生成',
   seo_check: 'SEOチェック',
   completed: '完了',
+  failed:    '失敗',
 };
 
 const FILTER_OPTIONS: { value: PlanStatus | 'all'; label: string }[] = [
@@ -265,6 +270,8 @@ function GenerateProgressBar({ progress }: { progress: GenerateProgress }) {
 export default function PlannerPage() {
   // Plans
   const [plans, setPlans] = useState<ContentPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState<string | null>(null);
   const [filter, setFilter] = useState<PlanStatus | 'all'>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -279,21 +286,38 @@ export default function PlannerPage() {
   // Queue
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [queueRunning, setQueueRunning] = useState(false);
+  const [queueAllCompleted, setQueueAllCompleted] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const queueSectionRef = useRef<HTMLDivElement | null>(null);
+  const queueStartBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [highlightQueueBtn, setHighlightQueueBtn] = useState(false);
 
   const isGenerating = progress.step === 'keywords' || progress.step === 'plans';
+
+  // ── ページ離脱防止（生成中） ────────────────────────────────────
+  useEffect(() => {
+    if (!isGenerating) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isGenerating]);
 
   // ── Fetch plans ─────────────────────────────────────────────────
   const fetchPlans = useCallback(async () => {
     try {
+      setPlansError(null);
       const res = await fetch('/api/plans');
-      if (res.ok) {
-        const json = await res.json();
-        // API は { data: [...], meta: {...} } を返す
-        setPlans(json.data ?? []);
-      }
+      if (!res.ok) throw new Error('プランの取得に失敗しました');
+      const json = await res.json();
+      // API は { data: [...], meta: {...} } を返す
+      setPlans(json.data ?? []);
     } catch (err) {
       console.error('[planner] fetchPlans failed:', err);
+      setPlansError(err instanceof Error ? err.message : 'プランの取得に失敗しました');
+    } finally {
+      setPlansLoading(false);
     }
   }, []);
 
@@ -303,15 +327,28 @@ export default function PlannerPage() {
       const res = await fetch('/api/queue');
       if (res.ok) {
         const data = await res.json();
-        setQueueItems(data.items ?? []);
+        const items: QueueItem[] = data.items ?? data.data ?? [];
+        setQueueItems(items);
         // Stop polling if nothing is processing
-        const hasActive = (data.items ?? []).some(
-          (i: QueueItem) => i.current_step !== 'completed' && i.current_step !== 'pending',
+        const hasActive = items.some(
+          (i: QueueItem) =>
+            i.current_step !== 'completed' &&
+            i.current_step !== 'pending' &&
+            i.current_step !== 'failed',
         );
         if (!hasActive && pollingRef.current) {
           clearInterval(pollingRef.current);
           pollingRef.current = null;
           setQueueRunning(false);
+        }
+        // Detect all-completed state
+        if (
+          items.length > 0 &&
+          items.every((i: QueueItem) => i.current_step === 'completed')
+        ) {
+          setQueueAllCompleted(true);
+        } else {
+          setQueueAllCompleted(false);
         }
       }
     } catch {
@@ -446,6 +483,14 @@ export default function PlannerPage() {
       setActionMessage(reject ? '却下しました' : '承認しました！生成キューに追加されました');
       await fetchPlans();
       await fetchQueue();
+      // Requirement 1: scroll to queue section and highlight start button after approval
+      if (!reject) {
+        setTimeout(() => {
+          queueSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          setHighlightQueueBtn(true);
+          setTimeout(() => setHighlightQueueBtn(false), 3000);
+        }, 500);
+      }
       setTimeout(() => setActionMessage(null), 3000);
     } catch (err) {
       console.error('[planner] approve/reject error:', err);
@@ -454,29 +499,56 @@ export default function PlannerPage() {
     }
   };
 
+  // Requirement 2: bulk approve with count feedback
   const handleBulkApprove = async () => {
     const ids = Array.from(selectedIds);
+    const count = ids.length;
+    setActionMessage(`${count}件を承認中...`);
     await Promise.all(ids.map((id) => handleApprove(id)));
     setSelectedIds(new Set());
     await fetchPlans();
+    await fetchQueue();
+    setActionMessage(`${count}件を承認しました！`);
+    // Scroll to queue section after bulk approve
+    setTimeout(() => {
+      queueSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setHighlightQueueBtn(true);
+      setTimeout(() => setHighlightQueueBtn(false), 3000);
+    }, 500);
+    setTimeout(() => setActionMessage(null), 4000);
   };
 
   // ── Queue processing ───────────────────────────────────────────
   const handleStartQueue = async () => {
     setQueueRunning(true);
+    setQueueAllCompleted(false);
     try {
       await fetch('/api/queue/process', { method: 'POST' });
     } catch {
       // silent
     }
-    // Start polling
+    // Requirement 3: 3-second polling for real-time updates
     if (!pollingRef.current) {
       pollingRef.current = setInterval(() => {
         fetchQueue();
         fetchPlans();
-      }, 5000);
+      }, 3000);
     }
     fetchQueue();
+  };
+
+  // Requirement 5: retry a failed queue item
+  const handleRetryQueueItem = async (queueItemId: string) => {
+    try {
+      // Reset the failed item to pending so it can be reprocessed
+      await fetch(`/api/queue/${queueItemId}/retry`, { method: 'POST' });
+      await fetchQueue();
+      // Auto-start queue processing
+      handleStartQueue();
+    } catch {
+      setActionMessage('リトライに失敗しました');
+      setTimeout(() => setActionMessage(null), 3000);
+    }
   };
 
   // ── Toggle helpers ─────────────────────────────────────────────
@@ -499,6 +571,19 @@ export default function PlannerPage() {
   };
 
   // ── Filtered plans ─────────────────────────────────────────────
+  // Requirement 7: counts per status for filter badges
+  const planCounts: Record<string, number> = {
+    all: plans.length,
+    proposed: plans.filter((p) => p.status === 'proposed').length,
+    approved: plans.filter((p) => p.status === 'approved').length,
+    generating: plans.filter((p) => p.status === 'generating').length,
+    completed: plans.filter((p) => p.status === 'completed').length,
+  };
+
+  // Requirement 8: helper to find queue item for a plan
+  const getQueueItemForPlan = (planId: string) =>
+    queueItems.find((q) => q.plan_id === planId);
+
   const filteredPlans =
     filter === 'all' ? plans : plans.filter((p) => p.status === filter);
 
@@ -627,19 +712,34 @@ export default function PlannerPage() {
       {/* ── Filter + Bulk Actions ────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
-          {FILTER_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setFilter(opt.value)}
-              className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                filter === opt.value
-                  ? 'bg-brand-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {/* Requirement 7: filter buttons with count badges */}
+          {FILTER_OPTIONS.map((opt) => {
+            const count = planCounts[opt.value] ?? 0;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => setFilter(opt.value)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${
+                  filter === opt.value
+                    ? 'bg-brand-500 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {opt.label}
+                {count > 0 && (
+                  <span
+                    className={`inline-flex items-center justify-center rounded-full min-w-[18px] h-[18px] px-1 text-[10px] font-bold ${
+                      filter === opt.value
+                        ? 'bg-white/25 text-white'
+                        : 'bg-gray-200 text-gray-700'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {selectedIds.size > 0 && (
@@ -653,13 +753,54 @@ export default function PlannerPage() {
         )}
       </div>
 
+      {/* ── Fetch Error ─────────────────────────────────────────── */}
+      {plansError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+          <p>{plansError}</p>
+          <button
+            onClick={() => { setPlansError(null); setPlansLoading(true); fetchPlans(); }}
+            className="mt-2 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700"
+          >
+            再試行
+          </button>
+        </div>
+      )}
+
       {/* ── Plan Cards ───────────────────────────────────────────── */}
-      {filteredPlans.length === 0 ? (
-        <div className="rounded-xl bg-white px-6 py-16 text-center shadow-sm">
-          <Sparkles className="mx-auto h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-sm text-gray-400">
-            プランがありません。「プランを生成」ボタンでAIにプランを提案させましょう。
+      {plansLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-brand-500" />
+            <p className="text-sm text-gray-400">プランを読み込み中...</p>
+          </div>
+        </div>
+      ) : filteredPlans.length === 0 ? (
+        <div className="rounded-xl bg-gradient-to-br from-brand-50 to-white px-8 py-20 text-center shadow-sm border border-brand-100">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-brand-100">
+            <Sparkles className="h-8 w-8 text-brand-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            {plans.length === 0
+              ? 'まずはプランを生成しましょう'
+              : 'この条件に一致するプランはありません'}
+          </h3>
+          <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
+            {plans.length === 0
+              ? 'AIがキーワードリサーチからプラン提案まで自動で行います。最初のプランを生成して記事作成を始めましょう。'
+              : '別のフィルタを選択するか、新しいプランを生成してください。'}
           </p>
+          <button
+            onClick={() => setShowCountDialog(true)}
+            disabled={isGenerating}
+            className="inline-flex items-center gap-2.5 rounded-xl bg-brand-500 px-8 py-4 text-base font-semibold text-white shadow-lg transition-all hover:bg-brand-600 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+          >
+            {isGenerating ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Sparkles className="h-5 w-5" />
+            )}
+            AIプランを生成する
+          </button>
         </div>
       ) : (
         <div className="space-y-1">
@@ -794,6 +935,35 @@ export default function PlannerPage() {
                     </button>
                   </div>
                 )}
+
+                {/* Requirement 8: queue progress on approved/generating cards */}
+                {(plan.status === 'approved' || plan.status === 'generating') && (() => {
+                  const qi = getQueueItemForPlan(plan.id);
+                  if (!qi) return null;
+                  const qp = getQueueProgress(qi.current_step);
+                  return (
+                    <div className="mt-auto border-t border-gray-50 px-5 py-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-gray-500">キュー進行状況</span>
+                        <span className="text-[11px] font-medium text-brand-600">
+                          {QUEUE_STEP_LABELS[qi.current_step]}
+                        </span>
+                      </div>
+                      <div className="relative h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${
+                            qi.current_step === 'completed'
+                              ? 'bg-emerald-400'
+                              : qi.current_step === 'failed'
+                                ? 'bg-red-400'
+                                : 'bg-brand-400'
+                          }`}
+                          style={{ width: `${qp}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -801,7 +971,7 @@ export default function PlannerPage() {
       )}
 
       {/* ── Generation Queue Section ─────────────────────────────── */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100">
+      <div ref={queueSectionRef} className="rounded-xl bg-white shadow-sm border border-gray-100">
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900">生成キュー</h2>
           <div className="flex items-center gap-2">
@@ -812,10 +982,16 @@ export default function PlannerPage() {
               <RefreshCw className="h-3.5 w-3.5" />
               更新
             </button>
+            {/* Requirement 1: highlight queue start button after approval */}
             <button
+              ref={queueStartBtnRef}
               onClick={handleStartQueue}
               disabled={queueRunning}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-600 disabled:opacity-50"
+              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium text-white transition-all disabled:opacity-50 ${
+                highlightQueueBtn
+                  ? 'bg-emerald-500 hover:bg-emerald-600 ring-2 ring-emerald-300 ring-offset-2 animate-pulse shadow-lg scale-105'
+                  : 'bg-brand-500 hover:bg-brand-600'
+              }`}
             >
               {queueRunning ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -827,6 +1003,28 @@ export default function PlannerPage() {
           </div>
         </div>
 
+        {/* Requirement 4: queue all-completed notification */}
+        {queueAllCompleted && queueItems.length > 0 && (
+          <div className="mx-6 mt-4 rounded-lg bg-emerald-50 border border-emerald-200 p-4 flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-emerald-800">
+                すべての記事が生成されました！
+              </p>
+              <p className="text-xs text-emerald-600 mt-0.5">
+                {queueItems.length}件の記事が正常に生成されました。
+              </p>
+            </div>
+            <Link
+              href="/dashboard/articles"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 shrink-0"
+            >
+              記事一覧で確認
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        )}
+
         {queueItems.length === 0 ? (
           <div className="px-6 py-10 text-center text-sm text-gray-400">
             キューにアイテムがありません。プランを承認するとキューに追加されます。
@@ -835,45 +1033,69 @@ export default function PlannerPage() {
           <ul className="divide-y divide-gray-50">
             {queueItems.map((item) => {
               const queueProgress = getQueueProgress(item.current_step);
+              const isFailed = item.current_step === 'failed';
               return (
-                <li key={item.id} className="px-6 py-4">
+                <li key={item.id} className={`px-6 py-4 ${isFailed ? 'bg-red-50/50' : ''}`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-gray-800 truncate">
                       {item.plan_name}
                     </span>
-                    <span className="text-xs text-gray-500 shrink-0 ml-3">
-                      {QUEUE_STEP_LABELS[item.current_step]}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                      <span className={`text-xs ${isFailed ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                        {QUEUE_STEP_LABELS[item.current_step]}
+                      </span>
+                      {/* Requirement 5: retry button for failed items */}
+                      {isFailed && (
+                        <button
+                          onClick={() => handleRetryQueueItem(item.id)}
+                          className="inline-flex items-center gap-1 rounded-md bg-red-500 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-red-600"
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          再試行
+                        </button>
+                      )}
+                    </div>
                   </div>
+                  {/* Error message for failed items */}
+                  {isFailed && item.error_message && (
+                    <div className="flex items-start gap-1.5 mb-2 rounded bg-red-100 px-2.5 py-1.5">
+                      <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-red-700 leading-relaxed">{item.error_message}</p>
+                    </div>
+                  )}
                   {/* Progress bar */}
                   <div className="relative h-2 w-full rounded-full bg-gray-100 overflow-hidden">
                     <div
                       className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${
                         item.current_step === 'completed'
                           ? 'bg-emerald-400'
-                          : 'bg-brand-400'
+                          : isFailed
+                            ? 'bg-red-400'
+                            : 'bg-brand-400'
                       }`}
-                      style={{ width: `${queueProgress}%` }}
+                      style={{ width: `${isFailed ? 100 : queueProgress}%` }}
                     />
                   </div>
                   {/* Step indicators */}
-                  <div className="flex justify-between mt-1">
-                    {QUEUE_STEPS.map((step) => {
-                      const stepIdx = QUEUE_STEPS.indexOf(step);
-                      const currentIdx = QUEUE_STEPS.indexOf(item.current_step);
-                      const done = stepIdx <= currentIdx;
-                      return (
-                        <span
-                          key={step}
-                          className={`text-[10px] ${
-                            done ? 'text-brand-600 font-medium' : 'text-gray-300'
-                          }`}
-                        >
-                          {QUEUE_STEP_LABELS[step]}
-                        </span>
-                      );
-                    })}
-                  </div>
+                  {!isFailed && (
+                    <div className="flex justify-between mt-1">
+                      {QUEUE_STEPS.filter((s) => s !== 'failed').map((step) => {
+                        const stepIdx = QUEUE_STEPS.indexOf(step);
+                        const currentIdx = QUEUE_STEPS.indexOf(item.current_step);
+                        const done = stepIdx <= currentIdx;
+                        return (
+                          <span
+                            key={step}
+                            className={`text-[10px] ${
+                              done ? 'text-brand-600 font-medium' : 'text-gray-300'
+                            }`}
+                          >
+                            {QUEUE_STEP_LABELS[step]}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                 </li>
               );
             })}

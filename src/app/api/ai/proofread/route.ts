@@ -16,6 +16,9 @@ import {
 } from '@/lib/ai/prompts/stage2-proofreading';
 import { logger } from '@/lib/logger';
 
+// Vercel Serverless 最大実行時間を60秒に設定
+export const maxDuration = 60;
+
 // ─── ハンドラー ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -128,7 +131,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const errMsg = err instanceof Error ? err.message : String(err);
     logger.error('ai', 'proofread_failed', { articleId, error: errMsg });
     return NextResponse.json(
-      { error: `校閲処理に失敗しました: ${errMsg}` },
+      {
+        error: '校閲処理に失敗しました',
+        ...(process.env.NODE_ENV === 'development' ? { detail: errMsg } : {}),
+      },
       { status: 500 },
     );
   }

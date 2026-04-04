@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import SourceArticlePicker from '@/components/articles/SourceArticlePicker';
 
@@ -40,6 +40,7 @@ const PERSPECTIVE_TYPES = [
 
 export default function NewArticlePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Form state
   const [theme, setTheme] = useState('');
@@ -52,9 +53,43 @@ export default function NewArticlePage() {
   // Source article
   const [sourceArticleTitle, setSourceArticleTitle] = useState('');
 
+  // URL パラメータから元記事IDを読み込み
+  const prefetchSourceArticle = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/source-articles/${id}`);
+      if (!res.ok) return;
+      const article = await res.json();
+      setSourceArticleId(id);
+      setSourceArticleTitle(article.title ?? '元記事を選択済み');
+      // テーマカテゴリが設定されていれば自動反映
+      if (article.theme_category && !theme) {
+        setTheme(article.theme_category);
+      }
+    } catch {
+      // 記事が見つからない場合は無視
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    const paramId = searchParams.get('source_article_id');
+    if (paramId) {
+      prefetchSourceArticle(paramId);
+    }
+  }, [searchParams, prefetchSourceArticle]);
+
   // Submission
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── ページ離脱防止（生成中） ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!submitting) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [submitting]);
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
@@ -265,7 +300,11 @@ export default function NewArticlePage() {
 
         {/* Error */}
         {error && (
-          <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+          <div
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600"
+            ref={(el) => el?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+          >
             {error}
           </div>
         )}
@@ -279,7 +318,11 @@ export default function NewArticlePage() {
             transition hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed
             focus:outline-none focus:ring-2 focus:ring-brand-500/20"
         >
-          <Sparkles className="h-4 w-4" />
+          {submitting ? (
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          ) : (
+            <Sparkles className="h-4 w-4" />
+          )}
           {submitting ? 'アウトライン生成中...' : 'アウトライン生成'}
         </button>
       </form>

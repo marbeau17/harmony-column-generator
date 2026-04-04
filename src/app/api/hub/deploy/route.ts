@@ -20,6 +20,9 @@ import {
 } from '@/lib/deploy/ftp-uploader';
 import { logger } from '@/lib/logger';
 
+// Vercel Serverless 最大実行時間を120秒に設定
+export const maxDuration = 120;
+
 export async function POST() {
   try {
     // 認証チェック
@@ -74,7 +77,10 @@ export async function POST() {
       const message = err instanceof Error ? err.message : String(err);
       logger.error('deploy', 'FTP設定エラー', { error: message });
       return NextResponse.json(
-        { error: `FTP設定エラー: ${message}` },
+        {
+          error: 'FTP設定エラー',
+          ...(process.env.NODE_ENV === 'development' ? { detail: message } : {}),
+        },
         { status: 500 },
       );
     }
@@ -112,7 +118,10 @@ export async function POST() {
     const message = err instanceof Error ? err.message : String(err);
     logger.error('deploy', 'ハブページデプロイエラー', { error: message });
     return NextResponse.json(
-      { error: `デプロイに失敗しました: ${message}` },
+      {
+        error: 'デプロイに失敗しました',
+        ...(process.env.NODE_ENV === 'development' ? { detail: message } : {}),
+      },
       { status: 500 },
     );
   }

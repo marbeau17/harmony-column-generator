@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { logger } from '@/lib/logger';
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -30,6 +31,8 @@ export async function POST(): Promise<NextResponse> {
 
   const model = process.env.GEMINI_MODEL || 'gemini-pro';
   const url = `${BASE_URL}/${model}:generateContent?key=${apiKey}`;
+
+  logger.info('api', 'testConnection.start', { model });
 
   // 3. テストリクエスト送信
   try {
@@ -57,9 +60,11 @@ export async function POST(): Promise<NextResponse> {
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'unknown');
+      logger.error('api', 'testConnection.api_error', { model, status: response.status });
       return NextResponse.json({
         success: false,
-        error: `Gemini API エラー (${response.status}): ${errorBody.substring(0, 200)}`,
+        error: `Gemini API エラー (${response.status})`,
+        ...(process.env.NODE_ENV === 'development' ? { detail: errorBody.substring(0, 200) } : {}),
         model,
       });
     }
@@ -67,6 +72,8 @@ export async function POST(): Promise<NextResponse> {
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const tokenUsage = data.usageMetadata || {};
+
+    logger.info('api', 'testConnection.success', { model });
 
     return NextResponse.json({
       success: true,
@@ -82,9 +89,12 @@ export async function POST(): Promise<NextResponse> {
     const msg = error instanceof Error ? error.message : String(error);
     const isTimeout = msg.includes('AbortError') || msg.includes('abort');
 
+    logger.error('api', 'testConnection.failed', { model, isTimeout }, error);
+
     return NextResponse.json({
       success: false,
-      error: isTimeout ? 'タイムアウト（15秒）' : msg,
+      error: isTimeout ? 'タイムアウト（15秒）' : 'Gemini API 接続テストに失敗しました',
+      ...(process.env.NODE_ENV === 'development' && !isTimeout ? { detail: msg } : {}),
       model,
     });
   }

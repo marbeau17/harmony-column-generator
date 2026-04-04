@@ -22,6 +22,7 @@ export interface SourceArticleRow {
 export interface ListSourceArticlesFilter {
   keyword?: string;
   theme?: string;
+  theme_category?: string;
   limit?: number;
   offset?: number;
 }
@@ -42,7 +43,7 @@ export async function listSourceArticles(
   filter: ListSourceArticlesFilter = {},
 ): Promise<{ data: SourceArticleRow[]; count: number }> {
   const supabase = await createServiceRoleClient();
-  const { keyword, theme, limit = 20, offset = 0 } = filter;
+  const { keyword, theme, theme_category, limit = 20, offset = 0 } = filter;
 
   let query = supabase
     .from('source_articles')
@@ -58,6 +59,10 @@ export async function listSourceArticles(
 
   if (theme) {
     query = query.contains('themes', [theme]);
+  }
+
+  if (theme_category) {
+    query = query.eq('theme_category', theme_category);
   }
 
   const { data, error, count } = await query;

@@ -21,6 +21,9 @@ import { executeStage2Chain } from '@/lib/ai/prompt-chain';
 import { logger } from '@/lib/logger';
 import type { Stage1OutlineResult, Stage2Input } from '@/types/ai';
 
+// Vercel Serverless 最大実行時間を180秒に設定
+export const maxDuration = 180;
+
 // ─── リクエストスキーマ ─────────────────────────────────────────────────────
 
 const requestSchema = z.object({
@@ -173,7 +176,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(
       {
         error: 'AI による本文生成に失敗しました。しばらく待ってから再試行してください。',
-        details: chainError instanceof Error ? chainError.message : '不明なエラー',
+        ...(process.env.NODE_ENV === 'development'
+          ? { detail: chainError instanceof Error ? chainError.message : '不明なエラー' }
+          : {}),
       },
       { status: 502 },
     );

@@ -5,6 +5,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import Modal from '@/components/common/Modal';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
@@ -41,22 +42,43 @@ interface Stats {
 
 const PER_PAGE = 20;
 
+const THEME_CATEGORIES = [
+  { value: '', label: 'すべてのテーマ' },
+  { value: 'soul_mission', label: '魂と使命' },
+  { value: 'relationships', label: '人間関係' },
+  { value: 'grief_care', label: 'グリーフケア' },
+  { value: 'self_growth', label: '自己成長' },
+  { value: 'healing', label: '癒しと浄化' },
+  { value: 'daily_awareness', label: '日常の気づき' },
+  { value: 'spiritual_intro', label: 'スピリチュアル入門' },
+] as const;
+
 // ─── ページコンポーネント ────────────────────────────────────────────────────
 
 export default function SourceArticlesPage() {
+  const router = useRouter();
+
   // 一覧系 state
   const [articles, setArticles] = useState<SourceArticle[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [stats, setStats] = useState<Stats>({ total: 0, used: 0, unused: 0 });
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [keyword, setKeyword] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [themeFilter, setThemeFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // インポート系 state
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<string | null>(null);
+  const [importToast, setImportToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importToastTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // デバウンス用 ref
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   // プレビューモーダル
   const [preview, setPreview] = useState<SourceArticle | null>(null);
@@ -67,17 +89,18 @@ export default function SourceArticlesPage() {
   // 一覧取得結果から簡易的に統計を算出する。
   // 将来 stats API が実装されたらそちらに切り替える。
   const updateStatsFromArticles = useCallback(
-    (allArticles: SourceArticle[], totalCount: number) => {
+    (allArticles: SourceArticle[], count: number) => {
       // 現在ページの記事から processed 数を取得（概算）
       // 正確な統計は stats API 実装後に対応
       const used = allArticles.filter((a) => a.is_processed).length;
-      setStats({ total: totalCount, used, unused: totalCount - used });
+      setStats({ total: count, used, unused: count - used });
     },
     [],
   );
 
   const fetchArticles = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const offset = (page - 1) * PER_PAGE;
       const params = new URLSearchParams({
@@ -85,34 +108,60 @@ export default function SourceArticlesPage() {
         offset: String(offset),
       });
       if (keyword) params.set('keyword', keyword);
+      if (themeFilter) params.set('theme_category', themeFilter);
 
       const res = await fetch(`/api/source-articles?${params}`);
-      if (!res.ok) throw new Error('取得に失敗しました');
+      if (!res.ok) throw new Error('元記事の取得に失敗しました');
       const json: ListResponse = await res.json();
 
       setArticles(json.data);
+      setTotalCount(json.count);
       setTotalPages(Math.max(1, Math.ceil(json.count / PER_PAGE)));
       updateStatsFromArticles(json.data, json.count);
     } catch (err) {
+      setError(err instanceof Error ? err.message : '元記事の取得に失敗しました');
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [page, keyword, updateStatsFromArticles]);
+  }, [page, keyword, themeFilter, updateStatsFromArticles]);
 
   useEffect(() => {
     fetchArticles();
   }, [fetchArticles]);
 
-  // ─── 検索 ──────────────────────────────────────────────────────────────
+  // ─── デバウンス検索 ────────────────────────────────────────────────────
+
+  const handleSearchInputChange = (value: string) => {
+    setSearchInput(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+      setKeyword(value);
+    }, 300);
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     setPage(1);
     setKeyword(searchInput);
   };
 
+  // ─── テーマフィルタ ───────────────────────────────────────────────────
+
+  const handleThemeChange = (value: string) => {
+    setThemeFilter(value);
+    setPage(1);
+  };
+
   // ─── CSV インポート ────────────────────────────────────────────────────
+
+  const showImportToast = (message: string, type: 'success' | 'error') => {
+    if (importToastTimeoutRef.current) clearTimeout(importToastTimeoutRef.current);
+    setImportToast({ message, type });
+    importToastTimeoutRef.current = setTimeout(() => setImportToast(null), 6000);
+  };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -136,14 +185,22 @@ export default function SourceArticlesPage() {
       }
 
       const result = await res.json();
-      setImportProgress(
-        `完了: ${result.imported ?? 0} 件インポート、${result.skipped ?? 0} 件スキップ`,
+      const importedCount = result.imported ?? 0;
+      const skippedCount = result.skipped ?? 0;
+      const progressMsg = `完了: ${importedCount.toLocaleString()} 件インポート、${skippedCount.toLocaleString()} 件スキップ`;
+      setImportProgress(progressMsg);
+
+      // トースト通知
+      showImportToast(
+        `${importedCount.toLocaleString()}件をインポートしました`,
+        'success',
       );
 
       // リフレッシュ
       fetchArticles();
     } catch (err: any) {
       setImportProgress(`エラー: ${err.message}`);
+      showImportToast(`インポート失敗: ${err.message}`, 'error');
     } finally {
       setImporting(false);
       // ファイル入力をリセット
@@ -165,6 +222,10 @@ export default function SourceArticlesPage() {
     return pages;
   };
 
+  // 表示範囲計算
+  const rangeStart = totalCount === 0 ? 0 : (page - 1) * PER_PAGE + 1;
+  const rangeEnd = Math.min(page * PER_PAGE, totalCount);
+
   // ─── 日付フォーマット ──────────────────────────────────────────────────
 
   const formatDate = (dateStr: string | null) => {
@@ -174,6 +235,13 @@ export default function SourceArticlesPage() {
       month: 'short',
       day: 'numeric',
     });
+  };
+
+  // ─── 記事から新規コラム作成 ────────────────────────────────────────────
+
+  const handleCreateFromArticle = (articleId: string) => {
+    setPreview(null);
+    router.push(`/dashboard/articles/new?source_article_id=${articleId}`);
   };
 
   // ─── レンダー ──────────────────────────────────────────────────────────
@@ -210,23 +278,37 @@ export default function SourceArticlesPage() {
         </div>
       </div>
 
-      {/* ツールバー: 検索 + インポート */}
+      {/* ツールバー: 検索 + テーマフィルタ + インポート */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <input
-            type="text"
-            placeholder="キーワードで検索..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="w-64 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-          />
-          <button
-            type="submit"
-            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600"
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <form onSubmit={handleSearch} className="flex gap-2">
+            <input
+              type="text"
+              placeholder="キーワードで検索..."
+              value={searchInput}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
+              className="w-64 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            />
+            <button
+              type="submit"
+              className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600"
+            >
+              検索
+            </button>
+          </form>
+          {/* テーマ別フィルタ */}
+          <select
+            value={themeFilter}
+            onChange={(e) => handleThemeChange(e.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
           >
-            検索
-          </button>
-        </form>
+            {THEME_CATEGORIES.map((cat) => (
+              <option key={cat.value} value={cat.value}>
+                {cat.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="flex items-center gap-3">
           {importProgress && (
@@ -294,6 +376,19 @@ export default function SourceArticlesPage() {
         </div>
       </div>
 
+      {/* エラー表示 */}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+          <p>{error}</p>
+          <button
+            onClick={() => { setError(null); fetchArticles(); }}
+            className="mt-2 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700"
+          >
+            再試行
+          </button>
+        </div>
+      )}
+
       {/* 記事一覧テーブル */}
       <div className="overflow-hidden rounded-xl bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -301,6 +396,9 @@ export default function SourceArticlesPage() {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
                 <th className="px-6 py-3 font-medium text-gray-500">タイトル</th>
+                <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
+                  テーマ
+                </th>
                 <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
                   公開日
                 </th>
@@ -315,16 +413,34 @@ export default function SourceArticlesPage() {
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-gray-400">
-                    読み込み中...
+                  <td colSpan={5} className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="h-6 w-6 animate-spin rounded-full border-3 border-gray-200 border-t-brand-500" />
+                      <span className="text-sm text-gray-400">読み込み中...</span>
+                    </div>
                   </td>
                 </tr>
               ) : articles.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-gray-400">
-                    {keyword
-                      ? '検索条件に一致する記事がありません'
-                      : '元記事がありません。CSV をインポートしてください。'}
+                  <td colSpan={5} className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                      </svg>
+                      <p className="text-sm text-gray-400">
+                        {keyword || themeFilter
+                          ? '検索条件に一致する記事がありません'
+                          : 'まだ元記事がありません。CSVインポートで始めましょう'}
+                      </p>
+                      {!keyword && !themeFilter && (
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="mt-1 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600"
+                        >
+                          CSV インポート
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -338,6 +454,15 @@ export default function SourceArticlesPage() {
                       <p className="truncate max-w-md font-medium text-gray-900">
                         {article.title}
                       </p>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {article.theme_category ? (
+                        <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+                          {THEME_CATEGORIES.find((c) => c.value === article.theme_category)?.label ?? article.theme_category}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-300">--</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">
                       {formatDate(article.published_at)}
@@ -364,10 +489,12 @@ export default function SourceArticlesPage() {
         </div>
 
         {/* ページネーション */}
-        {totalPages > 1 && (
+        {totalPages >= 1 && (
           <div className="flex items-center justify-between border-t border-gray-100 px-6 py-3">
             <p className="text-xs text-gray-400">
-              {page} / {totalPages} ページ
+              {totalCount > 0
+                ? `${rangeStart.toLocaleString()}-${rangeEnd.toLocaleString()}件 / 全${totalCount.toLocaleString()}件`
+                : '0件'}
             </p>
             <div className="flex items-center gap-1">
               <button
@@ -416,9 +543,14 @@ export default function SourceArticlesPage() {
       >
         {preview && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-3 text-sm text-gray-500">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
               <span>公開日: {formatDate(preview.published_at)}</span>
               <span>文字数: {(preview.word_count ?? 0).toLocaleString()}</span>
+              {preview.theme_category && (
+                <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+                  {THEME_CATEGORIES.find((c) => c.value === preview.theme_category)?.label ?? preview.theme_category}
+                </span>
+              )}
               <span
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                   preview.is_processed
@@ -429,12 +561,55 @@ export default function SourceArticlesPage() {
                 {preview.is_processed ? '使用済み' : '未使用'}
               </span>
             </div>
-            <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
+
+            {/* この記事から新しいコラムを作成 */}
+            <div className="flex justify-end">
+              <button
+                onClick={() => handleCreateFromArticle(preview.id)}
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                この記事から新しいコラムを作成
+              </button>
+            </div>
+
+            <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 max-h-[60vh] overflow-y-auto">
               {preview.content}
             </div>
           </div>
         )}
       </Modal>
+
+      {/* インポート完了トースト */}
+      {importToast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
+          <div
+            className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium shadow-lg ${
+              importToast.type === 'success'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-red-600 text-white'
+            }`}
+          >
+            {importToast.type === 'success' ? (
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+            ) : (
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+              </svg>
+            )}
+            {importToast.message}
+            <button onClick={() => setImportToast(null)} className="ml-2 opacity-70 hover:opacity-100">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

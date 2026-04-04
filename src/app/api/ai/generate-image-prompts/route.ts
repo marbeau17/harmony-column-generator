@@ -23,6 +23,9 @@ import {
 import { logger } from '@/lib/logger';
 import type { ImagePromptsResult } from '@/lib/ai/prompts/image-prompt';
 
+// Vercel Serverless 最大実行時間を60秒に設定
+export const maxDuration = 60;
+
 // ─── リクエストスキーマ ─────────────────────────────────────────────────────
 
 const requestSchema = z.object({
@@ -194,7 +197,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const errMsg = error instanceof Error ? error.message : String(error);
     logger.error('ai', 'image_prompts.generation_failed', { articleId, errorMessage: errMsg }, error);
     return NextResponse.json(
-      { error: errMsg || 'AI による画像プロンプト生成に失敗しました。しばらく待ってから再試行してください。' },
+      {
+        error: 'AI による画像プロンプト生成に失敗しました。しばらく待ってから再試行してください。',
+        ...(process.env.NODE_ENV === 'development' ? { detail: errMsg } : {}),
+      },
       { status: 502 },
     );
   }
