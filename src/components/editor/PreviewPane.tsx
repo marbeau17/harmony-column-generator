@@ -49,6 +49,34 @@ const PREVIEW_CSS = `
   hr { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
   .placeholder-container { text-align: center; margin: 16px 0; }
   .placeholder-container img { max-width: 100%; height: auto; border-radius: 8px; }
+
+  /* CTA */
+  .harmony-cta { margin: 2rem 0; border-radius: 12px; overflow: hidden; }
+  .harmony-cta-1 { background: linear-gradient(135deg, #f5ebe0 0%, #e8ddd0 100%); border-left: 4px solid #b39578; }
+  .harmony-cta-2 { background: linear-gradient(135deg, #ede7f0 0%, #ddd5e4 100%); border-left: 4px solid #9b8bb4; }
+  .harmony-cta-3 { background: linear-gradient(135deg, #53352b 0%, #7a5c4f 100%); color: #fff; }
+  .harmony-cta-inner { padding: 1.2rem 1.5rem; text-align: center; }
+  .harmony-cta-badge { display: inline-block; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.05em; color: #b39578; background: rgba(179,149,120,0.12); border: 1px solid rgba(179,149,120,0.25); border-radius: 20px; padding: 0.15rem 0.7rem; margin-bottom: 0.5rem; }
+  .harmony-cta-3 .harmony-cta-badge { color: #d4a574; background: rgba(212,165,116,0.15); border-color: rgba(212,165,116,0.3); }
+  .harmony-cta-catch { font-size: 1rem; font-weight: 600; color: #53352b; margin: 0 0 0.3rem; }
+  .harmony-cta-3 .harmony-cta-catch { color: #fff; }
+  .harmony-cta-sub { font-size: 0.85rem; color: #8b6f5e; margin: 0 0 0.8rem; }
+  .harmony-cta-3 .harmony-cta-sub { color: rgba(255,255,255,0.85); }
+  .harmony-cta-btn { display: inline-block; padding: 0.6rem 1.8rem; background: #b39578; color: #fff; border-radius: 25px; text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+  .harmony-cta-2 .harmony-cta-btn { background: #9b8bb4; }
+  .harmony-cta-3 .harmony-cta-btn { background: linear-gradient(135deg, #c4856e, #d4a574); padding: 0.7rem 2.2rem; font-size: 1rem; }
+
+  /* Highlights */
+  .marker-yellow { background: linear-gradient(transparent 60%, #fff3b0 60%); padding: 0 2px; }
+  .marker-pink { background: linear-gradient(transparent 60%, #ffd6e0 60%); padding: 0 2px; }
+
+  /* TOC */
+  .article-toc { background: #faf5f0; border: 1px solid #e8ddd0; border-radius: 8px; padding: 1.2rem 1.5rem; margin: 1.5rem 0 2rem; }
+  .article-toc-title { font-size: 15px; font-weight: 600; color: #53352b; margin: 0; padding: 0; border: none !important; background: none !important; }
+  .article-toc-list { list-style: none; padding: 0; margin: 0.75rem 0 0; }
+  .article-toc-list li { padding: 0.2rem 0; }
+  .article-toc-list li a { color: #53352b; text-decoration: none; font-size: 14px; }
+  .article-toc-list ol { list-style: none; padding-left: 1.2rem; margin: 0.2rem 0 0; }
 `;
 
 // ─── Component ──────────────────────────────────────────────────────────────
