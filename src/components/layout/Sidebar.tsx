@@ -12,6 +12,7 @@ import {
   Sparkles,
   FileText,
   BookOpen,
+  Lightbulb,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -22,6 +23,7 @@ import {
 const NAV = [
   { label: 'ダッシュボード', href: '/dashboard',              icon: LayoutDashboard },
   { label: '記事作成',       href: '/dashboard/articles/new', icon: Sparkles },
+  { label: 'AIプランナー',   href: '/dashboard/planner',      icon: Lightbulb },
   { label: '記事一覧',       href: '/dashboard/articles',     icon: FileText },
   { label: '元記事管理',     href: '/dashboard/source-articles', icon: BookOpen },
   { label: '設定',           href: '/dashboard/settings',     icon: Settings },

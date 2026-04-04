@@ -33,7 +33,7 @@ interface SEOSettings {
   disclaimer: string;
 }
 
-type TabKey = 'basic' | 'ai' | 'cta' | 'seo';
+type TabKey = 'basic' | 'ai' | 'cta' | 'seo' | 'deploy';
 
 // ─── タブ定義 ────────────────────────────────────────────────────────────────
 
@@ -42,6 +42,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'ai', label: 'AI 設定' },
   { key: 'cta', label: 'CTA 設定' },
   { key: 'seo', label: 'SEO 設定' },
+  { key: 'deploy', label: 'デプロイ' },
 ];
 
 // ─── Gemini モデル選択肢 ─────────────────────────────────────────────────────
@@ -94,6 +95,42 @@ export default function SettingsPage() {
   const [cta, setCTA] = useState<CTASettings>(DEFAULT_CTA);
   const [seo, setSEO] = useState<SEOSettings>(DEFAULT_SEO);
 
+  // デプロイタブ用 state
+  const [deploying, setDeploying] = useState<'idle' | 'rebuild' | 'ftp'>('idle');
+  const [deployMessage, setDeployMessage] = useState<string | null>(null);
+
+  const handleRebuild = async () => {
+    setDeploying('rebuild');
+    setDeployMessage(null);
+    try {
+      const res = await fetch('/api/hub/rebuild', { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? 'ハブページ再生成に失敗しました');
+      setDeployMessage(`ハブページ再生成完了: ${data?.generated ?? 0} ファイル生成`);
+    } catch (err: any) {
+      setDeployMessage(`エラー: ${err.message}`);
+    } finally {
+      setDeploying('idle');
+    }
+  };
+
+  const handleFtpDeploy = async () => {
+    setDeploying('ftp');
+    setDeployMessage(null);
+    try {
+      const res = await fetch('/api/hub/deploy', { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? 'FTPデプロイに失敗しました');
+      setDeployMessage(
+        `FTPデプロイ完了: ${data?.uploaded ?? 0} ファイルアップロード`,
+      );
+    } catch (err: any) {
+      setDeployMessage(`エラー: ${err.message}`);
+    } finally {
+      setDeploying('idle');
+    }
+  };
+
   // ─── 設定読み込み ──────────────────────────────────────────────────────
 
   const fetchSettings = useCallback(async () => {
@@ -139,6 +176,7 @@ export default function SettingsPage() {
       ai,
       cta,
       seo,
+      deploy: null, // デプロイタブは個別ボタンで操作するため保存対象外
     };
 
     try {
@@ -414,8 +452,123 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* 保存ボタン */}
-        <div className="mt-8 flex items-center gap-3">
+        {/* ─── デプロイ ─── */}
+        {activeTab === 'deploy' && (
+          <div className="space-y-6 max-w-xl">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">
+                FTP 接続情報
+              </h3>
+              <p className="text-xs text-gray-500 mb-4">
+                FTP設定は .env.local で管理しています。変更する場合はサーバー側の環境変数を更新してください。
+              </p>
+              <dl className="grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
+                <dt className="text-gray-500">ホスト</dt>
+                <dd className="text-gray-800 font-mono text-xs">FTP_HOST (env)</dd>
+                <dt className="text-gray-500">ポート</dt>
+                <dd className="text-gray-800 font-mono text-xs">FTP_PORT (env)</dd>
+                <dt className="text-gray-500">リモートパス</dt>
+                <dd className="text-gray-800 font-mono text-xs">FTP_REMOTE_PATH (env)</dd>
+              </dl>
+            </div>
+
+            <hr className="border-gray-100" />
+
+            {/* ハブページ再生成 */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">
+                ハブページ再生成
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                公開済み記事の一覧からハブページ（index.html）を再生成します。記事公開時にも自動実行されます。
+              </p>
+              <button
+                onClick={handleRebuild}
+                disabled={deploying !== 'idle'}
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-600 disabled:opacity-50"
+              >
+                {deploying === 'rebuild' && (
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                )}
+                ハブページ再生成
+              </button>
+            </div>
+
+            <hr className="border-gray-100" />
+
+            {/* FTPデプロイ */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">
+                FTP デプロイ
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                生成済みのハブページおよび記事HTMLをFTPサーバーにアップロードします。
+              </p>
+              <button
+                onClick={handleFtpDeploy}
+                disabled={deploying !== 'idle'}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {deploying === 'ftp' && (
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                )}
+                FTP デプロイ
+              </button>
+            </div>
+
+            {/* 結果表示 */}
+            {deployMessage && (
+              <div
+                className={`mt-2 rounded-lg p-3 text-sm ${
+                  deployMessage.startsWith('エラー')
+                    ? 'bg-red-50 text-red-700'
+                    : 'bg-emerald-50 text-emerald-700'
+                }`}
+              >
+                {deployMessage}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 保存ボタン（デプロイタブ以外） */}
+        {activeTab !== 'deploy' && <div className="mt-8 flex items-center gap-3">
           <button
             onClick={() => handleSave(activeTab)}
             disabled={saving}
@@ -455,7 +608,7 @@ export default function SettingsPage() {
               {saveMessage}
             </span>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   );

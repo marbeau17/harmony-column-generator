@@ -80,6 +80,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       to: status,
     });
 
+    // published に遷移した場合、バックグラウンドでハブページ再生成を実行
+    if (status === 'published') {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      fetch(`${appUrl}/api/hub/rebuild`, { method: 'POST' })
+        .then((res) => {
+          if (res.ok) {
+            logger.info('api', 'hub-rebuild-triggered', { articleId: id });
+          } else {
+            logger.warn('api', 'hub-rebuild-failed', {
+              articleId: id,
+              status: res.status,
+            });
+          }
+        })
+        .catch((err) => {
+          logger.error('api', 'hub-rebuild-error', { articleId: id }, err);
+        });
+    }
+
     return NextResponse.json({ data: updated });
   } catch (error) {
     const message =

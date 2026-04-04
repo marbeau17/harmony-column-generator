@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>コラム | スピリチュアルカウンセラー小林由起子</title>
+  <meta name="description" content="スピリチュアルカウンセラー小林由起子のコラム一覧。スピリチュアル・ヒーリング・心のケアに関する情報をお届けします。">
+
+  <!-- OGP -->
+  <meta property="og:title" content="コラム | スピリチュアルカウンセラー小林由起子">
+  <meta property="og:description" content="スピリチュアルカウンセラー小林由起子のコラム一覧。スピリチュアル・ヒーリング・心のケアに関する情報をお届けします。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{hub_url}}">
+  <meta property="og:site_name" content="スピリチュアルカウンセラー小林由起子">
+  <meta property="og:locale" content="ja_JP">
+  <meta property="og:image" content="https://harmony-mc.com/wp-content/uploads/2019/12/brand.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="コラム | スピリチュアルカウンセラー小林由起子">
+  <meta name="twitter:description" content="スピリチュアルカウンセラー小林由起子のコラム一覧。">
+
+  <link rel="canonical" href="{{hub_url}}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/hub.css">
+</head>
+<body>
+
+  <!-- ヘッダー -->
+  <header class="siteHeader">
+    <div class="siteHeader-container">
+      <a href="https://harmony-mc.com/" class="siteHeader-logo">
+        <img src="https://harmony-mc.com/wp-content/uploads/2019/12/brand.png" alt="スピリチュアルカウンセラー小林由起子">
+      </a>
+      <nav class="gMenu">
+        <ul>
+          <li><a href="https://harmony-mc.com/">トップ</a></li>
+          <li class="menu-item-has-children">
+            <a href="https://harmony-mc.com/#howto">カウンセリング</a>
+            <ul class="sub-menu">
+              <li><a href="https://harmony-mc.com/counseling/">メニュー</a></li>
+              <li><a href="https://harmony-mc.com/system/">ご予約の流れ</a></li>
+              <li><a href="https://harmony-mc.com/caution/">注意事項</a></li>
+            </ul>
+          </li>
+          <li><a href="https://harmony-mc.com/seminar/">講座・セミナー</a></li>
+          <li><a href="https://harmony-mc.com/spiritual-books/">出版書籍</a></li>
+          <li class="menu-item-has-children">
+            <a href="https://harmony-mc.com/profile/">プロフィール</a>
+            <ul class="sub-menu">
+              <li><a href="{{hub_url}}">コラム</a></li>
+            </ul>
+          </li>
+        </ul>
+      </nav>
+      <button class="mobile-nav-btn" id="mobileNavBtn" aria-label="メニュー">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- モバイルナビ -->
+  <nav class="mobile-nav" id="mobileNav">
+    <ul>
+      <li><a href="https://harmony-mc.com/">トップ</a></li>
+      <li class="mobile-menu-parent">
+        <a href="https://harmony-mc.com/#howto">カウンセリング</a>
+        <button class="mobile-submenu-toggle" aria-label="サブメニューを開く">+</button>
+        <ul class="mobile-sub-menu">
+          <li><a href="https://harmony-mc.com/counseling/">メニュー</a></li>
+          <li><a href="https://harmony-mc.com/system/">ご予約の流れ</a></li>
+          <li><a href="https://harmony-mc.com/caution/">注意事項</a></li>
+        </ul>
+      </li>
+      <li><a href="https://harmony-mc.com/seminar/">講座・セミナー</a></li>
+      <li><a href="https://harmony-mc.com/spiritual-books/">出版書籍</a></li>
+      <li class="mobile-menu-parent">
+        <a href="https://harmony-mc.com/profile/">プロフィール</a>
+        <button class="mobile-submenu-toggle" aria-label="サブメニューを開く">+</button>
+        <ul class="mobile-sub-menu">
+          <li><a href="{{hub_url}}">コラム</a></li>
+        </ul>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- パンくずリスト -->
+  <nav class="breadcrumb" aria-label="パンくずリスト">
+    <ol itemscope itemtype="https://schema.org/BreadcrumbList">
+      <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="https://harmony-mc.com/"><span itemprop="name">HOME</span></a>
+        <meta itemprop="position" content="1">
+      </li>
+      <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <span itemprop="name">コラム</span>
+        <meta itemprop="position" content="2">
+      </li>
+    </ol>
+  </nav>
+
+  <!-- ページヘッダー -->
+  <div class="page-header">
+    <h1 class="page-title">コラム</h1>
+  </div>
+
+  <!-- メインコンテンツ -->
+  <div class="container">
+    <main class="mainSection">
+
+      <!-- カテゴリフィルタタブ -->
+      <div class="category-filter">
+        <button class="filter-btn active" data-filter="all">すべて</button>
+        {{#each categories}}
+        <button class="filter-btn" data-filter="{{slug}}">{{name}}</button>
+        {{/each}}
+      </div>
+
+      <!-- 記事一覧 -->
+      <div class="entry-list">
+        {{#each articles}}
+        <article class="entry" data-theme="{{theme}}">
+          <a href="{{url}}" class="entry-thumbnail">
+            <img src="{{thumbnail}}" alt="{{title}}" width="150" height="150" loading="lazy">
+          </a>
+          <div class="entry-body">
+            <div class="entry-header">
+              <span class="entry-date">{{date}}</span>
+              <a href="javascript:void(0)" class="entry-category" data-filter="{{theme}}">{{category_label}}</a>
+            </div>
+            <h2 class="entry-title"><a href="{{url}}">{{title}}</a></h2>
+            <p class="entry-excerpt">{{excerpt}}</p>
+          </div>
+        </article>
+        {{/each}}
+      </div>
+
+      <!-- ページネーション -->
+      <div class="pager">
+        {{pagination_html}}
+      </div>
+
+    </main>
+
+    <!-- サイドバー -->
+    <aside class="subSection">
+      <div class="widget">
+        <h3 class="subSection-title">最近のコラム</h3>
+        <ul class="recent-posts">
+          {{#each recent_articles}}
+          <li>
+            <a href="{{url}}">
+              <img src="{{thumbnail}}" alt="" width="150" height="150" loading="lazy">
+              <span>{{title}}</span>
+            </a>
+          </li>
+          {{/each}}
+        </ul>
+      </div>
+      <div class="widget">
+        <h3 class="subSection-title">カテゴリー</h3>
+        <ul class="category-list">
+          {{#each categories}}
+          <li><a href="javascript:void(0)" data-filter="{{slug}}">{{name}} ({{count}})</a></li>
+          {{/each}}
+        </ul>
+      </div>
+      <!-- CTA -->
+      <div class="widget cta-widget">
+        <h3 class="subSection-title">ご予約・ご相談</h3>
+        <p>あなたの心に寄り添うスピリチュアルカウンセリング</p>
+        <a href="https://harmony-booking.web.app/" class="cta-button" target="_blank" rel="noopener">カウンセリングを予約する</a>
+      </div>
+    </aside>
+  </div>
+
+  <!-- フッター -->
+  <footer class="siteFooter">
+    <div class="siteFooter-inner">
+      <nav class="siteFooter-nav">
+        <ul>
+          <li><a href="https://harmony-mc.com/">トップ</a></li>
+          <li><a href="https://harmony-mc.com/counseling/">カウンセリングメニュー</a></li>
+          <li><a href="https://harmony-mc.com/system/">ご予約の流れ</a></li>
+          <li><a href="https://harmony-mc.com/caution/">注意事項</a></li>
+          <li><a href="https://harmony-mc.com/seminar/">講座・セミナー</a></li>
+          <li><a href="https://harmony-mc.com/spiritual-books/">出版書籍</a></li>
+          <li><a href="https://harmony-mc.com/profile/">プロフィール</a></li>
+          <li><a href="{{hub_url}}">コラム</a></li>
+        </ul>
+      </nav>
+      <p class="siteFooter-copyright">Copyright &copy; スピリチュアルハーモニー All Rights Reserved.</p>
+    </div>
+  </footer>
+
+  <script src="./js/hub.js"></script>
+</body>
+</html>
