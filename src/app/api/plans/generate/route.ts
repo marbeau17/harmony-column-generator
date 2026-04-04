@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { generateContentPlans } from '@/lib/ai/generate-plans';
+import { generateContentPlans } from '@/lib/planner/plan-generator';
 import { logger } from '@/lib/logger';
 
 // ─── ハンドラー ─────────────────────────────────────────────────────────────
@@ -56,9 +56,13 @@ export async function POST(request: NextRequest) {
       keyword: plan.keyword,
       theme: plan.theme,
       persona: plan.persona,
-      perspective_type: plan.perspective_type,
-      target_word_count: plan.target_word_count,
-      status: 'draft',
+      perspective_type: plan.perspectiveType,
+      target_word_count: plan.targetWordCount ?? 2000,
+      status: 'proposed',
+      sub_keywords: plan.subKeywords ?? [],
+      source_article_ids: plan.sourceArticleIds ?? [],
+      predicted_seo_score: plan.predictedSeoScore ?? 75,
+      proposal_reason: plan.proposalReason ?? `AIが「${plan.keyword}」をキーワードとして提案`,
     }));
 
     const { data: insertedPlans, error: insertError } = await serviceClient
