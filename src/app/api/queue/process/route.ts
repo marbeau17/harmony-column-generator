@@ -527,7 +527,7 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // ── images → SEOスコアチェック → seo_check ──
+        // ── images → 実際の画像生成 + SEOスコアチェック → seo_check ──
         case 'images': {
           const articleId = queueItem.article_id;
           if (!articleId) {
@@ -543,6 +543,45 @@ export async function POST(request: NextRequest) {
 
           if (articleError || !article) {
             throw new Error('記事が見つかりません');
+          }
+
+          // ── 実際の画像生成（Banana Pro） ──
+          const imagePrompts = article.image_prompts as { prompt: string; position: string; alt_text_ja?: string }[] | null;
+          if (imagePrompts && imagePrompts.length > 0) {
+            try {
+              const { generateImage } = await import('@/lib/ai/gemini-client');
+              const { uploadImage } = await import('@/lib/storage/image-storage');
+              const imageFiles: { position: string; url: string; alt: string; filename: string }[] = [];
+
+              for (const imgPrompt of imagePrompts.slice(0, 3)) {
+                try {
+                  logger.info('api', 'processQueue.generating_image', { articleId, position: imgPrompt.position });
+                  const result = await generateImage(imgPrompt.prompt, { timeoutMs: 90_000 });
+                  const url = await uploadImage(articleId, imgPrompt.position, result.imageBuffer, result.mimeType);
+                  imageFiles.push({
+                    position: imgPrompt.position,
+                    url,
+                    alt: imgPrompt.alt_text_ja || '',
+                    filename: `${imgPrompt.position}.webp`,
+                  });
+                  logger.info('api', 'processQueue.image_generated', { articleId, position: imgPrompt.position, url });
+                } catch (imgErr) {
+                  logger.warn('api', 'processQueue.image_failed', { articleId, position: imgPrompt.position, error: String(imgErr) });
+                  // 1枚失敗しても続行
+                }
+              }
+
+              if (imageFiles.length > 0) {
+                await serviceClient
+                  .from('articles')
+                  .update({ image_files: imageFiles, updated_at: new Date().toISOString() })
+                  .eq('id', articleId);
+                logger.info('api', 'processQueue.images_saved', { articleId, count: imageFiles.length });
+              }
+            } catch (imgGenErr) {
+              logger.warn('api', 'processQueue.image_generation_error', { articleId, error: String(imgGenErr) });
+              // 画像生成全体が失敗しても続行（SEOチェックへ進む）
+            }
           }
 
           const bodyHtml = (article.stage2_body_html || article.stage3_final_html) as string | null;
