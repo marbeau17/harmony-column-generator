@@ -27,6 +27,52 @@ a {
   text-decoration: none;
 }
 
+/* CTA Styles for editor/preview */
+.harmony-cta {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #f5ebe0, #faf3ed);
+  border: 1px solid #d4a574;
+  border-radius: 12px;
+  text-align: center;
+}
+.harmony-cta-banner {
+  margin-bottom: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.harmony-cta-banner img {
+  width: 100%;
+  height: auto;
+  max-height: 200px;
+  object-fit: cover;
+  display: block;
+  border-radius: 8px;
+}
+.harmony-cta-catch {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #53352b;
+  margin-bottom: 0.5rem;
+}
+.harmony-cta-sub {
+  font-size: 0.9rem;
+  color: #8b6f5e;
+  margin-bottom: 1rem;
+}
+.harmony-cta-btn {
+  display: inline-block;
+  padding: 0.8rem 2rem;
+  background: #b39578;
+  color: #fff;
+  border-radius: 25px;
+  text-decoration: none;
+  font-weight: 600;
+}
+.harmony-cta-btn:hover {
+  background: #53352b;
+}
+
 /* Modal animations */
 @keyframes fadeIn {
   from { opacity: 0; }

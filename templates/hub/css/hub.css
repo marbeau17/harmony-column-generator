@@ -957,6 +957,21 @@ ul, ol {
   color: #fff;
 }
 
+/* CTA Banner Image */
+.harmony-cta-banner {
+  margin-bottom: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.harmony-cta-banner img {
+  width: 100%;
+  height: auto;
+  max-height: 200px;
+  object-fit: cover;
+  display: block;
+  border-radius: 8px;
+}
+
 /* ─── FAQ Section ─────────────────────── */
 
 .article-faq {
