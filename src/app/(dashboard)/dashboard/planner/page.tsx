@@ -329,17 +329,18 @@ export default function PlannerPage() {
         const data = await res.json();
         const items: QueueItem[] = data.items ?? data.data ?? [];
         setQueueItems(items);
-        // Stop polling if nothing is processing
-        const hasActive = items.some(
-          (i: QueueItem) =>
-            i.current_step !== 'completed' &&
-            i.current_step !== 'pending' &&
-            i.current_step !== 'failed',
-        );
-        if (!hasActive && pollingRef.current) {
-          clearInterval(pollingRef.current);
-          pollingRef.current = null;
-          setQueueRunning(false);
+        // Stop polling only if NOT actively running queue processing
+        if (!queueRunning) {
+          const hasActive = items.some(
+            (i: QueueItem) =>
+              i.current_step !== 'completed' &&
+              i.current_step !== 'pending' &&
+              i.current_step !== 'failed',
+          );
+          if (!hasActive && pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
         }
         // Detect all-completed state
         if (
@@ -563,8 +564,8 @@ export default function PlannerPage() {
     await fetchPlans();
 
     // Check if all completed
-    const allDone = queue.every(q => q.step === 'completed' || q.step === 'failed');
-    if (allDone && queue.length > 0) {
+    const allDone = queueItems.every((q: QueueItem) => q.current_step === 'completed' || q.current_step === 'failed');
+    if (allDone && queueItems.length > 0) {
       setQueueAllCompleted(true);
     }
 
@@ -1011,7 +1012,15 @@ export default function PlannerPage() {
       {/* ── Generation Queue Section ─────────────────────────────── */}
       <div ref={queueSectionRef} className="rounded-xl bg-white shadow-sm border border-gray-100">
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">生成キュー</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-gray-900">生成キュー</h2>
+            {queueRunning && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 animate-pulse">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                処理中...
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => { fetchQueue(); fetchPlans(); }}
