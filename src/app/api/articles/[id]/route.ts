@@ -1,0 +1,145 @@
+// ============================================================================
+// src/app/api/articles/[id]/route.ts
+// 記事詳細取得 / 記事更新 / 記事アーカイブ（論理削除） API
+// ============================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+import {
+  getArticleById,
+  updateArticle,
+  archiveArticle,
+} from '@/lib/db/articles';
+import { updateArticleSchema, validate } from '@/lib/validators/article';
+import { logger } from '@/lib/logger';
+
+type RouteParams = { params: { id: string } };
+
+// ─── GET /api/articles/[id] ─────────────────────────────────────────────────
+
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    // 認証チェック
+    const supabase = createServerSupabaseClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+    }
+
+    const { id } = params;
+
+    const article = await getArticleById(id);
+    if (!article) {
+      return NextResponse.json(
+        { error: '記事が見つかりません' },
+        { status: 404 },
+      );
+    }
+
+    logger.info('api', 'getArticle', { articleId: id });
+
+    return NextResponse.json({ data: article });
+  } catch (error) {
+    logger.error('api', 'getArticle', { articleId: params.id }, error);
+    return NextResponse.json(
+      { error: '記事の取得に失敗しました' },
+      { status: 500 },
+    );
+  }
+}
+
+// ─── PUT /api/articles/[id] ─────────────────────────────────────────────────
+
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    // 認証チェック
+    const supabase = createServerSupabaseClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+    }
+
+    const { id } = params;
+
+    // 記事の存在確認
+    const existing = await getArticleById(id);
+    if (!existing) {
+      return NextResponse.json(
+        { error: '記事が見つかりません' },
+        { status: 404 },
+      );
+    }
+
+    // リクエストボディ取得 & バリデーション
+    const body = await request.json();
+    const result = validate(updateArticleSchema, body);
+    if (!result.success) {
+      return NextResponse.json(
+        { error: 'バリデーションエラー', details: result.error.flatten() },
+        { status: 400 },
+      );
+    }
+
+    // 記事更新
+    const updated = await updateArticle(id, result.data);
+
+    logger.info('api', 'updateArticle', {
+      articleId: id,
+      updatedFields: Object.keys(result.data),
+    });
+
+    return NextResponse.json({ data: updated });
+  } catch (error) {
+    logger.error('api', 'updateArticle', { articleId: params.id }, error);
+    return NextResponse.json(
+      { error: '記事の更新に失敗しました' },
+      { status: 500 },
+    );
+  }
+}
+
+// ─── DELETE /api/articles/[id] ──────────────────────────────────────────────
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    // 認証チェック
+    const supabase = createServerSupabaseClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+    }
+
+    const { id } = params;
+
+    // 記事の存在確認
+    const existing = await getArticleById(id);
+    if (!existing) {
+      return NextResponse.json(
+        { error: '記事が見つかりません' },
+        { status: 404 },
+      );
+    }
+
+    // 論理削除（アーカイブ）
+    const archived = await archiveArticle(id);
+
+    logger.info('api', 'archiveArticle', { articleId: id });
+
+    return NextResponse.json({ data: archived });
+  } catch (error) {
+    logger.error('api', 'archiveArticle', { articleId: params.id }, error);
+    return NextResponse.json(
+      { error: '記事のアーカイブに失敗しました' },
+      { status: 500 },
+    );
+  }
+}

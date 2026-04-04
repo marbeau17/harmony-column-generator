@@ -1,0 +1,24 @@
+{
+  "framework": "nextjs",
+  "regions": ["hnd1"],
+  "functions": {
+    "src/app/api/ai/generate-body/**/route.ts": {
+      "maxDuration": 180
+    },
+    "src/app/api/ai/generate-outline/**/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/ai/generate-image-prompts/**/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/ai/proofread/**/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/ai/quality-check/**/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/ai/test-connection/**/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
