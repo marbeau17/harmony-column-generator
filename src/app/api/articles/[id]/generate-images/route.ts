@@ -98,8 +98,21 @@ export async function POST(
   const results: ImageResult[] = [];
   const errors: ImageError[] = [];
 
-  for (const promptItem of prompts) {
+  for (const rawItem of prompts) {
+    // DB内のフィールド名の違いを吸収（section_id → position, heading_text → alt_text_ja等）
+    const raw = rawItem as unknown as Record<string, string>;
+    const promptItem = {
+      position: raw.position || raw.section_id || 'hero',
+      prompt: raw.prompt || '',
+      alt_text_ja: raw.alt_text_ja || raw.heading_text || '',
+    };
     const { position, prompt, alt_text_ja } = promptItem;
+
+    if (!prompt) {
+      logger.warn('ai', 'generate_images.empty_prompt', { articleId, position });
+      errors.push({ position, error: 'プロンプトが空です' });
+      continue;
+    }
 
     try {
       const imageResult = await generateImageWithRetry(prompt, IMAGE_TIMEOUT_MS);
