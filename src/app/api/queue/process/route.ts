@@ -683,11 +683,37 @@ export async function POST(request: NextRequest) {
               }
 
               if (imageFiles.length > 0) {
+                // Replace image placeholders in body HTML with actual img tags
+                const updateFields: Record<string, unknown> = {
+                  image_files: imageFiles,
+                  updated_at: new Date().toISOString(),
+                };
+
+                for (const field of ['stage2_body_html', 'stage3_final_html'] as const) {
+                  let html = article[field] as string | null;
+                  if (!html) continue;
+                  let changed = false;
+                  for (const img of imageFiles) {
+                    const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+                    const patterns = [
+                      new RegExp(`<div[^>]*class="[^"]*placeholder[^"]*"[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->\\s*</div>`, 'g'),
+                      new RegExp(`<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->`, 'g'),
+                      new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)? `, 'g'),
+                    ];
+                    for (const p of patterns) {
+                      const prev: string = html as string;
+                      html = (html as string).replace(p, imgTag);
+                      if (html !== prev) changed = true;
+                    }
+                  }
+                  if (changed) updateFields[field] = html;
+                }
+
                 await serviceClient
                   .from('articles')
-                  .update({ image_files: imageFiles, updated_at: new Date().toISOString() })
+                  .update(updateFields)
                   .eq('id', articleId);
-                logger.info('api', 'processQueue.images_saved', { articleId, count: imageFiles.length });
+                logger.info('api', 'processQueue.images_saved', { articleId, count: imageFiles.length, htmlUpdated: Object.keys(updateFields).length > 2 });
               }
             } catch (imgGenErr) {
               logger.warn('api', 'processQueue.image_generation_error', { articleId, error: String(imgGenErr) });

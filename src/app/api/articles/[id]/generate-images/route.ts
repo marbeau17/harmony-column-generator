@@ -172,9 +172,9 @@ export async function POST(
       for (const img of imageFiles) {
         const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
         const patterns = [
-          new RegExp(`<div[^>]*class="[^"]*placeholder[^"]*"[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
-          new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
-          new RegExp(`IMAGE:${img.position}(?::[\\w.-]+)?`, 'g'),
+          new RegExp(`<div[^>]*class="[^"]*placeholder[^"]*"[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->\\s*</div>`, 'g'),
+          new RegExp(`<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->`, 'g'),
+          new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)?`, 'g'),
         ];
         for (const pattern of patterns) {
           updated = updated.replace(pattern, imgTag);
