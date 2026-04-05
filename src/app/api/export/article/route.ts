@@ -9,6 +9,8 @@ import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 import { logger } from '@/lib/logger';
 import archiver from 'archiver';
 import { PassThrough } from 'stream';
+import fs from 'fs';
+import path from 'path';
 import type { Article } from '@/types/article';
 
 export const maxDuration = 120;
@@ -156,6 +158,61 @@ export async function POST(request: NextRequest) {
     });
 
     const zipBuffer = Buffer.concat(chunks);
+
+    // Also write to local out/ directory (non-Vercel only)
+    if (!process.env.VERCEL) {
+      try {
+        const outDir = path.join(process.cwd(), 'out');
+
+        // Write each article to out/column/{slug}/
+        for (const article of articles) {
+          const slug = article.slug ?? article.id;
+          const articleDir = path.join(outDir, 'column', slug);
+          const imagesDir = path.join(articleDir, 'images');
+          if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true });
+
+          // Generate HTML (same as ZIP)
+          let html = generateArticleHtml(article, {
+            heroImage: 'images/hero.jpg',
+            heroImageAlt: article.title ?? slug,
+            ogImage: `https://harmony-mc.com/column/${slug}/images/hero.jpg`,
+            hubUrl: '../index.html',
+          });
+          html = html.replace(/https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g, './images/$1.jpg');
+          html = html.replace('href="./css/hub.css"', 'href="../../css/style.css"');
+          html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
+          html = html.replace(/href="\/column\/([^"]+)\/"/g, 'href="../$1/index.html"');
+          html = html.replace(/src="\/column\/([^"]+)\/images\//g, 'src="../$1/images/');
+          html = html.replace(/<img[^>]*src="\.\/images\/hero\.(jpg|svg)"[^>]*style="max-width:100%[^"]*"[^>]*>/g, '');
+          html = html.replace(/<!--IMAGE:hero:[^>]*-->/g, '');
+          fs.writeFileSync(path.join(articleDir, 'index.html'), html, 'utf-8');
+
+          // Download images
+          const imageFiles = parseImageFiles(article.image_files);
+          for (const img of imageFiles) {
+            if (!img.url) continue;
+            try {
+              const imgRes = await fetch(img.url);
+              if (imgRes.ok) {
+                const buffer = Buffer.from(await imgRes.arrayBuffer());
+                const fname = img.position ? `${img.position}.jpg` : (img.filename ?? 'image.jpg');
+                fs.writeFileSync(path.join(imagesDir, fname), buffer);
+              }
+            } catch { /* skip */ }
+          }
+        }
+
+        // Write hub page
+        const hubHtmlLocal = buildHubPageHtml(articles);
+        const columnDir = path.join(outDir, 'column');
+        if (!fs.existsSync(columnDir)) fs.mkdirSync(columnDir, { recursive: true });
+        fs.writeFileSync(path.join(columnDir, 'index.html'), hubHtmlLocal, 'utf-8');
+
+        logger.info('export', 'out-directory-written', { dir: outDir, articles: articles.length });
+      } catch (outErr) {
+        logger.warn('export', 'out-directory-failed', { error: String(outErr) });
+      }
+    }
 
     const filename = articleId
       ? `article-${articles[0].slug || 'export'}.zip`
