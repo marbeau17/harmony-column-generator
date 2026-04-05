@@ -11,7 +11,7 @@ import { getSourceArticleById } from '@/lib/db/source-articles';
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: { id: string } },
 ) {
   try {
     // 認証チェック
@@ -24,7 +24,7 @@ export async function GET(
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 
-    const { id } = await params;
+    const { id } = params;
 
     if (!id) {
       return NextResponse.json({ error: 'IDが必要です' }, { status: 400 });

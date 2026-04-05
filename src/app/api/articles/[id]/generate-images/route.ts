@@ -52,9 +52,9 @@ const IMAGE_TIMEOUT_MS = 60_000; // 各画像60秒
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: { id: string } },
 ): Promise<NextResponse> {
-  const { id: articleId } = await params;
+  const { id: articleId } = params;
 
   // 1. 認証チェック
   const supabase = await createServerSupabaseClient();

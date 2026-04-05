@@ -233,14 +233,23 @@ export default function ArticleDetailPage() {
 
   const handleGenerateImages = async () => {
     setImageGenLoading(true);
+    console.log('[image-gen] Starting image generation for article:', articleId);
     try {
       const res = await fetch(`/api/articles/${articleId}/generate-images`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
-      if (!res.ok) throw new Error('画像生成に失敗しました');
+      const body = await res.json().catch(() => ({}));
+      console.log('[image-gen] Response:', { status: res.status, body });
+      if (!res.ok) {
+        const errMsg = body.error || body.message || '画像生成に失敗しました';
+        console.error('[image-gen] Error:', errMsg);
+        throw new Error(errMsg);
+      }
+      console.log('[image-gen] Success:', body);
       await fetchArticle();
     } catch (err) {
+      console.error('[image-gen] Exception:', err);
       setError(err instanceof Error ? err.message : '予期せぬエラー');
     } finally {
       setImageGenLoading(false);
