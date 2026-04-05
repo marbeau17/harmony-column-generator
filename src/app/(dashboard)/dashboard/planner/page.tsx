@@ -695,37 +695,59 @@ export default function PlannerPage() {
             }
 
             if (!data.processed) {
-              console.log('[batch] No items processed - article may be done or queue empty');
+              console.log('[batch] No items processed - checking if article is done');
+              // Article might have been completed by a previous step
+              // Mark as completed and move on
+              completed++;
+              setBatchState(prev => {
+                if (!prev) return prev;
+                const newItems = [...prev.items];
+                newItems[i] = { ...newItems[i], status: 'completed', currentStep: 'completed' };
+                return { ...prev, items: newItems, completedCount: completed };
+              });
               articleDone = true;
               break;
             }
 
-            // Update step in UI
+            // Update step in UI - match by articleId when possible
+            const processedArticleId = data.articleId;
             if (data.currentStep) {
-              setBatchState(prev => {
-                if (!prev) return prev;
-                const newItems = [...prev.items];
-                newItems[i] = { ...newItems[i], currentStep: data.currentStep };
-                return { ...prev, items: newItems };
-              });
+              // Find which batch item this step belongs to
+              const matchIdx = processedArticleId
+                ? items.findIndex((it: { articleId: string }) => it.articleId === processedArticleId)
+                : i;
+
+              if (matchIdx >= 0) {
+                setBatchState(prev => {
+                  if (!prev) return prev;
+                  const newItems = [...prev.items];
+                  newItems[matchIdx] = { ...newItems[matchIdx], currentStep: data.currentStep, status: 'processing' };
+                  return { ...prev, items: newItems };
+                });
+              }
             }
 
             if (data.currentStep === 'completed') {
               completed++;
               const isPublished = data.published === true;
+              const matchIdx2 = processedArticleId
+                ? items.findIndex((it: { articleId: string }) => it.articleId === processedArticleId)
+                : i;
+              const targetIdx = matchIdx2 >= 0 ? matchIdx2 : i;
               setBatchState(prev => {
                 if (!prev) return prev;
                 const newItems = [...prev.items];
-                newItems[i] = {
-                  ...newItems[i],
+                newItems[targetIdx] = {
+                  ...newItems[targetIdx],
                   status: 'completed',
                   currentStep: 'completed',
                   published: isPublished,
-                  title: data.title || newItems[i].title,
+                  title: data.title || newItems[targetIdx].title,
                 };
                 return { ...prev, items: newItems, completedCount: completed };
               });
-              articleDone = true;
+              // If the completed article is the current one, move on
+              if (targetIdx === i) articleDone = true;
             }
 
             if (data.error || data.step === 'failed') {
