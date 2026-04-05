@@ -213,7 +213,9 @@ export async function POST(request: NextRequest) {
     }
 
     const plan = queueItem.content_plan;
-    if (!plan) {
+    // plan_id がない場合でも処理を続行（一括生成等で plan なしのキューアイテムがある）
+    if (!plan && queueItem.step === 'pending') {
+      // pending ステップはプランが必須（記事作成に必要）
       await markFailed(serviceClient, queueItem.id, '関連するコンテンツプランが見つかりません');
       return NextResponse.json(
         { error: '関連するコンテンツプランが見つかりません' },
@@ -223,9 +225,9 @@ export async function POST(request: NextRequest) {
 
     logger.info('api', 'processQueue.start', {
       queueId: queueItem.id,
-      planId: plan.id,
+      planId: plan?.id ?? 'N/A',
       currentStep: queueItem.step,
-      keyword: plan.keyword,
+      keyword: plan?.keyword ?? 'N/A',
     });
 
     const currentStep = queueItem.step as string;
@@ -237,7 +239,7 @@ export async function POST(request: NextRequest) {
         // ── pending → 記事作成 + アウトライン生成 → outline ──
         case 'pending': {
           // content_plans のステータスを generating に遷移
-          await updatePlanStatus(serviceClient, plan.id, 'generating');
+          if (plan?.id) await updatePlanStatus(serviceClient, plan.id, 'generating');
 
           // --- 1. 記事を articles テーブルに insert ---
           const insertPayload: Record<string, unknown> = {
@@ -815,7 +817,7 @@ export async function POST(request: NextRequest) {
           });
 
           // Update plan status to completed
-          await updatePlanStatus(serviceClient, plan.id, 'completed');
+          if (plan?.id) await updatePlanStatus(serviceClient, plan.id, 'completed');
 
           // Background: compute related articles
           try {
@@ -872,7 +874,7 @@ export async function POST(request: NextRequest) {
       await markFailed(serviceClient, queueItem.id, errorMessage);
 
       // プランも failed に更新
-      await updatePlanStatus(serviceClient, plan.id, 'failed');
+      if (plan?.id) await updatePlanStatus(serviceClient, plan.id, 'failed');
 
       return NextResponse.json(
         {
