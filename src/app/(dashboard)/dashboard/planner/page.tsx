@@ -632,9 +632,13 @@ export default function PlannerPage() {
 
   // ── Batch Generate ─────────────────────────────────────────────
   const handleBatchGenerate = async () => {
-    if (queueLockRef.current) return;
+    if (queueLockRef.current) {
+      console.log('[batch] Already running — skipping');
+      return;
+    }
     queueLockRef.current = true;
     batchCancelRef.current = false;
+    console.log('[batch] Starting batch generation...');
 
     try {
       // Step 1: Prepare batch
@@ -679,13 +683,19 @@ export default function PlannerPage() {
 
         while (!articleDone && stepCount < maxSteps && !batchCancelRef.current) {
           stepCount++;
+          console.log(`[batch] Article ${i+1}/${items.length} step ${stepCount}: calling /api/queue/process`);
           try {
             const res = await fetch('/api/queue/process', { method: 'POST' });
             const data = await res.json();
+            console.log(`[batch] Response:`, { status: res.status, processed: data.processed, step: data.currentStep, conflict: data.conflict, error: data.error });
 
-            if (data.conflict) continue;
+            if (data.conflict) {
+              console.log('[batch] Conflict - retrying');
+              continue;
+            }
 
             if (!data.processed) {
+              console.log('[batch] No items processed - article may be done or queue empty');
               articleDone = true;
               break;
             }
