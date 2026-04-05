@@ -487,6 +487,20 @@ export async function POST(request: NextRequest) {
 
           // 本文生成チェーン実行（AI直接呼び出し）
           const outline = article.stage1_outline as unknown as Stage1OutlineResult;
+
+          // Fetch source article content for fidelity checking
+          let sourceContent = '';
+          if (article.source_article_id) {
+            const { data: sourceArticle } = await serviceClient
+              .from('source_articles')
+              .select('title, content')
+              .eq('id', article.source_article_id)
+              .maybeSingle();
+            if (sourceArticle) {
+              sourceContent = `【${sourceArticle.title}】\n${sourceArticle.content}`;
+            }
+          }
+
           const stage2Input: Stage2Input = {
             articleId,
             outline,
@@ -495,6 +509,7 @@ export async function POST(request: NextRequest) {
             targetPersona: article.persona || 'spiritual_beginner',
             perspectiveType: article.perspective_type || 'concept_to_practice',
             targetWordCount: article.target_word_count ?? 2000,
+            sourceArticleContent: sourceContent || undefined,
           };
 
           console.log(`[queue] outline: Starting body generation for article ${articleId} (keyword: ${article.keyword})`);

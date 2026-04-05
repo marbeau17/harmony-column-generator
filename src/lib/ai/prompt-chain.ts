@@ -26,6 +26,11 @@ import {
   buildQualityCheckUserPrompt,
   parseQualityCheckResponse,
 } from '@/lib/ai/prompts/stage2-qualitycheck';
+import {
+  buildFidelityCheckSystemPrompt,
+  buildFidelityCheckUserPrompt,
+  type FidelityCheckResult,
+} from '@/lib/ai/prompts/stage2-fidelity-check';
 import type {
   Stage2Input,
   WritingResult,
@@ -342,6 +347,65 @@ export async function executeStage2Chain(
 
   chainLog.steps.push(proofreadStepResult);
   onProgress?.('proofreading', 'completed');
+
+  // ════════════════════════════════════════════════════════════════════════
+  // ステップ 2.5: Fidelity Check (元記事踏襲チェック)
+  // Only runs when source article content is available
+  // ════════════════════════════════════════════════════════════════════════
+
+  let fidelityResult: FidelityCheckResult | null = null;
+
+  if (input.sourceArticleContent) {
+    console.log(`[chain] Step 2.5/3: FidelityCheck (source article comparison)...`);
+    try {
+      const fidelitySystemPrompt = buildFidelityCheckSystemPrompt();
+      const fidelityUserPrompt = buildFidelityCheckUserPrompt(
+        proofreadResult.correctedMarkdown,
+        input.sourceArticleContent,
+        input.keyword,
+        input.perspectiveType || 'concept_to_practice',
+      );
+
+      const fidelityResponse = await generateText(
+        fidelitySystemPrompt,
+        fidelityUserPrompt,
+        { temperature: 0.2, maxOutputTokens: 8192, timeoutMs: 90_000, maxRetries: 0 },
+      );
+
+      // Parse JSON response
+      const cleanFidelity = fidelityResponse.text
+        .replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+      fidelityResult = JSON.parse(cleanFidelity) as FidelityCheckResult;
+
+      console.log(`[chain] FidelityCheck: score=${fidelityResult.overallScore}, aligned=${fidelityResult.isAligned}`);
+
+      // If not aligned and corrected text provided, use it
+      if (!fidelityResult.isAligned && fidelityResult.correctedText) {
+        console.log(`[chain] FidelityCheck: Using corrected text (was misaligned)`);
+        proofreadResult = {
+          ...proofreadResult,
+          correctedMarkdown: fidelityResult.correctedText,
+        };
+      }
+
+      logger.info('ai', 'chain.fidelity.complete', {
+        chainId: chainLog.chainId,
+        isAligned: fidelityResult.isAligned,
+        overallScore: fidelityResult.overallScore,
+        spiritualScore: fidelityResult.spiritualReview.score,
+        psychologicalScore: fidelityResult.psychologicalReview.score,
+      });
+    } catch (fidelityError) {
+      // Fidelity check failure → skip (like proofreading fallback)
+      console.log(`[chain] FidelityCheck: SKIPPED (error: ${String(fidelityError).substring(0, 100)})`);
+      logger.warn('ai', 'chain.fidelity.failed_fallback', {
+        chainId: chainLog.chainId,
+        error: String(fidelityError),
+      });
+    }
+  } else {
+    console.log(`[chain] FidelityCheck: SKIPPED (no source article)`);
+  }
 
   // ════════════════════════════════════════════════════════════════════════
   // skipQualityCheck: 品質チェックをスキップして校閲結果をそのまま返す

@@ -108,6 +108,10 @@ export interface Stage2Input {
   perspectiveType: string;
   /** 目標文字数（デフォルト 2000） */
   targetWordCount?: number;
+  /** 元記事の内容（忠実度チェック用） */
+  sourceArticleContent?: string;
+  /** 元記事ID */
+  sourceArticleId?: string;
 }
 
 /** サブステップA: 執筆結果 */
