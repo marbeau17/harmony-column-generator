@@ -14,6 +14,7 @@ import {
   X,
   Pencil,
   Play,
+  PlayCircle,
   Loader2,
   RefreshCw,
   AlertCircle,
@@ -520,6 +521,15 @@ export default function PlannerPage() {
   // Guard: useRef で多重起動を防止（React state は非同期なのでガードに不向き）
   const queueLockRef = useRef(false);
 
+  // Batch generation state
+  const [batchState, setBatchState] = useState<{
+    status: 'idle' | 'preparing' | 'running' | 'completed';
+    items: { queueId: string; articleId: string; keyword: string; title: string; status: 'waiting' | 'processing' | 'completed' | 'failed'; currentStep: string; errorMessage?: string }[];
+    completedCount: number;
+    failedCount: number;
+  } | null>(null);
+  const batchCancelRef = useRef(false);
+
   const handleStartQueue = async () => {
     // 既にループ実行中なら二重起動しない
     if (queueLockRef.current) {
@@ -612,6 +622,131 @@ export default function PlannerPage() {
     } catch {
       setActionMessage('リトライに失敗しました');
       setTimeout(() => setActionMessage(null), 3000);
+    }
+  };
+
+  // ── Batch Generate ─────────────────────────────────────────────
+  const handleBatchGenerate = async () => {
+    if (queueLockRef.current) return;
+    queueLockRef.current = true;
+    batchCancelRef.current = false;
+
+    try {
+      // Step 1: Prepare batch
+      setBatchState({ status: 'preparing', items: [], completedCount: 0, failedCount: 0 });
+
+      const prepRes = await fetch('/api/queue/batch-generate', { method: 'POST' });
+      const prepData = await prepRes.json();
+
+      if (!prepRes.ok || !prepData.batchItems?.length) {
+        alert(prepData.message || prepData.error || '処理対象の記事がありません');
+        setBatchState(null);
+        return;
+      }
+
+      const items = prepData.batchItems.map((item: any) => ({
+        ...item,
+        status: 'waiting' as const,
+        currentStep: 'outline',
+      }));
+
+      setBatchState({ status: 'running', items, completedCount: 0, failedCount: 0 });
+
+      // Step 2: Process each article serially
+      let completed = 0;
+      let failed = 0;
+
+      for (let i = 0; i < items.length; i++) {
+        if (batchCancelRef.current) break;
+
+        // Mark current item as processing
+        setBatchState(prev => {
+          if (!prev) return prev;
+          const newItems = [...prev.items];
+          newItems[i] = { ...newItems[i], status: 'processing' };
+          return { ...prev, items: newItems };
+        });
+
+        // Process this article through all steps
+        let articleDone = false;
+        let stepCount = 0;
+        const maxSteps = 20; // safety limit
+
+        while (!articleDone && stepCount < maxSteps && !batchCancelRef.current) {
+          stepCount++;
+          try {
+            const res = await fetch('/api/queue/process', { method: 'POST' });
+            const data = await res.json();
+
+            if (data.conflict) continue;
+
+            if (!data.processed) {
+              articleDone = true;
+              break;
+            }
+
+            // Update step in UI
+            if (data.currentStep) {
+              setBatchState(prev => {
+                if (!prev) return prev;
+                const newItems = [...prev.items];
+                newItems[i] = { ...newItems[i], currentStep: data.currentStep };
+                return { ...prev, items: newItems };
+              });
+            }
+
+            if (data.currentStep === 'completed') {
+              completed++;
+              setBatchState(prev => {
+                if (!prev) return prev;
+                const newItems = [...prev.items];
+                newItems[i] = { ...newItems[i], status: 'completed', currentStep: 'completed' };
+                return { ...prev, items: newItems, completedCount: completed };
+              });
+              articleDone = true;
+            }
+
+            if (data.error || data.step === 'failed') {
+              failed++;
+              setBatchState(prev => {
+                if (!prev) return prev;
+                const newItems = [...prev.items];
+                newItems[i] = { ...newItems[i], status: 'failed', errorMessage: data.error };
+                return { ...prev, items: newItems, failedCount: failed };
+              });
+              articleDone = true;
+            }
+          } catch {
+            failed++;
+            setBatchState(prev => {
+              if (!prev) return prev;
+              const newItems = [...prev.items];
+              newItems[i] = { ...newItems[i], status: 'failed', errorMessage: 'ネットワークエラー' };
+              return { ...prev, items: newItems, failedCount: failed };
+            });
+            articleDone = true;
+          }
+        }
+
+        // If not marked as completed/failed, check status
+        if (!articleDone) {
+          failed++;
+          setBatchState(prev => {
+            if (!prev) return prev;
+            const newItems = [...prev.items];
+            newItems[i] = { ...newItems[i], status: 'failed', errorMessage: 'ステップ上限超過' };
+            return { ...prev, items: newItems, failedCount: failed };
+          });
+        }
+
+        // Refresh queue/plans after each article
+        await fetchQueue();
+        await fetchPlans();
+      }
+
+      setBatchState(prev => prev ? { ...prev, status: 'completed' } : prev);
+    } finally {
+      queueLockRef.current = false;
     }
   };
 
@@ -1072,8 +1207,59 @@ export default function PlannerPage() {
               )}
               キュー処理開始
             </button>
+            <button
+              onClick={handleBatchGenerate}
+              disabled={queueLockRef.current || batchState?.status === 'running'}
+              className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50 min-h-[44px] sm:py-1.5 sm:min-h-0"
+            >
+              <PlayCircle className="h-4 w-4" />
+              一括生成
+            </button>
           </div>
         </div>
+
+        {/* Batch Progress Panel */}
+        {batchState && (
+          <div className="mx-4 mt-4 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:mx-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-brand-700">
+                一括生成 {batchState.status === 'running' ? '処理中...' : batchState.status === 'completed' ? '完了' : '準備中...'}
+              </h3>
+              {batchState.status === 'running' && (
+                <button onClick={() => { batchCancelRef.current = true; }} className="text-xs text-red-500 hover:text-red-700">中止</button>
+              )}
+              {batchState.status === 'completed' && (
+                <button onClick={() => setBatchState(null)} className="text-xs text-gray-500 hover:text-gray-700">閉じる</button>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            <div className="mb-3">
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span>{batchState.completedCount}/{batchState.items.length} 記事完了</span>
+                {batchState.failedCount > 0 && <span className="text-red-500">{batchState.failedCount}件失敗</span>}
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${((batchState.completedCount + batchState.failedCount) / Math.max(batchState.items.length, 1)) * 100}%` }} />
+              </div>
+            </div>
+
+            {/* Item list */}
+            <div className="space-y-1 max-h-60 overflow-y-auto">
+              {batchState.items.map((item) => (
+                <div key={item.articleId} className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded ${item.status === 'processing' ? 'bg-blue-50' : item.status === 'completed' ? 'bg-green-50' : item.status === 'failed' ? 'bg-red-50' : ''}`}>
+                  <span className="w-4 text-center">
+                    {item.status === 'completed' ? '✓' : item.status === 'failed' ? '✗' : item.status === 'processing' ? '●' : '○'}
+                  </span>
+                  <span className="flex-1 truncate">{item.title || item.keyword}</span>
+                  <span className="text-gray-400 shrink-0">
+                    {item.status === 'processing' ? item.currentStep : item.status === 'failed' ? item.errorMessage?.slice(0, 20) : item.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Requirement 4: queue all-completed notification */}
         {queueAllCompleted && queueItems.length > 0 && (
