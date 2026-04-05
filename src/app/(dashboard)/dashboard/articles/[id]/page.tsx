@@ -122,6 +122,8 @@ export default function ArticleDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [imagePromptLoading, setImagePromptLoading] = useState(false);
   const [imageGenLoading, setImageGenLoading] = useState(false);
+  const [ftpUploading, setFtpUploading] = useState(false);
+  const [ftpResult, setFtpResult] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // ─── データ取得 ─────────────────────────────────────────────────────────
@@ -254,6 +256,28 @@ export default function ArticleDetailPage() {
       setError(err instanceof Error ? err.message : '予期せぬエラー');
     } finally {
       setImageGenLoading(false);
+    }
+  };
+
+  // ─── FTPアップロード ────────────────────────────────────────────────────
+
+  const handleFtpUpload = async () => {
+    setFtpUploading(true);
+    setFtpResult(null);
+    console.log('[ftp] Starting FTP upload for article:', articleId);
+    try {
+      const res = await fetch(`/api/articles/${articleId}/deploy`, { method: 'POST' });
+      const data = await res.json();
+      console.log('[ftp] Response:', data);
+      if (!res.ok) throw new Error(data.error || 'FTPアップロードに失敗しました');
+      setFtpResult(`✓ ${data.message}`);
+      setTimeout(() => setFtpResult(null), 5000);
+    } catch (err) {
+      console.error('[ftp] Error:', err);
+      setFtpResult(`✗ ${err instanceof Error ? err.message : 'エラー'}`);
+      setTimeout(() => setFtpResult(null), 8000);
+    } finally {
+      setFtpUploading(false);
     }
   };
 
@@ -471,6 +495,37 @@ export default function ArticleDetailPage() {
         </div>
         <div className="w-full sm:w-auto">{renderActionButton()}</div>
       </section>
+
+      {/* ─ FTPデプロイ ─ */}
+      {article.status === 'published' && (
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">FTPデプロイ</h2>
+              <p className="text-xs text-gray-400 mt-1">この記事をFTPサーバーにアップロードします（index.html更新含む）</p>
+            </div>
+            <button
+              onClick={handleFtpUpload}
+              disabled={ftpUploading}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {ftpUploading ? (
+                <>
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  アップロード中...
+                </>
+              ) : (
+                '🚀 FTPアップロード'
+              )}
+            </button>
+          </div>
+          {ftpResult && (
+            <p className={`mt-2 text-xs ${ftpResult.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>
+              {ftpResult}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* ─ メタ情報 ─ */}
       <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
