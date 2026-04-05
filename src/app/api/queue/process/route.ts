@@ -118,18 +118,46 @@ export async function POST(request: NextRequest) {
 
     const serviceClient = await createServiceRoleClient();
 
-    // 最優先の pending / 処理中キューアイテムを1件取得
+    // ── Optimistic locking: 未着手 or 10分以上前に開始されてスタックしたアイテムを1件取得 ──
     const processingSteps = ['pending', 'outline', 'body', 'images', 'seo_check'];
+    const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
 
-    const { data: queueItem, error: fetchError } = await serviceClient
+    // まず started_at IS NULL のアイテムを優先的に取得
+    let { data: queueItem, error: fetchError } = await serviceClient
       .from('generation_queue')
       .select('*, content_plan:content_plans(*)')
       .in('step', processingSteps)
       .is('error_message', null)
+      .is('started_at', null)
       .order('priority', { ascending: true })
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
+
+    // 未着手アイテムがなければ、スタック（10分超）したアイテムを回収
+    if (!fetchError && !queueItem) {
+      const staleResult = await serviceClient
+        .from('generation_queue')
+        .select('*, content_plan:content_plans(*)')
+        .in('step', processingSteps)
+        .is('error_message', null)
+        .lt('started_at', staleThreshold)
+        .order('priority', { ascending: true })
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      queueItem = staleResult.data;
+      fetchError = staleResult.error;
+
+      if (queueItem) {
+        logger.warn('api', 'processQueue.recovering_stale_item', {
+          queueId: queueItem.id,
+          startedAt: queueItem.started_at,
+          step: queueItem.step,
+        });
+      }
+    }
 
     if (fetchError) {
       logger.error('api', 'processQueue.fetch', undefined, fetchError);
@@ -143,6 +171,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         message: '処理対象のキューアイテムがありません。',
         processed: false,
+      });
+    }
+
+    // ── Optimistic lock (CAS): started_at を条件付きで更新し、処理権を確保する ──
+    // SELECT → UPDATE 間に別リクエストが同じアイテムを claimed していた場合、
+    // UPDATE の WHERE が合致せず 0 行返却 → 競合検出できる
+    const claimTimestamp = new Date().toISOString();
+    const previousStartedAt = queueItem.started_at as string | null;
+    let claimSuccess = false;
+    if (previousStartedAt === null) {
+      const { data: claimed } = await serviceClient
+        .from('generation_queue')
+        .update({ started_at: claimTimestamp })
+        .eq('id', queueItem.id)
+        .is('started_at', null)
+        .select('id');
+      claimSuccess = Array.isArray(claimed) && claimed.length > 0;
+    } else {
+      // stale アイテムを回収する場合: 元の started_at が変わっていないことを確認
+      const { data: claimed } = await serviceClient
+        .from('generation_queue')
+        .update({ started_at: claimTimestamp })
+        .eq('id', queueItem.id)
+        .eq('started_at', previousStartedAt)
+        .select('id');
+      claimSuccess = Array.isArray(claimed) && claimed.length > 0;
+    }
+
+    if (!claimSuccess) {
+      // 別のリクエストが先にこのアイテムを取得した → 競合回避、リトライを促す
+      logger.info('api', 'processQueue.claim_conflict', {
+        queueId: queueItem.id,
+        step: queueItem.step,
+      });
+      return NextResponse.json({
+        message: '別のリクエストが処理中です。',
+        processed: false,
+        conflict: true,
       });
     }
 
@@ -164,13 +230,7 @@ export async function POST(request: NextRequest) {
 
     const currentStep = queueItem.step as string;
 
-    // started_at を記録（初回のみ）
-    if (!queueItem.started_at) {
-      await serviceClient
-        .from('generation_queue')
-        .update({ started_at: new Date().toISOString() })
-        .eq('id', queueItem.id);
-    }
+    // started_at は optimistic lock (CAS) で既に設定済み
 
     try {
       switch (currentStep) {

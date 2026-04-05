@@ -517,7 +517,16 @@ export default function PlannerPage() {
   };
 
   // ── Queue processing (loops until all items completed/failed) ──
+  // Guard: useRef で多重起動を防止（React state は非同期なのでガードに不向き）
+  const queueLockRef = useRef(false);
+
   const handleStartQueue = async () => {
+    // 既にループ実行中なら二重起動しない
+    if (queueLockRef.current) {
+      console.log('[queue] Already running — skipping duplicate invocation');
+      return;
+    }
+    queueLockRef.current = true;
     setQueueRunning(true);
     setQueueAllCompleted(false);
 
@@ -544,6 +553,12 @@ export default function PlannerPage() {
 
         console.log(`[queue] Response: status=${res.status}`, data);
 
+        // Conflict: another request claimed the item — just retry immediately
+        if (data.conflict) {
+          console.log('[queue] Claim conflict — retrying next item');
+          continue;
+        }
+
         // No more items to process
         if (res.status === 404 || data.processed === false || data.message?.includes('処理対象')) {
           console.log('[queue] No more items to process. Done.');
@@ -568,6 +583,7 @@ export default function PlannerPage() {
 
     console.log(`[queue] Loop ended after ${iteration} iterations`);
 
+    queueLockRef.current = false;
     setQueueRunning(false);
     await fetchQueue();
     await fetchPlans();
