@@ -125,13 +125,16 @@ export default function ArticleEditPage() {
         const imageFiles = a.image_files as { position: string; url: string; alt: string }[] | null;
         if (imageFiles && Array.isArray(imageFiles)) {
           for (const img of imageFiles) {
-            // Match various placeholder formats
+            const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+            // Match various placeholder formats including TipTap-stripped versions
             const patterns = [
               new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
               new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
               new RegExp(`IMAGE:${img.position}:[\\w.-]+`, 'g'),
+              new RegExp(`<p[^>]*>\\s*IMAGE:${img.position}\\s*</p>`, 'g'),
+              new RegExp(`(?<![\\w:])IMAGE:${img.position}(?![\\w:])`, 'g'),
+              new RegExp(`<(?:div|span|p)[^>]*class="[^"]*placeholder[^"]*"[^>]*>[^<]*IMAGE:${img.position}[^<]*</(?:div|span|p)>`, 'g'),
             ];
-            const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
             for (const pattern of patterns) {
               html = html.replace(pattern, imgTag);
             }
@@ -292,22 +295,51 @@ export default function ArticleEditPage() {
       // Replace placeholders in current body HTML
       let html = bodyHtml;
       const imageFiles = a.image_files as { position: string; url: string; alt: string }[] | null;
+
+      console.log('[handleApplyImages] bodyHtml (first 500 chars):', html.slice(0, 500));
+      console.log('[handleApplyImages] image_files:', JSON.stringify(imageFiles, null, 2));
+
       if (imageFiles && Array.isArray(imageFiles)) {
+        let totalReplacements = 0;
         for (const img of imageFiles) {
-          const patterns = [
-            new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
-            new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
-            new RegExp(`IMAGE:${img.position}:[\\w.-]+`, 'g'),
-          ];
           const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+
+          // Patterns ordered most-aggressive first (TipTap strips HTML comments)
+          const patterns = [
+            // 1. <p> wrapping IMAGE text (TipTap wraps bare text in <p> tags)
+            new RegExp(`<p>\\s*IMAGE:${img.position}[^<]*<\\/p>`, 'g'),
+            // 2. Bare IMAGE text with optional :filename suffix
+            new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)?`, 'g'),
+            // 3. Original HTML comment format: <!--IMAGE:body:filename-->
+            new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
+            // 4. Comment wrapped in div
+            new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
+          ];
+
           for (const pattern of patterns) {
+            const before = html;
             html = html.replace(pattern, imgTag);
+            if (before !== html) {
+              const matches = (before.match(pattern) || []).length;
+              console.log(`[handleApplyImages] Pattern ${pattern.source} matched ${matches} time(s) for position "${img.position}"`);
+              totalReplacements += matches;
+            }
           }
         }
+        console.log(`[handleApplyImages] Total replacements made: ${totalReplacements}`);
+        if (totalReplacements === 0) {
+          console.warn('[handleApplyImages] No replacements made! Searching for IMAGE occurrences in HTML...');
+          const imageOccurrences = html.match(/IMAGE:[a-z_]+/gi);
+          console.warn('[handleApplyImages] Found IMAGE patterns in HTML:', imageOccurrences);
+          // Dump a larger chunk to help debug
+          console.warn('[handleApplyImages] Full HTML length:', html.length, '| first 2000 chars:', html.slice(0, 2000));
+        }
+      } else {
+        console.warn('[handleApplyImages] No image_files found on article');
       }
       setBodyHtml(html);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('[handleApplyImages] Error:', err);
     }
   }, [articleId, bodyHtml]);
 

@@ -110,15 +110,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           logger.error('api', 'related-articles-error', { articleId: id }, err);
         });
 
-      // out/ ディレクトリへ静的エクスポート
-      exportArticleToOut(id)
-        .then(() => exportHubPageToOut())
-        .then((hubResult) => {
-          logger.info('api', 'static-export-complete', { articleId: id, files: hubResult.files.length });
-        })
-        .catch((err) => {
-          logger.error('api', 'static-export-error', { articleId: id }, err);
-        });
+      // out/ ディレクトリへ静的エクスポート（ローカル環境のみ）
+      if (!process.env.VERCEL) {
+        exportArticleToOut(id)
+          .then(() => exportHubPageToOut())
+          .then((hubResult) => {
+            logger.info('api', 'static-export-complete', { articleId: id, files: hubResult.files.length });
+          })
+          .catch((err) => {
+            logger.error('api', 'static-export-error', { articleId: id }, err);
+          });
+      }
     }
 
     return NextResponse.json({ data: updated });

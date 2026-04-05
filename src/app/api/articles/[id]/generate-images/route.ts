@@ -67,10 +67,10 @@ export async function POST(
     return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   }
 
-  // 2. 記事取得
+  // 2. 記事取得（本文HTMLも取得して画像挿入用に使う）
   const { data: article, error: articleError } = await supabase
     .from('articles')
-    .select('id, title, image_prompts')
+    .select('id, title, image_prompts, stage2_body_html, stage3_final_html')
     .eq('id', articleId)
     .single();
 
@@ -165,13 +165,38 @@ export async function POST(
       filename: `${r.position}.webp`,
     }));
 
+    // 本文HTMLのプレースホルダーを実画像に自動置換
+    function replaceImagePlaceholders(html: string | null): string | null {
+      if (!html) return null;
+      let updated = html;
+      for (const img of imageFiles) {
+        const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+        const patterns = [
+          new RegExp(`<div[^>]*class="[^"]*placeholder[^"]*"[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
+          new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
+          new RegExp(`IMAGE:${img.position}(?::[\\w.-]+)?`, 'g'),
+        ];
+        for (const pattern of patterns) {
+          updated = updated.replace(pattern, imgTag);
+        }
+      }
+      return updated;
+    }
+
+    const updatedStage2 = replaceImagePlaceholders(article.stage2_body_html as string | null);
+    const updatedStage3 = replaceImagePlaceholders(article.stage3_final_html as string | null);
+
     try {
+      const updateFields: Record<string, unknown> = {
+        image_files: imageFiles,
+        updated_at: new Date().toISOString(),
+      };
+      if (updatedStage2) updateFields.stage2_body_html = updatedStage2;
+      if (updatedStage3) updateFields.stage3_final_html = updatedStage3;
+
       const { error: updateError } = await supabase
         .from('articles')
-        .update({
-          image_files: imageFiles,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateFields)
         .eq('id', articleId);
 
       if (updateError) {

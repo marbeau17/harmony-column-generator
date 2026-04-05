@@ -10,6 +10,13 @@ import { logger } from '@/lib/logger';
 export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
+  if (process.env.VERCEL) {
+    return NextResponse.json(
+      { error: 'エクスポートはローカル環境でのみ実行可能です', success: false },
+      { status: 400 },
+    );
+  }
+
   try {
     // Auth check
     const supabase = await createServerSupabaseClient();
