@@ -17,11 +17,11 @@ export async function POST() {
 
     const serviceClient = await createServiceRoleClient();
 
-    // 1. Find all articles in outline_approved status
+    // 1. Find all articles in outline_approved or body_review status
     const { data: articles, error: articlesError } = await serviceClient
       .from('articles')
-      .select('id, title, slug, keyword, theme')
-      .eq('status', 'outline_approved')
+      .select('id, title, slug, keyword, theme, status')
+      .in('status', ['outline_approved', 'body_review', 'editing'])
       .order('created_at', { ascending: true });
 
     if (articlesError) {
@@ -36,10 +36,19 @@ export async function POST() {
       });
     }
 
-    // 2. For each article, ensure a queue entry exists at 'outline' step
+    // 2. For each article, determine the starting queue step based on status
     const batchItems = [];
 
+    // Map article status to the appropriate queue starting step
+    const statusToStep: Record<string, string> = {
+      outline_approved: 'outline',  // needs body generation
+      body_review: 'body',          // needs image prompts
+      editing: 'images',            // needs image generation + SEO + publish
+    };
+
     for (const article of articles) {
+      const targetStep = statusToStep[article.status] || 'outline';
+
       // Check existing queue entry
       const { data: existingQueue } = await serviceClient
         .from('generation_queue')
@@ -51,14 +60,14 @@ export async function POST() {
 
       if (existingQueue && !existingQueue.error_message &&
           ['outline', 'body', 'images', 'seo_check'].includes(existingQueue.step)) {
-        // Already has a valid queue entry
+        // Already has a valid queue entry in progress
         queueId = existingQueue.id;
       } else if (existingQueue && existingQueue.error_message) {
-        // Failed entry - reset it
+        // Failed entry - reset to appropriate step
         const { error: resetError } = await serviceClient
           .from('generation_queue')
           .update({
-            step: 'outline',
+            step: targetStep,
             error_message: null,
             started_at: null,
             completed_at: null,
@@ -69,6 +78,23 @@ export async function POST() {
           continue;
         }
         queueId = existingQueue.id;
+      } else if (existingQueue && existingQueue.step === 'completed') {
+        // Already completed - create new queue entry at the right step
+        const { data: newQueue, error: insertError } = await serviceClient
+          .from('generation_queue')
+          .insert({
+            plan_id: existingQueue.plan_id,
+            article_id: article.id,
+            step: targetStep,
+            priority: 0,
+          })
+          .select('id')
+          .single();
+        if (insertError) {
+          logger.warn('api', 'batchGenerate.reinsertFailed', { articleId: article.id, error: insertError.message });
+          continue;
+        }
+        queueId = newQueue.id;
       } else if (!existingQueue) {
         // No queue entry - find plan and create one
         const { data: plan } = await serviceClient
@@ -77,17 +103,14 @@ export async function POST() {
           .eq('article_id', article.id)
           .maybeSingle();
 
-        if (!plan) {
-          logger.warn('api', 'batchGenerate.noPlan', { articleId: article.id });
-          continue;
-        }
+        const planId = plan?.id || null;
 
         const { data: newQueue, error: insertError } = await serviceClient
           .from('generation_queue')
           .insert({
-            plan_id: plan.id,
+            plan_id: planId,
             article_id: article.id,
-            step: 'outline',
+            step: targetStep,
             priority: 0,
           })
           .select('id')
