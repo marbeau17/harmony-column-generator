@@ -77,6 +77,8 @@ export async function callGemini(
   const model = config.model || GEMINI_MODEL();
   const apiKey = config.apiKey || GEMINI_API_KEY();
   const url = `${BASE_URL}/${model}:generateContent?key=${apiKey}`;
+  const callStart = Date.now();
+  console.log(`[gemini] Calling ${model} (timeout=${config.timeoutMs ?? DEFAULTS.timeoutMs}ms)...`);
 
   // ── リクエストボディ組み立て ──
   const requestBody: Record<string, unknown> = {
@@ -200,6 +202,7 @@ export async function callGemini(
         attempt,
       });
 
+      console.log(`[gemini] Response OK in ${Math.round((Date.now() - callStart) / 1000)}s (${text.length} chars, ${finishReason})`);
       return {
         text,
         finishReason,

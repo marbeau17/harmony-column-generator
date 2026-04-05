@@ -171,6 +171,7 @@ export async function executeStage2Chain(
   const chainLog = createChainLog(input.articleId);
   const chainStart = Date.now();
 
+  console.log(`[chain] START: articleId=${input.articleId}, keyword=${input.keyword}`);
   logger.info('ai', 'chain.start', {
     chainId: chainLog.chainId,
     articleId: input.articleId,
@@ -181,6 +182,7 @@ export async function executeStage2Chain(
   // ステップ 1: Writing (temp 0.7)
   // ════════════════════════════════════════════════════════════════════════
 
+  console.log(`[chain] Step 1/3: Writing (timeout=120s)...`);
   onProgress?.('writing', 'started');
   let writingResult: WritingResult;
   let writingStepResult: ChainStepResult;
@@ -236,6 +238,7 @@ export async function executeStage2Chain(
         rawOutput: bodyClean.substring(0, 500) + '...',
       };
 
+      console.log(`[chain] Step 1/3: Writing DONE in ${Math.round((Date.now() - chainStart) / 1000)}s`);
       logger.info('ai', 'chain.writing.complete', {
         chainId: chainLog.chainId,
         durationMs: writingStepResult.durationMs,
@@ -269,6 +272,7 @@ export async function executeStage2Chain(
   // ステップ 2: Proofreading (temp 0.3)
   // ════════════════════════════════════════════════════════════════════════
 
+  console.log(`[chain] Step 2/3: Proofreading (timeout=60s)...`);
   onProgress?.('proofreading', 'started');
   let proofreadResult: ProofreadResult;
   let proofreadStepResult: ChainStepResult;
@@ -306,6 +310,7 @@ export async function executeStage2Chain(
         },
       };
 
+      console.log(`[chain] Step 2/3: Proofreading DONE in ${Math.round((Date.now() - chainStart) / 1000)}s`);
       logger.info('ai', 'chain.proofreading.complete', {
         chainId: chainLog.chainId,
         durationMs: proofreadStepResult.durationMs,
@@ -373,6 +378,7 @@ export async function executeStage2Chain(
   // ステップ 3: QualityCheck (temp 0.2)
   // ════════════════════════════════════════════════════════════════════════
 
+  console.log(`[chain] Step 3/3: QualityCheck (timeout=60s)...`);
   onProgress?.('qualitycheck', 'started');
   let factcheckResult: FactcheckResult;
   let qualityCheckStepResult: ChainStepResult;

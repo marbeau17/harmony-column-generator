@@ -497,9 +497,13 @@ export async function POST(request: NextRequest) {
             targetWordCount: article.target_word_count ?? 2000,
           };
 
+          console.log(`[queue] outline: Starting body generation for article ${articleId} (keyword: ${article.keyword})`);
+          const chainStartTime = Date.now();
+
           let chainResult;
           try {
             chainResult = await executeStage2Chain(stage2Input);
+            console.log(`[queue] outline: Body generation completed in ${Math.round((Date.now() - chainStartTime) / 1000)}s`);
           } catch (chainError) {
             // 失敗時は outline_approved に戻す（再試行可能にする）
             await serviceClient
@@ -549,6 +553,7 @@ export async function POST(request: NextRequest) {
 
         // ── body → 画像プロンプト生成 → images ──
         case 'body': {
+          console.log(`[queue] body: Starting image prompt generation`);
           const articleId = queueItem.article_id;
           if (!articleId) {
             throw new Error('article_id が設定されていません');
@@ -642,6 +647,7 @@ export async function POST(request: NextRequest) {
 
         // ── images → 実際の画像生成 + SEOスコアチェック → seo_check ──
         case 'images': {
+          console.log(`[queue] images: Starting image generation + SEO check`);
           const articleId = queueItem.article_id;
           if (!articleId) {
             throw new Error('article_id が設定されていません');
@@ -787,6 +793,7 @@ export async function POST(request: NextRequest) {
 
         // ── seo_check → 完了 → published（自動公開） ──
         case 'seo_check': {
+          console.log(`[queue] seo_check: Finalizing and auto-publishing`);
           const articleId = queueItem.article_id;
           if (!articleId) throw new Error('article_id が設定されていません');
 
