@@ -68,6 +68,48 @@ export function calculateSeoScore(article: Article): SeoScore {
   return { total: Math.min(100, total), breakdown };
 }
 
+// ─── キーワードマッチングヘルパー ─────────────────────────────────────────────
+// スペース区切りキーワードの各語が全てテキストに含まれるかチェック
+// 例: "引き寄せの法則 疲れた やめたい" → "引き寄せの法則", "疲れた", "やめたい" 全てが含まれるか
+
+function keywordTokens(keyword: string): string[] {
+  return keyword.split(/[\s　]+/).filter(Boolean);
+}
+
+/** 全てのキーワード語がテキストに含まれるか */
+function containsKeyword(text: string, keyword: string): boolean {
+  if (!keyword || !text) return false;
+  const tokens = keywordTokens(keyword);
+  if (tokens.length <= 1) return text.includes(keyword);
+  return tokens.every((t) => text.includes(t));
+}
+
+/** テキスト中のキーワード出現回数（個別語の最小出現回数） */
+function countKeyword(text: string, keyword: string): number {
+  if (!keyword || !text) return 0;
+  const tokens = keywordTokens(keyword);
+  if (tokens.length <= 1) {
+    return (text.match(new RegExp(escapeRegex(keyword), 'g')) ?? []).length;
+  }
+  // 各語の出現回数の最小値（全語がN回以上出現 = N回マッチ）
+  return Math.min(
+    ...tokens.map((t) => (text.match(new RegExp(escapeRegex(t), 'g')) ?? []).length),
+  );
+}
+
+/** キーワード密度を計算 */
+function keywordDensity(text: string, keyword: string, count: number): number {
+  if (!text || text.length === 0) return 0;
+  const tokens = keywordTokens(keyword);
+  const totalKeyLen = tokens.reduce((sum, t) => sum + t.length, 0);
+  return (count * totalKeyLen) / text.length;
+}
+
+/** RegExp特殊文字をエスケープ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // ─── SEO 個別スコア ─────────────────────────────────────────────────────────
 
 function scoreSeoTitle(article: Article, keyword: string): number {
@@ -77,9 +119,10 @@ function scoreSeoTitle(article: Article, keyword: string): number {
   if (title.length > 0) score += 3;
   if (title.length >= 25 && title.length <= 40) score += 4;
   else if (title.length > 0) score += 2;
-  if (keyword && title.includes(keyword)) score += 5;
-  // キーワードが前方（先頭15文字以内）にあるか
-  if (keyword && title.indexOf(keyword) >= 0 && title.indexOf(keyword) < 15) {
+  if (keyword && containsKeyword(title, keyword)) score += 5;
+  // キーワードの主要語が前方（先頭15文字以内）にあるか
+  const firstToken = keywordTokens(keyword)[0] ?? keyword;
+  if (keyword && title.includes(firstToken) && title.indexOf(firstToken) < 15) {
     score += 3;
   }
 
@@ -93,7 +136,7 @@ function scoreSeoMeta(article: Article, keyword: string): number {
   if (desc.length > 0) score += 3;
   if (desc.length >= 80 && desc.length <= 120) score += 5;
   else if (desc.length >= 50 && desc.length <= 160) score += 3;
-  if (keyword && desc.includes(keyword)) score += 5;
+  if (keyword && containsKeyword(desc, keyword)) score += 5;
   // 行動喚起の言葉が含まれるか
   if (/解説|紹介|方法|ガイド|お伝え/.test(desc)) score += 2;
 
@@ -115,10 +158,10 @@ function scoreSeoHeadings(html: string, keyword: string): number {
   // 見出しにキーワードが含まれる
   const allHeadings = [...h2Matches, ...h3Matches].join('');
   const headingText = allHeadings.replace(/<[^>]*>/g, '');
-  if (keyword && headingText.includes(keyword)) score += 3;
+  if (keyword && containsKeyword(headingText, keyword)) score += 3;
   // H2 の中にキーワードが含まれる見出しが複数ある
   const keywordH2 = h2Matches.filter((h) =>
-    h.replace(/<[^>]*>/g, '').includes(keyword),
+    containsKeyword(h.replace(/<[^>]*>/g, ''), keyword),
   );
   if (keywordH2.length >= 2) score += 2;
 
@@ -134,10 +177,10 @@ function scoreSeoKeywords(html: string, keyword: string): number {
 
   if (textLength === 0) return 0;
 
-  // キーワード出現回数
-  const keywordCount = (text.match(new RegExp(keyword, 'g')) ?? []).length;
+  // キーワード出現回数（個別語の最小出現回数）
+  const keywordCount = countKeyword(text, keyword);
   // キーワード密度 (0.5% - 2.5% が理想)
-  const density = (keywordCount * keyword.length) / textLength;
+  const density = keywordDensity(text, keyword, keywordCount);
 
   if (keywordCount > 0) score += 3;
   if (density >= 0.005 && density <= 0.025) score += 5;
@@ -145,11 +188,11 @@ function scoreSeoKeywords(html: string, keyword: string): number {
   else if (density > 0.025 && density <= 0.04) score += 2;
 
   // 最初の 200 文字以内にキーワードがあるか
-  if (text.slice(0, 200).includes(keyword)) score += 4;
+  if (containsKeyword(text.slice(0, 200), keyword)) score += 4;
 
   // 最後の段落にもキーワードがあるか
   const lastParagraph = text.slice(-300);
-  if (lastParagraph.includes(keyword)) score += 3;
+  if (containsKeyword(lastParagraph, keyword)) score += 3;
 
   return Math.min(15, score);
 }
@@ -271,7 +314,7 @@ function scoreAioAnswerBlock(html: string, keyword: string): number {
 
   // 冒頭 300 文字以内にキーワードに対する直接的な回答があるか
   const intro = text.slice(0, 300);
-  if (keyword && intro.includes(keyword)) score += 5;
+  if (keyword && containsKeyword(intro, keyword)) score += 5;
 
   // 「とは」「です」「ます」で始まる簡潔な定義文
   if (/とは.{10,80}(です|ます)/.test(intro)) score += 8;

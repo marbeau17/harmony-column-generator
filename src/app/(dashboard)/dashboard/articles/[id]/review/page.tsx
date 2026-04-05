@@ -17,6 +17,25 @@ interface SeoCheckItem {
   detail: string;
 }
 
+// キーワードマッチヘルパー（スペース区切り対応）
+function kwTokens(kw: string): string[] {
+  return kw.split(/[\s　]+/).filter(Boolean);
+}
+function kwContains(text: string, kw: string): boolean {
+  const tokens = kwTokens(kw);
+  if (tokens.length <= 1) return text.includes(kw);
+  return tokens.every((t) => text.includes(t));
+}
+function kwCount(text: string, kw: string): number {
+  const tokens = kwTokens(kw);
+  if (tokens.length <= 1) {
+    return (text.match(new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+  }
+  return Math.min(...tokens.map((t) =>
+    (text.match(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length,
+  ));
+}
+
 function calculateSeoChecks(article: Article): SeoCheckItem[] {
   const checks: SeoCheckItem[] = [];
   const title = article.stage1_outline?.title_proposal ?? article.title ?? '';
@@ -34,11 +53,12 @@ function calculateSeoChecks(article: Article): SeoCheckItem[] {
 
   // タイトルにキーワード含有
   if (keyword) {
+    const titleHasKw = kwContains(title, keyword);
     checks.push({
       label: 'タイトルにキーワード',
-      status: title.includes(keyword) ? 'good' : 'bad',
-      detail: title.includes(keyword)
-        ? `「${keyword}」を含んでいます`
+      status: titleHasKw ? 'good' : 'bad',
+      detail: titleHasKw
+        ? `「${keyword}」の主要語を含んでいます`
         : `「${keyword}」が含まれていません`,
     });
   }
@@ -53,11 +73,12 @@ function calculateSeoChecks(article: Article): SeoCheckItem[] {
 
   // メタにキーワード含有
   if (keyword) {
+    const metaHasKw = kwContains(meta, keyword);
     checks.push({
       label: 'メタにキーワード',
-      status: meta.includes(keyword) ? 'good' : 'warning',
-      detail: meta.includes(keyword)
-        ? `「${keyword}」を含んでいます`
+      status: metaHasKw ? 'good' : 'warning',
+      detail: metaHasKw
+        ? `「${keyword}」の主要語を含んでいます`
         : `「${keyword}」が含まれていません`,
     });
   }
@@ -65,7 +86,7 @@ function calculateSeoChecks(article: Article): SeoCheckItem[] {
   // 本文にキーワード含有
   if (keyword && bodyHtml) {
     const plainText = bodyHtml.replace(/<[^>]+>/g, '');
-    const count = (plainText.match(new RegExp(keyword, 'g')) || []).length;
+    const count = kwCount(plainText, keyword);
     checks.push({
       label: '本文キーワード出現数',
       status: count >= 3 ? 'good' : count >= 1 ? 'warning' : 'bad',
