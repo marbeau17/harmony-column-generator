@@ -334,14 +334,31 @@ export async function generateJson<T>(
     ...options,
   });
 
-  // finishReason を先にチェック — 切り詰められた応答はパース前に拒否
+  // finishReason が MAX_TOKENS の場合、修復を試みる（即座にエラーにしない）
   if (response.finishReason === 'MAX_TOKENS') {
-    console.error('[gemini.json_truncated]', {
+    console.warn('[gemini.json_truncated] Attempting repair...', {
       finishReason: response.finishReason,
       tokenUsage: response.tokenUsage,
-      responseText: response.text.substring(0, 300),
+      responseLength: response.text.length,
     });
-    throw new Error('AI出力がトークン上限で切り捨てられました。再試行してください。');
+    const truncatedClean = response.text
+      .replace(/^```json\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    try {
+      const repaired = repairTruncatedJson(truncatedClean);
+      const data = JSON.parse(repaired) as T;
+      console.info('[gemini.json_truncated_repair_success]', {
+        originalLength: truncatedClean.length,
+        repairedLength: repaired.length,
+      });
+      return { data, response };
+    } catch {
+      console.error('[gemini.json_truncated_repair_failed]', {
+        responseText: response.text.substring(0, 500),
+      });
+      throw new Error('AI出力がトークン上限で切り捨てられました。再試行してください。');
+    }
   }
 
   // Gemini が ```json ... ``` で囲む場合があるため除去
