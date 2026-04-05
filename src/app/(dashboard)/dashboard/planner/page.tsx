@@ -524,7 +524,7 @@ export default function PlannerPage() {
   // Batch generation state
   const [batchState, setBatchState] = useState<{
     status: 'idle' | 'preparing' | 'running' | 'completed';
-    items: { queueId: string; articleId: string; keyword: string; title: string; status: 'waiting' | 'processing' | 'completed' | 'failed'; currentStep: string; errorMessage?: string }[];
+    items: { queueId: string; articleId: string; keyword: string; title: string; status: 'waiting' | 'processing' | 'completed' | 'failed'; currentStep: string; errorMessage?: string; published?: boolean }[];
     completedCount: number;
     failedCount: number;
   } | null>(null);
@@ -580,6 +580,11 @@ export default function PlannerPage() {
           // Don't break - try next iteration (the failed item gets error_message set and will be skipped)
         } else {
           console.log(`[queue] Step completed: ${data.previousStep} → ${data.newStep} for plan "${data.keyword || 'unknown'}"`);
+          if (data.published) {
+            console.log(`[queue] Article published: ${data.title}`);
+            // Show a brief notification
+            setActionMessage(`記事「${data.title}」を自動公開しました ✓`);
+          }
         }
 
         // Refresh UI after each step
@@ -697,10 +702,17 @@ export default function PlannerPage() {
 
             if (data.currentStep === 'completed') {
               completed++;
+              const isPublished = data.published === true;
               setBatchState(prev => {
                 if (!prev) return prev;
                 const newItems = [...prev.items];
-                newItems[i] = { ...newItems[i], status: 'completed', currentStep: 'completed' };
+                newItems[i] = {
+                  ...newItems[i],
+                  status: 'completed',
+                  currentStep: 'completed',
+                  published: isPublished,
+                  title: data.title || newItems[i].title,
+                };
                 return { ...prev, items: newItems, completedCount: completed };
               });
               articleDone = true;
@@ -1253,11 +1265,20 @@ export default function PlannerPage() {
                   </span>
                   <span className="flex-1 truncate">{item.title || item.keyword}</span>
                   <span className="text-gray-400 shrink-0">
-                    {item.status === 'processing' ? item.currentStep : item.status === 'failed' ? item.errorMessage?.slice(0, 20) : item.status}
+                    {item.status === 'processing' ? item.currentStep :
+                     item.status === 'completed' ? (item.published ? '公開済み ✓' : '完了') :
+                     item.status === 'failed' ? item.errorMessage?.slice(0, 20) : '待機中'}
                   </span>
                 </div>
               ))}
             </div>
+
+            {batchState.status === 'completed' && batchState.completedCount > 0 && (
+              <p className="mt-3 text-xs text-green-600">
+                {batchState.completedCount}件の記事を自動公開しました。
+                <a href="/dashboard/articles?status=published" className="underline ml-1">公開済み記事を確認</a>
+              </p>
+            )}
           </div>
         )}
 

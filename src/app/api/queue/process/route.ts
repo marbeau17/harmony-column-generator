@@ -783,31 +783,57 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // ── seo_check → 完了 → completed ──
+        // ── seo_check → 完了 → published（自動公開） ──
         case 'seo_check': {
-          // キューを completed に更新 + completed_at を記録
+          const articleId = queueItem.article_id;
+          if (!articleId) throw new Error('article_id が設定されていません');
+
+          const { data: article, error: articleError } = await serviceClient
+            .from('articles')
+            .select('*')
+            .eq('id', articleId)
+            .single();
+
+          if (articleError || !article) throw new Error('記事が見つかりません');
+
+          // Set to published with all required fields
+          const publishedHtml = article.stage3_final_html || article.stage2_body_html || '';
+
+          await serviceClient
+            .from('articles')
+            .update({
+              status: 'published',
+              published_at: new Date().toISOString(),
+              published_html: publishedHtml,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', articleId);
+
+          // Queue completed
           await updateQueueStep(serviceClient, queueItem.id, 'completed', {
             completed_at: new Date().toISOString(),
           });
 
-          // プランステータスを completed に更新
+          // Update plan status to completed
           await updatePlanStatus(serviceClient, plan.id, 'completed');
 
-          // 記事ステータスを editing に遷移（公開前レビュー待ち）
-          if (queueItem.article_id) {
-            await serviceClient
-              .from('articles')
-              .update({
-                status: 'editing',
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', queueItem.article_id);
+          // Background: compute related articles
+          try {
+            const { computeAndSaveRelatedArticles, updateAllRelatedArticles } = await import('@/lib/publish/auto-related');
+            await computeAndSaveRelatedArticles(articleId);
+            await updateAllRelatedArticles();
+            logger.info('api', 'processQueue.related_updated', { articleId });
+          } catch (relErr) {
+            logger.warn('api', 'processQueue.related_failed', { articleId, error: String(relErr) });
           }
 
-          logger.info('api', 'processQueue.completed', {
-            queueId: queueItem.id,
-            planId: plan.id,
-            articleId: queueItem.article_id,
+          // Background: hub page rebuild
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          fetch(`${appUrl}/api/hub/rebuild`, { method: 'POST' }).catch(() => {});
+
+          logger.info('api', 'processQueue.published', {
+            articleId,
+            title: article.title,
           });
 
           return NextResponse.json({
@@ -815,7 +841,9 @@ export async function POST(request: NextRequest) {
             queueId: queueItem.id,
             previousStep: 'seo_check',
             currentStep: 'completed',
-            articleId: queueItem.article_id,
+            articleId,
+            published: true,
+            title: article.title,
           });
         }
 
