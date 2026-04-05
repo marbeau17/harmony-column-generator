@@ -210,16 +210,31 @@ export default function ArticlesPage() {
     setBulkExporting(true);
     setBulkExportResult(null);
     try {
-      const res = await fetch('/api/export/article', { method: 'POST' });
+      const res = await fetch('/api/export/article', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
       if (!res.ok) {
-        throw new Error(`エクスポートに失敗しました (${res.status})`);
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'エクスポートに失敗しました');
       }
-      const json = await res.json();
-      const articleCount = json.exportedCount ?? json.exported ?? 0;
-      const fileCount = json.fileCount ?? json.files ?? 0;
-      setBulkExportResult(`${articleCount} 件の記事（${fileCount} ファイル）をエクスポートしました`);
+
+      // Download the ZIP file
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'all-articles.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setBulkExportResult('ZIPファイルをダウンロードしました');
     } catch (err) {
-      setBulkExportResult(err instanceof Error ? err.message : 'エクスポートに失敗しました');
+      setBulkExportResult(`エラー: ${err instanceof Error ? err.message : 'エクスポートに失敗'}`);
     } finally {
       setBulkExporting(false);
     }

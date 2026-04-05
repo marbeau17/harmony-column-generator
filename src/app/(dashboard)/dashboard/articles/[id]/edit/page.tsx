@@ -216,11 +216,22 @@ export default function ArticleEditPage() {
         throw new Error(errJson?.error ?? 'ステータス遷移に失敗しました');
       }
 
-      // バックグラウンドで静的ファイルをエクスポート（失敗しても公開は成功扱い）
+      // バックグラウンドでZIPエクスポート＆ダウンロード（失敗しても公開は成功扱い）
       fetch('/api/export/article', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId }),
+      }).then(async (res) => {
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `article-${articleId}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       }).catch(() => {});
 
       setPublishDialogOpen(false);
@@ -273,7 +284,22 @@ export default function ArticleEditPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId }),
       });
-      if (!res.ok) throw new Error('Export failed');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Export failed');
+      }
+
+      // Download the ZIP file
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `article-${articleId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
       setExportResult('success');
       setTimeout(() => setExportResult(null), 3000);
     } catch {
