@@ -442,6 +442,14 @@ export default function ArticleEditPage() {
             プレビュー
           </button>
 
+          {/* Apply images */}
+          <button
+            onClick={handleApplyImages}
+            className="rounded-lg border border-brand-200 px-3 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50"
+          >
+            画像を反映
+          </button>
+
           {/* Save draft */}
           <button
             onClick={handleSaveDraft}

@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: 'キーワードリサーチに失敗しました',
-        detail: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
+        detail: errorMessage,
       },
       { status: 500 },
     );
