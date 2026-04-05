@@ -281,6 +281,36 @@ export default function ArticleEditPage() {
     }
   }, [articleId]);
 
+  const handleApplyImages = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/articles/${articleId}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const a = json.data as Article;
+      setArticle(a);
+
+      // Replace placeholders in current body HTML
+      let html = bodyHtml;
+      const imageFiles = a.image_files as { position: string; url: string; alt: string }[] | null;
+      if (imageFiles && Array.isArray(imageFiles)) {
+        for (const img of imageFiles) {
+          const patterns = [
+            new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
+            new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
+            new RegExp(`IMAGE:${img.position}:[\\w.-]+`, 'g'),
+          ];
+          const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+          for (const pattern of patterns) {
+            html = html.replace(pattern, imgTag);
+          }
+        }
+      }
+      setBodyHtml(html);
+    } catch {
+      // silently fail
+    }
+  }, [articleId, bodyHtml]);
+
   // ─── Loading / Error ────────────────────────────────────────────────────
 
   if (loading) {

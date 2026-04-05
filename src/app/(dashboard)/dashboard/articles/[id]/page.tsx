@@ -247,6 +247,7 @@ export default function ArticleDetailPage() {
         throw new Error(errMsg);
       }
       console.log('[image-gen] Success:', body);
+      alert(`画像生成完了: ${body.images?.length ?? 0}枚の画像を生成しました`);
       await fetchArticle();
     } catch (err) {
       console.error('[image-gen] Exception:', err);
@@ -648,6 +649,31 @@ export default function ArticleDetailPage() {
           <p className="text-sm text-slate-400">画像プロンプトはまだありません。</p>
         )}
       </section>
+
+      {/* ─ 生成済み画像 ─ */}
+      {article.image_files && Array.isArray(article.image_files) && (article.image_files as Array<{ url: string; alt?: string; position?: string }>).length > 0 && (
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
+            生成済み画像
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {(article.image_files as Array<{ url: string; alt?: string; position?: string }>).map((img, idx) => (
+              <div key={idx} className="overflow-hidden rounded-lg border border-brand-100">
+                <img
+                  src={img.url}
+                  alt={img.alt || img.position || ''}
+                  className="h-40 w-full object-cover"
+                  loading="lazy"
+                />
+                <div className="px-3 py-2">
+                  <span className="text-xs font-medium text-brand-500 uppercase">{img.position}</span>
+                  {img.alt && <p className="mt-1 text-xs text-slate-500 line-clamp-2">{img.alt}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ─ FAQ ─ */}
       {(article.faq_data || outline?.faq) && (
