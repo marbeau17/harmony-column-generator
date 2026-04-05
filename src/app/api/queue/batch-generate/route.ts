@@ -60,7 +60,11 @@ export async function POST() {
 
       if (existingQueue && !existingQueue.error_message &&
           ['outline', 'body', 'images', 'seo_check'].includes(existingQueue.step)) {
-        // Already has a valid queue entry in progress
+        // Already has a valid queue entry - reset it for batch processing
+        await serviceClient
+          .from('generation_queue')
+          .update({ started_at: null })
+          .eq('id', existingQueue.id);
         queueId = existingQueue.id;
       } else if (existingQueue && existingQueue.error_message) {
         // Failed entry - reset to appropriate step
@@ -133,6 +137,16 @@ export async function POST() {
         title: article.title || article.slug || '',
         currentStep: 'outline',
       });
+    }
+
+    // Reset started_at for all batch items to ensure they can be picked up
+    if (batchItems.length > 0) {
+      const queueIds = batchItems.map((b: { queueId: string }) => b.queueId);
+      await serviceClient
+        .from('generation_queue')
+        .update({ started_at: null, error_message: null })
+        .in('id', queueIds);
+      logger.info('api', 'batchGenerate.reset_started_at', { count: queueIds.length });
     }
 
     logger.info('api', 'batchGenerate.prepared', { totalCount: batchItems.length });
