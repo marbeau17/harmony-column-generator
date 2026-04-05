@@ -257,41 +257,41 @@ export default function SourceArticlesPage() {
       </div>
 
       {/* 統計カード */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-xl bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">総記事数</p>
-          <p className="mt-1 text-2xl font-bold text-gray-900">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="rounded-xl bg-white px-3 py-4 shadow-sm sm:p-5">
+          <p className="text-xs text-gray-500 sm:text-sm">総記事数</p>
+          <p className="mt-1 text-lg font-bold text-gray-900 sm:text-2xl">
             {stats.total.toLocaleString()}
           </p>
         </div>
-        <div className="rounded-xl bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">使用済み</p>
-          <p className="mt-1 text-2xl font-bold text-brand-600">
+        <div className="rounded-xl bg-white px-3 py-4 shadow-sm sm:p-5">
+          <p className="text-xs text-gray-500 sm:text-sm">使用済み</p>
+          <p className="mt-1 text-lg font-bold text-brand-600 sm:text-2xl">
             {stats.used.toLocaleString()}
           </p>
         </div>
-        <div className="rounded-xl bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">未使用</p>
-          <p className="mt-1 text-2xl font-bold text-sage">
+        <div className="rounded-xl bg-white px-3 py-4 shadow-sm sm:p-5">
+          <p className="text-xs text-gray-500 sm:text-sm">未使用</p>
+          <p className="mt-1 text-lg font-bold text-sage sm:text-2xl">
             {stats.unused.toLocaleString()}
           </p>
         </div>
       </div>
 
       {/* ツールバー: 検索 + テーマフィルタ + インポート */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <form onSubmit={handleSearch} className="flex gap-2">
+          <form onSubmit={handleSearch} className="flex w-full gap-2 sm:w-auto">
             <input
               type="text"
               placeholder="キーワードで検索..."
               value={searchInput}
               onChange={(e) => handleSearchInputChange(e.target.value)}
-              className="w-64 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100 sm:w-64 sm:flex-none sm:py-2"
             />
             <button
               type="submit"
-              className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600"
+              className="shrink-0 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-600 sm:py-2"
             >
               検索
             </button>
@@ -300,7 +300,7 @@ export default function SourceArticlesPage() {
           <select
             value={themeFilter}
             onChange={(e) => handleThemeChange(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100 sm:w-auto sm:py-2"
           >
             {THEME_CATEGORIES.map((cat) => (
               <option key={cat.value} value={cat.value}>
@@ -310,7 +310,7 @@ export default function SourceArticlesPage() {
           </select>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 sm:self-end">
           {importProgress && (
             <span
               className={`text-sm ${
@@ -389,108 +389,139 @@ export default function SourceArticlesPage() {
         </div>
       )}
 
-      {/* 記事一覧テーブル */}
+      {/* 記事一覧: モバイルはカード、sm以上はテーブル */}
       <div className="overflow-hidden rounded-xl bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="px-6 py-3 font-medium text-gray-500">タイトル</th>
-                <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
-                  テーマ
-                </th>
-                <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
-                  公開日
-                </th>
-                <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
-                  文字数
-                </th>
-                <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
-                  ステータス
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="h-6 w-6 animate-spin rounded-full border-3 border-gray-200 border-t-brand-500" />
-                      <span className="text-sm text-gray-400">読み込み中...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : articles.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                      </svg>
-                      <p className="text-sm text-gray-400">
-                        {keyword || themeFilter
-                          ? '検索条件に一致する記事がありません'
-                          : 'まだ元記事がありません。CSVインポートで始めましょう'}
-                      </p>
-                      {!keyword && !themeFilter && (
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="mt-1 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600"
-                        >
-                          CSV インポート
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                articles.map((article) => (
-                  <tr
-                    key={article.id}
-                    onClick={() => setPreview(article)}
-                    className="cursor-pointer transition-colors hover:bg-gray-50"
-                  >
-                    <td className="px-6 py-4">
-                      <p className="truncate max-w-md font-medium text-gray-900">
-                        {article.title}
-                      </p>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {article.theme_category ? (
-                        <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
-                          {THEME_CATEGORIES.find((c) => c.value === article.theme_category)?.label ?? article.theme_category}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-300">--</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                      {formatDate(article.published_at)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                      {(article.word_count ?? 0).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          article.is_processed
-                            ? 'bg-slate-100 text-slate-600'
-                            : 'bg-emerald-100 text-emerald-700'
-                        }`}
-                      >
-                        {article.is_processed ? '使用済み' : '未使用'}
+        {/* ローディング / 空状態 */}
+        {loading ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-12">
+            <div className="h-6 w-6 animate-spin rounded-full border-3 border-gray-200 border-t-brand-500" />
+            <span className="text-sm text-gray-400">読み込み中...</span>
+          </div>
+        ) : articles.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-12">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+            </svg>
+            <p className="text-sm text-gray-400">
+              {keyword || themeFilter
+                ? '検索条件に一致する記事がありません'
+                : 'まだ元記事がありません。CSVインポートで始めましょう'}
+            </p>
+            {!keyword && !themeFilter && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-600"
+              >
+                CSV インポート
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* モバイルカードビュー */}
+            <div className="divide-y divide-gray-100 sm:hidden">
+              {articles.map((article) => (
+                <button
+                  key={article.id}
+                  onClick={() => setPreview(article)}
+                  className="block w-full px-4 py-4 text-left active:bg-gray-50"
+                >
+                  <p className="line-clamp-2 text-sm font-medium leading-snug text-gray-900">
+                    {article.title}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {article.theme_category && (
+                      <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+                        {THEME_CATEGORIES.find((c) => c.value === article.theme_category)?.label ?? article.theme_category}
                       </span>
-                    </td>
+                    )}
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        article.is_processed
+                          ? 'bg-slate-100 text-slate-600'
+                          : 'bg-emerald-100 text-emerald-700'
+                      }`}
+                    >
+                      {article.is_processed ? '使用済み' : '未使用'}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-3 text-xs text-gray-400">
+                    <span>{formatDate(article.published_at)}</span>
+                    <span>{(article.word_count ?? 0).toLocaleString()}文字</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* デスクトップテーブルビュー */}
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/50">
+                    <th className="px-6 py-3 font-medium text-gray-500">タイトル</th>
+                    <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
+                      テーマ
+                    </th>
+                    <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
+                      公開日
+                    </th>
+                    <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
+                      文字数
+                    </th>
+                    <th className="px-6 py-3 font-medium text-gray-500 whitespace-nowrap">
+                      ステータス
+                    </th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {articles.map((article) => (
+                    <tr
+                      key={article.id}
+                      onClick={() => setPreview(article)}
+                      className="cursor-pointer transition-colors hover:bg-gray-50"
+                    >
+                      <td className="px-6 py-4">
+                        <p className="truncate max-w-md font-medium text-gray-900">
+                          {article.title}
+                        </p>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {article.theme_category ? (
+                          <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+                            {THEME_CATEGORIES.find((c) => c.value === article.theme_category)?.label ?? article.theme_category}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">--</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-500">
+                        {formatDate(article.published_at)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-500">
+                        {(article.word_count ?? 0).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                            article.is_processed
+                              ? 'bg-slate-100 text-slate-600'
+                              : 'bg-emerald-100 text-emerald-700'
+                          }`}
+                        >
+                          {article.is_processed ? '使用済み' : '未使用'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
         {/* ページネーション */}
-        {totalPages >= 1 && (
-          <div className="flex items-center justify-between border-t border-gray-100 px-6 py-3">
+        {totalPages >= 1 && !loading && articles.length > 0 && (
+          <div className="flex flex-col items-center gap-2 border-t border-gray-100 px-4 py-3 sm:flex-row sm:justify-between sm:px-6">
             <p className="text-xs text-gray-400">
               {totalCount > 0
                 ? `${rangeStart.toLocaleString()}-${rangeEnd.toLocaleString()}件 / 全${totalCount.toLocaleString()}件`
@@ -500,7 +531,7 @@ export default function SourceArticlesPage() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="rounded-lg px-2.5 py-1.5 text-sm text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-30"
+                className="rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-30 sm:px-2.5 sm:py-1.5"
               >
                 前へ
               </button>
@@ -513,7 +544,7 @@ export default function SourceArticlesPage() {
                   <button
                     key={p}
                     onClick={() => setPage(p)}
-                    className={`min-w-[2rem] rounded-lg px-2 py-1.5 text-sm font-medium transition-colors ${
+                    className={`min-w-[2.5rem] rounded-lg px-2 py-2 text-sm font-medium transition-colors sm:min-w-[2rem] sm:py-1.5 ${
                       p === page
                         ? 'bg-brand-500 text-white'
                         : 'text-gray-600 hover:bg-gray-100'
@@ -526,7 +557,7 @@ export default function SourceArticlesPage() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="rounded-lg px-2.5 py-1.5 text-sm text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-30"
+                className="rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-30 sm:px-2.5 sm:py-1.5"
               >
                 次へ
               </button>
@@ -566,12 +597,12 @@ export default function SourceArticlesPage() {
             <div className="flex justify-end">
               <button
                 onClick={() => handleCreateFromArticle(preview.id)}
-                className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-600 sm:w-auto sm:py-2"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
-                この記事から新しいコラムを作成
+                この記事からコラムを作成
               </button>
             </div>
 
@@ -584,7 +615,7 @@ export default function SourceArticlesPage() {
 
       {/* インポート完了トースト */}
       {importToast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
+        <div className="fixed bottom-4 left-4 right-4 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300 sm:left-auto sm:right-6 sm:bottom-6">
           <div
             className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium shadow-lg ${
               importToast.type === 'success'

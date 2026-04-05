@@ -157,8 +157,8 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
     <div className="min-h-screen bg-[var(--color-bg)]">
       {/* ヘッダー */}
       <header className="border-b border-[#b39578]/20 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
-          <nav className="mb-4 text-sm text-[#b39578]" aria-label="パンくずリスト">
+        <div className="mx-auto max-w-6xl px-4 py-5 sm:py-8">
+          <nav className="mb-3 sm:mb-4 text-xs sm:text-sm text-[#b39578]" aria-label="パンくずリスト">
             <ol className="flex items-center gap-1">
               <li>
                 <a href={SITE_URL} className="hover:underline">
@@ -171,39 +171,41 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
               </li>
             </ol>
           </nav>
-          <h1 className="text-2xl font-bold text-[#53352b] sm:text-3xl">
+          <h1 className="text-xl font-bold text-[#53352b] sm:text-3xl">
             スピリチュアルコラム
           </h1>
-          <p className="mt-2 text-sm text-[#b39578]">
+          <p className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-[#b39578] leading-relaxed">
             魂の成長と癒しのための、スピリチュアルな視点からのコラム集
           </p>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8">
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
         {/* テーマフィルタタブ */}
-        <div className="mb-8 flex flex-wrap gap-2">
-          {THEME_TABS.map((tab) => {
-            const isActive = currentTheme === tab.value;
-            const href =
-              tab.value === 'all'
-                ? '/column'
-                : `/column?theme=${tab.value}`;
+        <div className="mb-6 sm:mb-8 -mx-4 px-4 overflow-x-auto scrollbar-hide">
+          <div className="flex gap-2 pb-1 min-w-max sm:min-w-0 sm:flex-wrap">
+            {THEME_TABS.map((tab) => {
+              const isActive = currentTheme === tab.value;
+              const href =
+                tab.value === 'all'
+                  ? '/column'
+                  : `/column?theme=${tab.value}`;
 
-            return (
-              <Link
-                key={tab.value}
-                href={href}
-                className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                  isActive
-                    ? 'bg-[#53352b] text-white shadow-sm'
-                    : 'bg-white text-[#53352b] border border-[#b39578]/30 hover:bg-[#b39578]/10'
-                }`}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
+              return (
+                <Link
+                  key={tab.value}
+                  href={href}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm font-medium transition ${
+                    isActive
+                      ? 'bg-[#53352b] text-white shadow-sm'
+                      : 'bg-white text-[#53352b] border border-[#b39578]/30 hover:bg-[#b39578]/10'
+                  }`}
+                >
+                  {tab.label}
+                </Link>
+              );
+            })}
+          </div>
         </div>
 
         {/* 記事一覧 */}
@@ -226,7 +228,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
               {articles.map((article) => {
                 const thumbnail = getThumbnailUrl(article);
                 const slug = article.slug ?? article.id;
@@ -235,10 +237,10 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                   <Link
                     key={article.id}
                     href={`/column/${slug}`}
-                    className="group block overflow-hidden rounded-xl border border-[#b39578]/20 bg-white shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-1"
+                    className="group flex flex-row sm:flex-col overflow-hidden rounded-xl border border-[#b39578]/20 bg-white shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 sm:hover:-translate-y-1 active:scale-[0.98] sm:active:scale-100"
                   >
                     {/* サムネイル */}
-                    <div className="relative aspect-[16/9] w-full overflow-hidden">
+                    <div className="relative aspect-square w-28 shrink-0 overflow-hidden sm:aspect-[16/9] sm:w-full">
                       {thumbnail ? (
                         <img
                           src={thumbnail}
@@ -260,15 +262,15 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                     </div>
 
                     {/* カード本文 */}
-                    <div className="p-4">
+                    <div className="flex flex-1 flex-col justify-center p-3 sm:p-4">
                       {/* カテゴリバッジ */}
-                      <span className="mb-2 inline-block rounded-full bg-[#b39578]/15 px-2.5 py-0.5 text-xs font-medium text-[#53352b]">
+                      <span className="mb-1.5 sm:mb-2 inline-block self-start rounded-full bg-[#b39578]/15 px-2 py-0.5 text-[10px] sm:text-xs sm:px-2.5 font-medium text-[#53352b]">
                         {getThemeLabel(article.theme)}
                       </span>
 
                       {/* タイトル（2行clamp） */}
                       <h2
-                        className="mb-2 text-base font-bold leading-snug text-[#53352b] group-hover:text-[#b39578] transition"
+                        className="mb-1 sm:mb-2 text-sm sm:text-base font-bold leading-snug text-[#53352b] group-hover:text-[#b39578] transition"
                         style={{
                           display: '-webkit-box',
                           WebkitLineClamp: 2,
@@ -279,8 +281,8 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                         {article.title}
                       </h2>
 
-                      {/* 抜粋 */}
-                      <p className="mb-3 text-sm leading-relaxed text-[#b39578]">
+                      {/* 抜粋（モバイルでは非表示） */}
+                      <p className="mb-3 hidden text-sm leading-relaxed text-[#b39578] sm:block">
                         {getExcerpt(article.meta_description)}
                       </p>
 
@@ -288,7 +290,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                       {article.published_at && (
                         <time
                           dateTime={article.published_at}
-                          className="text-xs text-[#b39578]/70"
+                          className="text-[10px] sm:text-xs text-[#b39578]/70"
                         >
                           {formatDate(article.published_at)}
                         </time>
@@ -301,12 +303,12 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
 
             {/* ページネーション */}
             {totalPages > 1 && (
-              <nav className="mt-12 flex items-center justify-center gap-2" aria-label="ページナビゲーション">
+              <nav className="mt-8 sm:mt-12 flex items-center justify-center gap-1.5 sm:gap-2" aria-label="ページナビゲーション">
                 {/* 前ページ */}
                 {currentPage > 1 && (
                   <Link
                     href={`/column?page=${currentPage - 1}${currentTheme !== 'all' ? `&theme=${currentTheme}` : ''}`}
-                    className="rounded-lg border border-[#b39578]/30 px-4 py-2 text-sm text-[#53352b] hover:bg-[#b39578]/10 transition"
+                    className="rounded-lg border border-[#b39578]/30 px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm text-[#53352b] hover:bg-[#b39578]/10 transition"
                   >
                     前へ
                   </Link>
@@ -334,7 +336,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                     pageNum === '...' ? (
                       <span
                         key={`ellipsis-${idx}`}
-                        className="px-2 py-2 text-sm text-[#b39578]"
+                        className="px-1.5 py-1.5 text-xs sm:px-2 sm:py-2 sm:text-sm text-[#b39578]"
                       >
                         ...
                       </span>
@@ -342,7 +344,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                       <Link
                         key={pageNum}
                         href={`/column?page=${pageNum}${currentTheme !== 'all' ? `&theme=${currentTheme}` : ''}`}
-                        className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                        className={`rounded-lg px-2.5 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm font-medium transition ${
                           pageNum === currentPage
                             ? 'bg-[#53352b] text-white'
                             : 'border border-[#b39578]/30 text-[#53352b] hover:bg-[#b39578]/10'
@@ -359,7 +361,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                 {currentPage < totalPages && (
                   <Link
                     href={`/column?page=${currentPage + 1}${currentTheme !== 'all' ? `&theme=${currentTheme}` : ''}`}
-                    className="rounded-lg border border-[#b39578]/30 px-4 py-2 text-sm text-[#53352b] hover:bg-[#b39578]/10 transition"
+                    className="rounded-lg border border-[#b39578]/30 px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm text-[#53352b] hover:bg-[#b39578]/10 transition"
                   >
                     次へ
                   </Link>

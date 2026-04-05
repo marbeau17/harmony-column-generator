@@ -8,7 +8,7 @@ import { notFound } from 'next/navigation';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateFullSchema } from '@/lib/seo/structured-data';
 import { generateOgpMeta } from '@/lib/seo/meta-generator';
-import type { Article } from '@/types/article';
+import type { Article, RelatedArticle as DbRelatedArticle } from '@/types/article';
 import ScrollDepthTracker from '@/components/common/ScrollDepthTracker';
 import CtaTracker from '@/components/common/CtaTracker';
 import ScrollToTop from '@/components/common/ScrollToTop';
@@ -50,6 +50,33 @@ async function getRelatedArticles(
   article: Article,
   limit = 3,
 ): Promise<RelatedArticle[]> {
+  // 1. まずDBに保存済みの関連記事を使用
+  if (article.related_articles && Array.isArray(article.related_articles) && article.related_articles.length > 0) {
+    const dbRelated = (article.related_articles as DbRelatedArticle[]).slice(0, limit);
+    // href からスラッグを抽出して記事データを取得
+    const slugs = dbRelated
+      .map((r) => {
+        const match = r.href.match(/\/column\/([^/]+)/);
+        return match ? match[1] : null;
+      })
+      .filter((s): s is string => s !== null);
+
+    if (slugs.length > 0) {
+      const supabase = await createServiceRoleClient();
+      const { data } = await supabase
+        .from('articles')
+        .select('id, title, slug, keyword, theme, image_files')
+        .eq('status', 'published')
+        .in('slug', slugs)
+        .limit(limit);
+
+      if (data && data.length > 0) {
+        return data as RelatedArticle[];
+      }
+    }
+  }
+
+  // 2. フォールバック: テーマベースの関連記事取得
   const supabase = await createServiceRoleClient();
 
   // 同テーマの記事を取得
@@ -205,7 +232,8 @@ function CtaBlock({ type, position }: { type: CtaType; position: string }) {
   const cta = CTA_CONFIG[type];
   return (
     <aside
-      className="harmony-cta my-10 rounded-xl border border-[var(--color-gold)]/30 bg-gradient-to-r from-white to-[var(--color-gold)]/5 p-6 shadow-sm"
+      className="harmony-cta my-10 mx-auto max-w-[520px] rounded-xl border border-[var(--color-gold)]/30 px-8 py-6 text-center shadow-sm"
+      style={{ background: 'linear-gradient(135deg, #f5ebe0, #e8ddd0)' }}
       data-cta-position={position}
     >
       <h3 className="mb-2 text-lg font-bold text-[var(--color-dark)]">
@@ -216,12 +244,23 @@ function CtaBlock({ type, position }: { type: CtaType; position: string }) {
       </p>
       <a
         href={cta.href}
-        className="inline-block rounded-full bg-[var(--color-dark)] px-6 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
+        className="block w-full rounded-full bg-[var(--color-dark)] px-6 py-2.5 text-center text-sm font-medium text-white transition hover:opacity-90 sm:inline-block sm:w-auto"
       >
         {cta.buttonText}
       </a>
     </aside>
   );
+}
+
+// ─── ヘルパー: 本文HTMLからヒーロー画像を除去 ─────────────────────────────────
+
+function stripHeroFromBody(html: string): string {
+  if (!html) return '';
+  // Remove IMAGE comments
+  let cleaned = html.replace(/<!--IMAGE:hero:[^>]*-->\s*/g, '');
+  // Remove hero image tags (any format)
+  cleaned = cleaned.replace(/<img[^>]*(?:hero\.jpg|hero\.webp|hero\.svg)[^>]*>\s*/g, '');
+  return cleaned;
 }
 
 // ─── ページコンポーネント ───────────────────────────────────────────────────
@@ -236,11 +275,12 @@ export default async function ColumnArticlePage({ params }: PageProps) {
 
   const relatedArticles = await getRelatedArticles(article);
   const jsonLd = generateFullSchema(article);
-  const htmlContent =
+  const htmlContent = stripHeroFromBody(
     article.published_html ??
     article.stage3_final_html ??
     article.stage2_body_html ??
-    '';
+    '',
+  );
 
   const publishedDate = article.published_at
     ? new Date(article.published_at).toLocaleDateString('ja-JP', {
@@ -281,7 +321,10 @@ export default async function ColumnArticlePage({ params }: PageProps) {
               </a>
             </li>
             <li aria-hidden="true">/</li>
-            <li className="text-[var(--color-dark)]" aria-current="page">
+            <li
+              className="min-w-0 truncate text-[var(--color-dark)]"
+              aria-current="page"
+            >
               {article.title}
             </li>
           </ol>
@@ -335,7 +378,7 @@ export default async function ColumnArticlePage({ params }: PageProps) {
 
           {/* 著者プロフィールカード */}
           <aside className="mt-12 rounded-xl border border-[var(--color-gold)]/30 bg-white p-6 shadow-sm">
-            <div className="flex items-start gap-4">
+            <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[var(--color-gold)]/20 text-2xl">
                 <span role="img" aria-label="著者アイコン">
                   &#x2728;

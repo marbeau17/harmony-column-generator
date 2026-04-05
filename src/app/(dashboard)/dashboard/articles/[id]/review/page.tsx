@@ -329,7 +329,7 @@ export default function ReviewPage() {
         </div>
 
         {/* 生成中表示 */}
-        <div className="flex flex-col items-center justify-center rounded-xl border border-violet-200 bg-violet-50 py-20">
+        <div className="flex flex-col items-center justify-center rounded-xl border border-violet-200 bg-violet-50 px-4 py-12 sm:py-20">
           <div className="mb-6 flex items-center gap-3">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-violet-200 border-t-violet-600" />
           </div>
@@ -363,14 +363,14 @@ export default function ReviewPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* ─ ヘッダー ─ */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <div className="mb-1 flex items-center gap-2">
             <span className="text-xs font-medium text-brand-400">STEP 3</span>
             <StatusBadge status={article.status} />
           </div>
-          <h1 className="text-2xl font-bold text-brand-800">本文レビュー</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-xl font-bold text-brand-800 sm:text-2xl">本文レビュー</h1>
+          <p className="mt-1 text-sm text-slate-500 truncate">
             キーワード:
             <span className="ml-1 font-medium text-brand-600">{article.keyword}</span>
             {article.title && (
@@ -382,7 +382,7 @@ export default function ReviewPage() {
           </p>
         </div>
         <button
-          className="rounded-lg border border-brand-200 px-4 py-2 text-sm text-brand-600 hover:bg-brand-50"
+          className="self-start shrink-0 rounded-lg border border-brand-200 px-4 py-2.5 text-sm text-brand-600 hover:bg-brand-50 active:bg-brand-100 sm:self-auto"
           onClick={() => router.push(`/dashboard/articles/${articleId}/outline`)}
         >
           ← アウトラインへ
@@ -390,12 +390,12 @@ export default function ReviewPage() {
       </div>
 
       {/* ─ 左右分割: HTML本文 + SEOスコア ─ */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-[1fr_320px]">
         {/* 左: HTML本文表示 & プレビュー */}
         <div className="space-y-6">
           {/* HTML本文 */}
           <section className="rounded-xl border border-brand-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-brand-100 px-6 py-3">
+            <div className="flex items-center justify-between border-b border-brand-100 px-4 py-3 sm:px-6">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
                 生成された本文（HTML）
               </h2>
@@ -403,8 +403,8 @@ export default function ReviewPage() {
                 {bodyHtml.replace(/<[^>]+>/g, '').length.toLocaleString()}文字
               </span>
             </div>
-            <div className="max-h-[500px] overflow-auto">
-              <pre className="whitespace-pre-wrap break-words px-6 py-4 font-mono text-xs text-slate-700">
+            <div className="max-h-[60vh] overflow-auto sm:max-h-[500px]">
+              <pre className="whitespace-pre-wrap break-words px-4 py-4 font-mono text-xs text-slate-700 sm:px-6">
                 {bodyHtml || '（本文がまだ生成されていません）'}
               </pre>
             </div>
@@ -412,12 +412,12 @@ export default function ReviewPage() {
 
           {/* プレビュー */}
           <section className="rounded-xl border border-brand-200 bg-white shadow-sm">
-            <div className="border-b border-brand-100 px-6 py-3">
+            <div className="border-b border-brand-100 px-4 py-3 sm:px-6">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
                 プレビュー
               </h2>
             </div>
-            <div className="max-h-[600px] overflow-auto px-6 py-4">
+            <div className="max-h-[70vh] overflow-auto px-4 py-4 sm:max-h-[600px] sm:px-6">
               {bodyHtml ? (
                 <div
                   className="prose prose-brand prose-sm max-w-none
@@ -439,9 +439,9 @@ export default function ReviewPage() {
           </section>
         </div>
 
-        {/* 右: SEOスコア */}
-        <div className="space-y-6">
-          <section className="rounded-xl border border-brand-200 bg-white p-5 shadow-sm">
+        {/* 右: SEOスコア（モバイルでは全幅） */}
+        <div className="space-y-6 w-full">
+          <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-5">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-brand-500">
               SEO分析
             </h2>
@@ -449,7 +449,7 @@ export default function ReviewPage() {
           </section>
 
           {/* 記事情報サマリ */}
-          <section className="rounded-xl border border-brand-200 bg-white p-5 shadow-sm">
+          <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-5">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
               記事情報
             </h2>
@@ -476,15 +476,15 @@ export default function ReviewPage() {
       </div>
 
       {/* ─ アクションボタン ─ */}
-      <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
-        <div className="flex gap-3">
+      <div className="flex flex-col gap-3 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
           <button
-            className="rounded-lg border border-amber-300 bg-amber-50 px-5 py-2.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[44px] rounded-lg border border-amber-300 bg-amber-50 px-5 py-2.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 active:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handleRegenerate}
             disabled={regenerating || submitting}
           >
             {regenerating ? (
-              <span className="flex items-center gap-2">
+              <span className="flex items-center justify-center gap-2">
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-300 border-t-amber-600" />
                 再生成中...
               </span>
@@ -494,7 +494,7 @@ export default function ReviewPage() {
           </button>
 
           <button
-            className="rounded-lg border border-blue-300 bg-blue-50 px-5 py-2.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[44px] rounded-lg border border-blue-300 bg-blue-50 px-5 py-2.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 active:bg-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handleGoToEdit}
             disabled={submitting || regenerating}
           >
@@ -503,12 +503,12 @@ export default function ReviewPage() {
         </div>
 
         <button
-          className="rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-[44px] rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 active:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
           onClick={handleApproveEdit}
           disabled={submitting || regenerating}
         >
           {submitting ? (
-            <span className="flex items-center gap-2">
+            <span className="flex items-center justify-center gap-2">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
               処理中...
             </span>

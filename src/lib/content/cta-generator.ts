@@ -270,6 +270,12 @@ export function insertCtasIntoHtml(
   ctaSettings?: Partial<CtaSettingsAll>
 ): string {
   const $ = cheerio.load(html);
+
+  // Idempotency guard: if CTAs already exist, don't insert again
+  if ($('.harmony-cta').length > 0) {
+    return $('body').html() ?? html;
+  }
+
   const h2Elements = $('h2');
   const h2Count = h2Elements.length;
 

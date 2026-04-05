@@ -11,6 +11,8 @@ import {
   type ArticleStatus,
 } from '@/lib/db/articles';
 import { logger } from '@/lib/logger';
+import { computeAndSaveRelatedArticles, updateAllRelatedArticles } from '@/lib/publish/auto-related';
+import { exportArticleToOut, exportHubPageToOut } from '@/lib/export/static-exporter';
 
 const VALID_STATUSES: ArticleStatus[] = [
   'draft',
@@ -96,6 +98,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         })
         .catch((err) => {
           logger.error('api', 'hub-rebuild-error', { articleId: id }, err);
+        });
+
+      // 関連記事を自動計算・保存（新記事 + 既存記事すべて更新）
+      computeAndSaveRelatedArticles(id)
+        .then(() => updateAllRelatedArticles())
+        .then((result) => {
+          logger.info('api', 'related-articles-updated', { articleId: id, updated: result.updated });
+        })
+        .catch((err) => {
+          logger.error('api', 'related-articles-error', { articleId: id }, err);
+        });
+
+      // out/ ディレクトリへ静的エクスポート
+      exportArticleToOut(id)
+        .then(() => exportHubPageToOut())
+        .then((hubResult) => {
+          logger.info('api', 'static-export-complete', { articleId: id, files: hubResult.files.length });
+        })
+        .catch((err) => {
+          logger.error('api', 'static-export-error', { articleId: id }, err);
         });
     }
 

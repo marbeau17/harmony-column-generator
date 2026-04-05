@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Noto_Sans_JP } from 'next/font/google'
 import Analytics from '@/components/common/Analytics'
 import './globals.css'
@@ -9,6 +9,12 @@ const notoSansJP = Noto_Sans_JP({
   variable: '--font-noto-sans-jp',
   display: 'swap',
 })
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+}
 
 export const metadata: Metadata = {
   title: 'Harmony Column Generator',
@@ -22,10 +28,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja" className={notoSansJP.variable}>
-      <body className="font-sans">
-          <Analytics />
-          {children}
-        </body>
+      <body className="font-sans overflow-x-hidden">
+        <Analytics />
+        {children}
+      </body>
     </html>
   )
 }

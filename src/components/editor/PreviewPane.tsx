@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
@@ -94,10 +94,9 @@ const PREVIEW_CSS = `
 
 export default function PreviewPane({ content }: PreviewPaneProps) {
   const [device, setDevice] = useState<DeviceMode>('desktop');
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const fullHtml = useMemo(() => {
-    // Basic sanitization: strip <script> tags from content
+  // Build sanitized HTML for srcdoc — strip scripts & inline handlers
+  const srcdocHtml = useMemo(() => {
     const sanitized = content
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/on\w+="[^"]*"/gi, '');
@@ -113,24 +112,6 @@ export default function PreviewPane({ content }: PreviewPaneProps) {
 <body>${sanitized || '<p style="color:#9ca3af;">本文がありません</p>'}</body>
 </html>`;
   }, [content]);
-
-  // Write to iframe (SSR 時は document が存在しないのでガード)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    try {
-      const doc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (doc) {
-        doc.open();
-        doc.write(fullHtml);
-        doc.close();
-      }
-    } catch (e) {
-      // sandbox 制約等でアクセスできない場合は無視
-      console.warn('PreviewPane: iframe write failed', e);
-    }
-  }, [fullHtml]);
 
   const iframeWidth = device === 'mobile' ? '375px' : '100%';
 
@@ -187,7 +168,6 @@ export default function PreviewPane({ content }: PreviewPaneProps) {
       {/* iframe preview */}
       <div className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-900 flex justify-center p-2">
         <iframe
-          ref={iframeRef}
           title="記事プレビュー"
           className="bg-white shadow-sm rounded transition-all duration-300"
           style={{
@@ -197,7 +177,8 @@ export default function PreviewPane({ content }: PreviewPaneProps) {
             height: '100%',
             border: 'none',
           }}
-          sandbox="allow-same-origin"
+          sandbox=""
+          srcDoc={srcdocHtml}
         />
       </div>
     </div>

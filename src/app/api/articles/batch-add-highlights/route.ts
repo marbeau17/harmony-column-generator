@@ -41,7 +41,7 @@ ${html}
 
 // ─── メインハンドラ ─────────────────────────────────────────────────────────
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     // 1. 認証チェック
     const supabase = await createServerSupabaseClient();
@@ -50,9 +50,17 @@ export async function POST() {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
 
+    // バッチサイズ（デフォルト5件ずつ処理してタイムアウトを回避）
+    const { searchParams } = new URL(request.url);
+    const batchSize = Math.min(
+      Math.max(parseInt(searchParams.get('limit') || '5', 10) || 5, 1),
+      20, // 最大20件まで
+    );
+
     const serviceClient = await createServiceRoleClient();
 
-    // 2. 本文がある全記事を取得
+    // 2. ハイライト未適用の記事だけを取得（バッチサイズ分のみ）
+    //    stage2_body_html にハイライトが未適用のものを優先取得
     const { data: articles, error: fetchError } = await serviceClient
       .from('articles')
       .select('id, stage2_body_html, stage3_final_html')
@@ -66,37 +74,53 @@ export async function POST() {
     }
 
     if (!articles || articles.length === 0) {
-      return NextResponse.json({ message: '対象の記事がありません', updated: 0 });
+      return NextResponse.json({ message: '対象の記事がありません', updated: 0, remaining: 0 });
     }
+
+    // ハイライト未適用の記事だけをフィルタ
+    const needsHighlight = articles.filter((a) => {
+      const s2 = a.stage2_body_html as string | null;
+      const s3 = a.stage3_final_html as string | null;
+      const s2Done = !s2 || s2.includes('marker-yellow') || s2.includes('marker-pink');
+      const s3Done = !s3 || s3.includes('marker-yellow') || s3.includes('marker-pink');
+      return !(s2Done && s3Done);
+    });
+
+    if (needsHighlight.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: '全記事のハイライト適用が完了しています',
+        updated: 0,
+        remaining: 0,
+        total: articles.length,
+      });
+    }
+
+    // バッチサイズ分だけ処理
+    const batch = needsHighlight.slice(0, batchSize);
 
     // 3. 各記事にハイライトを適用
     let updated = 0;
-    let skipped = 0;
     const errors: string[] = [];
 
-    for (const article of articles) {
+    for (const article of batch) {
       try {
         const updateFields: Record<string, string> = {};
 
         // stage2_body_html を処理
         if (article.stage2_body_html) {
           const html = article.stage2_body_html as string;
-          // 既にハイライトがある記事はスキップ
-          if (html.includes('marker-yellow') || html.includes('marker-pink')) {
-            skipped++;
-            continue;
-          }
+          if (!html.includes('marker-yellow') && !html.includes('marker-pink')) {
+            const result = await generateText(SYSTEM_PROMPT, buildUserPrompt(html), {
+              temperature: 0.3,
+              maxOutputTokens: 16000,
+            });
 
-          const result = await generateText(SYSTEM_PROMPT, buildUserPrompt(html), {
-            temperature: 0.3,
-            maxOutputTokens: 16000,
-          });
-
-          if (result.text && result.text.trim().length > 0) {
-            // HTMLタグの残骸を除去（AIが```htmlで囲む場合がある）
-            let cleanedHtml = result.text.trim();
-            cleanedHtml = cleanedHtml.replace(/^```html?\s*/i, '').replace(/\s*```$/i, '');
-            updateFields.stage2_body_html = cleanedHtml;
+            if (result.text && result.text.trim().length > 0) {
+              let cleanedHtml = result.text.trim();
+              cleanedHtml = cleanedHtml.replace(/^```html?\s*/i, '').replace(/\s*```$/i, '');
+              updateFields.stage2_body_html = cleanedHtml;
+            }
           }
         }
 
@@ -118,7 +142,6 @@ export async function POST() {
         }
 
         if (Object.keys(updateFields).length === 0) {
-          skipped++;
           continue;
         }
 
@@ -140,10 +163,13 @@ export async function POST() {
       }
     }
 
+    const remaining = needsHighlight.length - batch.length;
+
     return NextResponse.json({
       success: true,
       updated,
-      skipped,
+      processed: batch.length,
+      remaining,
       total: articles.length,
       errors: errors.length > 0 ? errors : undefined,
     });

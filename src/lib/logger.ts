@@ -4,7 +4,7 @@
 // ============================================================================
 
 type LogLevel = 'ERROR' | 'WARN' | 'INFO' | 'DEBUG';
-type LogCategory = 'api' | 'ai' | 'auth' | 'db' | 'system' | 'generator' | 'deploy' | 'related-articles';
+type LogCategory = 'api' | 'ai' | 'auth' | 'db' | 'system' | 'generator' | 'deploy' | 'related-articles' | 'export';
 
 interface LogEntry {
   level: LogLevel;

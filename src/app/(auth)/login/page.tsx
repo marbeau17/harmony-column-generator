@@ -46,7 +46,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="rounded-2xl bg-white p-8 shadow-lg">
+    <div className="rounded-2xl bg-white px-4 py-6 shadow-lg sm:p-8">
       <div className="mb-8 text-center">
         <h1 className="text-2xl font-bold text-brand-700">
           Harmony Column Generator
@@ -71,9 +71,9 @@ export default function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             placeholder="you@example.com"
-            className="w-full rounded-lg border border-brand-200 px-4 py-2.5 text-sm
+            className="w-full rounded-lg border border-brand-200 px-4 py-3 text-base
               transition focus:border-brand-500 focus:outline-none focus:ring-2
-              focus:ring-brand-500/20"
+              focus:ring-brand-500/20 sm:py-2.5 sm:text-sm"
           />
         </div>
 
@@ -91,9 +91,9 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             placeholder="********"
-            className="w-full rounded-lg border border-brand-200 px-4 py-2.5 text-sm
+            className="w-full rounded-lg border border-brand-200 px-4 py-3 text-base
               transition focus:border-brand-500 focus:outline-none focus:ring-2
-              focus:ring-brand-500/20"
+              focus:ring-brand-500/20 sm:py-2.5 sm:text-sm"
           />
         </div>
 
@@ -106,9 +106,9 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-brand-500 py-2.5 text-sm font-medium
+          className="w-full rounded-lg bg-brand-500 py-3 text-base font-medium
             text-white transition hover:bg-brand-600 disabled:opacity-50
-            disabled:cursor-not-allowed"
+            disabled:cursor-not-allowed min-h-[44px] sm:py-2.5 sm:text-sm"
         >
           {loading ? 'ログイン中...' : 'ログイン'}
         </button>

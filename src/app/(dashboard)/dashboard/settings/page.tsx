@@ -311,8 +311,8 @@ export default function SettingsPage() {
       </div>
 
       {/* タブナビゲーション */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex gap-6">
+      <div className="border-b border-gray-200 -mx-1 px-1 overflow-x-auto">
+        <nav className="-mb-px flex gap-3 sm:gap-6 min-w-max">
           {TABS.map((tab) => (
             <button
               key={tab.key}
@@ -340,10 +340,10 @@ export default function SettingsPage() {
       </div>
 
       {/* タブコンテンツ */}
-      <div className="rounded-xl bg-white p-6 shadow-sm">
+      <div className="rounded-xl bg-white p-4 sm:p-6 shadow-sm">
         {/* ─── 基本設定 ─── */}
         {activeTab === 'basic' && (
-          <div className="space-y-5 max-w-xl">
+          <div className="space-y-5 w-full max-w-xl">
             <div>
               <label className={labelClass}>サイト名</label>
               <input
@@ -388,7 +388,7 @@ export default function SettingsPage() {
 
         {/* ─── AI 設定 ─── */}
         {activeTab === 'ai' && (
-          <div className="space-y-5 max-w-xl">
+          <div className="space-y-5 w-full max-w-xl">
             <div>
               <label className={labelClass}>Gemini モデル</label>
               <select
@@ -477,17 +477,17 @@ export default function SettingsPage() {
 
         {/* ─── CTA 設定 ─── */}
         {activeTab === 'cta' && (
-          <div className="space-y-8 max-w-2xl">
+          <div className="space-y-8 w-full max-w-2xl">
             {/* CTA1: カウンセリング説明ページ */}
-            <div className="rounded-lg border-2 border-blue-200 bg-blue-50/30 p-5 space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="rounded-lg border-2 border-blue-200 bg-blue-50/30 p-3 sm:p-5 space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">1</span>
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">1</span>
                   <h3 className="text-sm font-semibold text-gray-800">
                     導入部（カウンセリング説明ページ）
                   </h3>
                 </div>
-                <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-medium">情報提供</span>
+                <span className="self-start text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-medium sm:self-auto">情報提供</span>
               </div>
               <div>
                 <label className={labelClass}>リンク先 URL</label>
@@ -540,15 +540,15 @@ export default function SettingsPage() {
             </div>
 
             {/* CTA2: 予約の流れページ */}
-            <div className="rounded-lg border-2 border-amber-200 bg-amber-50/30 p-5 space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="rounded-lg border-2 border-amber-200 bg-amber-50/30 p-3 sm:p-5 space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">2</span>
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">2</span>
                   <h3 className="text-sm font-semibold text-gray-800">
                     中盤（予約の流れページ）
                   </h3>
                 </div>
-                <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded font-medium">検討促進</span>
+                <span className="self-start text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded font-medium sm:self-auto">検討促進</span>
               </div>
               <div>
                 <label className={labelClass}>リンク先 URL</label>
@@ -601,15 +601,15 @@ export default function SettingsPage() {
             </div>
 
             {/* CTA3: 予約ページ */}
-            <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/30 p-5 space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/30 p-3 sm:p-5 space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">3</span>
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">3</span>
                   <h3 className="text-sm font-semibold text-gray-800">
                     末尾（予約ページ）
                   </h3>
                 </div>
-                <span className="text-xs bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded font-medium">コンバージョン</span>
+                <span className="self-start text-xs bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded font-medium sm:self-auto">コンバージョン</span>
               </div>
               <div>
                 <label className={labelClass}>リンク先 URL</label>
@@ -662,10 +662,10 @@ export default function SettingsPage() {
             </div>
 
             {/* アクションボタン */}
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 onClick={() => setCTA(DEFAULT_CTA)}
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
               >
                 デフォルトに戻す
               </button>
@@ -689,7 +689,7 @@ export default function SettingsPage() {
                   }
                 }}
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
               >
                 {saving && (
                   <svg
@@ -720,7 +720,7 @@ export default function SettingsPage() {
 
         {/* ─── SEO 設定 ─── */}
         {activeTab === 'seo' && (
-          <div className="space-y-5 max-w-xl">
+          <div className="space-y-5 w-full max-w-xl">
             <div>
               <label className={labelClass}>著者プロフィール JSON-LD</label>
               <textarea
@@ -753,7 +753,7 @@ export default function SettingsPage() {
 
         {/* ─── デプロイ ─── */}
         {activeTab === 'deploy' && (
-          <div className="space-y-6 max-w-xl">
+          <div className="space-y-6 w-full max-w-xl">
             <div>
               <h3 className="text-sm font-semibold text-gray-800 mb-1">
                 FTP 接続情報
@@ -770,7 +770,7 @@ export default function SettingsPage() {
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">ユーザー名</label>
                     <input
@@ -788,7 +788,7 @@ export default function SettingsPage() {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">ポート</label>
                     <input
@@ -805,7 +805,7 @@ export default function SettingsPage() {
                     />
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                   <button
                     id="ftp-save-btn"
                     onClick={async () => {
@@ -1074,11 +1074,27 @@ export default function SettingsPage() {
                   setHighlightRunning(true);
                   setHighlightMessage(null);
                   try {
-                    const res = await fetch('/api/articles/batch-add-highlights', { method: 'POST' });
-                    const data = await res.json().catch(() => null);
-                    if (!res.ok) throw new Error(data?.error ?? 'ハイライト適用に失敗しました');
+                    let totalUpdated = 0;
+                    let totalErrors = 0;
+                    let totalArticles = 0;
+                    let remaining = 1; // 初回ループ突入用
+                    let batchNum = 0;
+
+                    while (remaining > 0) {
+                      batchNum++;
+                      setHighlightMessage(`バッチ ${batchNum} 処理中... (${totalUpdated}件完了)`);
+                      const res = await fetch('/api/articles/batch-add-highlights?limit=5', { method: 'POST' });
+                      const data = await res.json().catch(() => null);
+                      if (!res.ok) throw new Error(data?.error ?? 'ハイライト適用に失敗しました');
+
+                      totalUpdated += data?.updated ?? 0;
+                      totalErrors += data?.errors?.length ?? 0;
+                      totalArticles = data?.total ?? totalArticles;
+                      remaining = data?.remaining ?? 0;
+                    }
+
                     setHighlightMessage(
-                      `完了: ${data?.updated ?? 0}件更新 / ${data?.skipped ?? 0}件スキップ / 全${data?.total ?? 0}件${data?.errors?.length ? ` (エラー: ${data.errors.length}件)` : ''}`
+                      `完了: ${totalUpdated}件更新 / 全${totalArticles}件${totalErrors > 0 ? ` (エラー: ${totalErrors}件)` : ''}`
                     );
                   } catch (err: unknown) {
                     setHighlightMessage(`エラー: ${err instanceof Error ? err.message : String(err)}`);
@@ -1136,11 +1152,11 @@ export default function SettingsPage() {
         )}
 
         {/* 保存ボタン（デプロイタブ以外） */}
-        {activeTab !== 'deploy' && <div className="mt-8 flex items-center gap-3">
+        {activeTab !== 'deploy' && <div className="mt-8 flex flex-col sm:flex-row sm:items-center gap-3">
           <button
             onClick={() => handleSave(activeTab)}
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-600 disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-600 disabled:opacity-50 w-full sm:w-auto"
           >
             {saving && (
               <svg
@@ -1181,7 +1197,7 @@ export default function SettingsPage() {
 
       {/* トースト通知 */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:bottom-6 sm:right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
           <div
             className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium shadow-lg ${
               toast.type === 'success'

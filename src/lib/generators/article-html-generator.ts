@@ -133,16 +133,21 @@ function buildFaqHtml(faqs: FAQItem[]): string {
 function buildRelatedArticlesHtml(
   articles: { href: string; title: string }[] | null,
 ): string {
-  if (!articles || articles.length === 0) return '<p>関連記事はありません。</p>';
+  if (!articles || articles.length === 0) return '<p class="article-related-empty">他のコラムも準備中です。お楽しみに。</p>';
 
   return articles
     .slice(0, 3)
-    .map(
-      (a) =>
-        `<a href="${escAttr(a.href)}" class="article-related-card">
+    .map((a) => {
+      // hrefからslugを抽出してサムネイルパスを生成
+      const slug = a.href.replace(/^\/column\//, '').replace(/\/$/, '');
+      const thumbSrc = `/column/${slug}/images/hero.jpg`;
+      return `<a href="${escAttr(a.href)}" class="article-related-card">
+          <div class="article-related-card-thumb">
+            <img src="${escAttr(thumbSrc)}" alt="" loading="lazy">
+          </div>
           <div class="article-related-card-title">${escHtml(a.title)}</div>
-        </a>`,
-    )
+        </a>`;
+    })
     .join('\n');
 }
 
@@ -260,7 +265,8 @@ export function generateArticleHtml(
 ): string {
   const slug = article.slug ?? article.id;
   const hubUrl = options.hubUrl ?? HUB_URL;
-  const canonicalUrl = `${hubUrl}/${slug}.html`;
+  // canonical / OG URL は常に絶対URLを使用（hubUrl がリラティブの場合でも正しく動作）
+  const canonicalUrl = `${HUB_URL}/${slug}.html`;
   const dateIso = article.published_at ?? article.created_at;
   const dateDisplay = formatDateJa(dateIso);
   const categoryLabel = THEME_LABELS[article.theme] ?? article.theme;
@@ -336,6 +342,182 @@ export function generateArticleHtml(
 
   <!-- Styles -->
   <link rel="stylesheet" href="./css/hub.css">
+
+  <!-- Critical inline styles (CTA, TOC, markers, related articles) -->
+  <style>
+    /* ─── CTA Blocks ─── */
+    .harmony-cta {
+      margin: 2rem 0;
+      border-radius: 12px;
+      padding: 1.2rem 1.5rem;
+      max-width: 100%;
+      text-align: center;
+    }
+    .harmony-cta-inner {
+      max-width: 520px;
+      margin: 0 auto;
+    }
+    .harmony-cta-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      border-radius: 20px;
+      padding: 0.15rem 0.7rem;
+      margin-bottom: 0.5rem;
+    }
+    .harmony-cta-catch {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin: 0 0 0.25rem;
+      line-height: 1.6;
+    }
+    .harmony-cta-sub {
+      font-size: 0.82rem;
+      margin: 0 0 0.7rem;
+      line-height: 1.5;
+      opacity: 0.85;
+    }
+    .harmony-cta-btn {
+      display: inline-block;
+      padding: 0.55rem 1.8rem;
+      border-radius: 25px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.88rem;
+      transition: transform 0.2s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+    }
+    .harmony-cta-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      opacity: 0.9;
+    }
+    /* CTA1: ウォームブラウン系 */
+    .harmony-cta[data-cta-key="cta1"] {
+      background: linear-gradient(135deg, #f5ebe0 0%, #e8ddd0 100%);
+      border-left: 4px solid #b39578;
+    }
+    .harmony-cta[data-cta-key="cta1"] .harmony-cta-badge {
+      background: rgba(179,149,120,0.15);
+      color: #b39578;
+    }
+    .harmony-cta[data-cta-key="cta1"] .harmony-cta-catch,
+    .harmony-cta[data-cta-key="cta1"] .harmony-cta-sub {
+      color: #53352b;
+    }
+    .harmony-cta[data-cta-key="cta1"] .harmony-cta-btn {
+      background: #b39578;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(179,149,120,0.3);
+    }
+    /* CTA2: ラベンダー系 */
+    .harmony-cta[data-cta-key="cta2"] {
+      background: linear-gradient(135deg, #ede7f0 0%, #ddd5e4 100%);
+      border-left: 4px solid #9b8bb4;
+    }
+    .harmony-cta[data-cta-key="cta2"] .harmony-cta-badge {
+      background: rgba(155,139,180,0.15);
+      color: #9b8bb4;
+    }
+    .harmony-cta[data-cta-key="cta2"] .harmony-cta-catch,
+    .harmony-cta[data-cta-key="cta2"] .harmony-cta-sub {
+      color: #53352b;
+    }
+    .harmony-cta[data-cta-key="cta2"] .harmony-cta-btn {
+      background: #9b8bb4;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(155,139,180,0.3);
+    }
+    /* CTA3: ダークブラウン */
+    .harmony-cta[data-cta-key="cta3"] {
+      background: linear-gradient(135deg, #53352b 0%, #7a5c4f 100%);
+      border-left: none;
+    }
+    .harmony-cta[data-cta-key="cta3"] .harmony-cta-badge {
+      background: rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.9);
+    }
+    .harmony-cta[data-cta-key="cta3"] .harmony-cta-catch {
+      color: #fff;
+    }
+    .harmony-cta[data-cta-key="cta3"] .harmony-cta-sub {
+      color: rgba(255,255,255,0.85);
+    }
+    .harmony-cta[data-cta-key="cta3"] .harmony-cta-btn {
+      background: linear-gradient(135deg, #d4a574, #c4856e);
+      color: #fff;
+      font-size: 0.95rem;
+      padding: 0.65rem 2rem;
+      box-shadow: 0 3px 12px rgba(212,165,116,0.4);
+    }
+    .harmony-cta[data-cta-key="cta3"] .harmony-cta-btn:hover {
+      box-shadow: 0 5px 16px rgba(212,165,116,0.5);
+    }
+
+    /* ─── TOC (Table of Contents) ─── */
+    .article-toc {
+      background: #faf5f0;
+      border: 1px solid #e8ddd0;
+      border-radius: 8px;
+      padding: 1.2rem 1.5rem;
+      margin: 1.5rem 0 2rem;
+    }
+    .article-toc details summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .article-toc details summary::after {
+      content: '▼';
+      font-size: 12px;
+      color: #b39578;
+      transition: transform 0.2s;
+    }
+    .article-toc details[open] summary::after {
+      transform: rotate(180deg);
+    }
+    .article-toc-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #53352b;
+      margin: 0;
+      padding: 0;
+      border: none !important;
+    }
+    .article-toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0.75rem 0 0;
+    }
+    .article-toc-list li { padding: 0.2rem 0; }
+    .article-toc-list li a { color: #53352b; text-decoration: none; font-size: 14px; }
+    .article-toc-list li a:hover { color: #b39578; text-decoration: underline; }
+    .article-toc-list ol { list-style: none; padding-left: 1.2rem; margin: 0.2rem 0 0; }
+
+    /* ─── Highlight Markers ─── */
+    .marker-yellow {
+      background: linear-gradient(transparent 60%, #fff3b0 60%);
+      padding: 0 2px;
+    }
+    .marker-pink {
+      background: linear-gradient(transparent 60%, #ffd6e0 60%);
+      padding: 0 2px;
+    }
+
+    /* ─── Related Articles ─── */
+    .article-related { margin: 2rem 0; }
+    .article-related h2 { font-size: 1.1rem; font-weight: 600; color: #53352b; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #b39578; }
+    .article-related-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    .article-related-card { display: block; border-radius: 8px; overflow: hidden; border: 1px solid #e8ddd0; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; }
+    .article-related-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(83,53,43,0.1); }
+    .article-related-card-thumb { height: 120px; background: linear-gradient(135deg, #f5ebe0, #e8ddd0); overflow: hidden; }
+    .article-related-card-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .article-related-card-title { font-size: 0.85rem; font-weight: 600; color: #53352b; padding: 0.75rem; margin: 0; line-height: 1.4; }
+    .article-related-empty { font-size: 0.9rem; color: #b39578; font-style: italic; }
+    @media (max-width: 767px) { .article-related-grid { grid-template-columns: 1fr; } }
+  </style>
 </head>
 <body>
 
@@ -541,6 +723,11 @@ export function generateArticleHtml(
 function buildBodyWithCtas(article: Article, slug: string): string {
   // 本文HTML取得（stage3 > stage2 > content の優先度）
   let bodyHtml = article.stage3_final_html ?? article.stage2_body_html ?? article.content ?? '';
+
+  // Remove hero image from body (template already shows hero)
+  bodyHtml = bodyHtml.replace(/<!--IMAGE:hero:[^>]*-->\s*/g, '');
+  // Remove img tags that reference hero images (Supabase or local)
+  bodyHtml = bodyHtml.replace(/<img[^>]*(?:hero\.jpg|hero\.webp|hero\.svg)[^>]*>\s*/g, '');
 
   if (!bodyHtml.trim()) return '';
 

@@ -362,6 +362,16 @@ h3 {
   line-height: 1.5;
 }
 
+/* Highlight Markers */
+.marker-yellow {
+  background: linear-gradient(transparent 60%, #fff3b0 60%);
+  padding: 0 2px;
+}
+.marker-pink {
+  background: linear-gradient(transparent 60%, #ffd6e0 60%);
+  padding: 0 2px;
+}
+
 /* Disclaimer */
 .disclaimer {
   font-size: 13px;

@@ -296,11 +296,46 @@ export async function POST(request: NextRequest) {
             finishReason: outlineResponse.finishReason,
           });
 
+          // --- スラッグ重複チェック ---
+          let finalSlug = outlineResult.seo_filename;
+          if (finalSlug) {
+            const { data: existingArticle } = await serviceClient
+              .from('articles')
+              .select('id')
+              .eq('slug', finalSlug)
+              .neq('id', articleId)
+              .maybeSingle();
+
+            if (existingArticle) {
+              // 重複あり: 連番サフィックスを付与して一意にする
+              let suffix = 2;
+              let candidateSlug = `${finalSlug}-${suffix}`;
+              // eslint-disable-next-line no-constant-condition
+              while (true) {
+                const { data: dup } = await serviceClient
+                  .from('articles')
+                  .select('id')
+                  .eq('slug', candidateSlug)
+                  .neq('id', articleId)
+                  .maybeSingle();
+                if (!dup) break;
+                suffix++;
+                candidateSlug = `${finalSlug}-${suffix}`;
+              }
+              finalSlug = candidateSlug;
+              logger.info('api', 'processQueue.slug_deduplicated', {
+                original: outlineResult.seo_filename,
+                resolved: finalSlug,
+                articleId,
+              });
+            }
+          }
+
           const { error: articleUpdateError } = await serviceClient
             .from('articles')
             .update({
               status: 'outline_approved',
-              slug: outlineResult.seo_filename,
+              slug: finalSlug,
               title: outlineResult.title_proposal,
               meta_description: outlineResult.meta_description,
               stage1_outline: outlineData,
@@ -352,7 +387,19 @@ export async function POST(request: NextRequest) {
           }
 
           // ステータスが outline_approved であることを確認
-          if (article.status !== 'outline_approved') {
+          // draft の場合は前ステップでエラーが発生した可能性があるため、
+          // outline データが存在すれば outline_approved に自動修復する
+          if (article.status === 'draft' && article.stage1_outline) {
+            logger.info('api', 'processQueue.auto_recover_status', {
+              articleId,
+              from: 'draft',
+              to: 'outline_approved',
+            });
+            await serviceClient
+              .from('articles')
+              .update({ status: 'outline_approved', updated_at: new Date().toISOString() })
+              .eq('id', articleId);
+          } else if (article.status !== 'outline_approved' && article.status !== 'body_generating') {
             throw new Error(
               `記事ステータスが「${article.status}」のため本文生成できません（outline_approved が必要）`,
             );

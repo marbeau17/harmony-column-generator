@@ -306,7 +306,7 @@ export default function ArticleDetailPage() {
       case 'draft':
         return (
           <button
-            className="rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-lg bg-brand-500 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5"
             onClick={handleGenerateOutline}
             disabled={actionLoading}
           >
@@ -324,7 +324,7 @@ export default function ArticleDetailPage() {
       case 'outline_pending':
         return (
           <button
-            className="rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600"
+            className="w-full rounded-lg bg-brand-500 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 sm:w-auto sm:py-2.5"
             onClick={() => router.push(`/dashboard/articles/${articleId}/outline`)}
           >
             アウトラインを確認 →
@@ -334,7 +334,7 @@ export default function ArticleDetailPage() {
       case 'outline_approved':
         return (
           <button
-            className="rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-lg bg-brand-500 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5"
             onClick={handleGenerateBody}
             disabled={actionLoading}
           >
@@ -363,7 +363,7 @@ export default function ArticleDetailPage() {
       case 'body_review':
         return (
           <button
-            className="rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600"
+            className="w-full rounded-lg bg-brand-500 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 sm:w-auto sm:py-2.5"
             onClick={() => router.push(`/dashboard/articles/${articleId}/review`)}
           >
             レビュー →
@@ -373,7 +373,7 @@ export default function ArticleDetailPage() {
       case 'editing':
         return (
           <button
-            className="rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600"
+            className="w-full rounded-lg bg-brand-500 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 sm:w-auto sm:py-2.5"
             onClick={() => router.push(`/dashboard/articles/${articleId}/edit`)}
           >
             編集 →
@@ -382,13 +382,13 @@ export default function ArticleDetailPage() {
 
       case 'published':
         return (
-          <div className="flex items-center gap-3">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
             {article.published_url && (
               <a
                 href={article.published_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-lg bg-green-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-green-600"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-500 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-green-600 sm:py-2.5"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -397,7 +397,7 @@ export default function ArticleDetailPage() {
               </a>
             )}
             <button
-              className="rounded-lg border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-600 transition-colors hover:bg-brand-50"
+              className="w-full rounded-lg border border-brand-200 px-5 py-3 text-sm font-medium text-brand-600 transition-colors hover:bg-brand-50 sm:w-auto sm:py-2.5"
               onClick={() => router.push(`/dashboard/articles/${articleId}/edit`)}
             >
               再編集
@@ -416,11 +416,11 @@ export default function ArticleDetailPage() {
   // ─── レンダリング ───────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-4 px-4 sm:space-y-6 sm:px-0">
       {/* ─ ヘッダー ─ */}
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="mb-1 flex items-center gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
             <StatusBadge status={article.status} />
             <span className="text-xs text-slate-400">
               作成: {new Date(article.created_at).toLocaleDateString('ja-JP')}
@@ -429,12 +429,12 @@ export default function ArticleDetailPage() {
               更新: {new Date(article.updated_at).toLocaleDateString('ja-JP')}
             </span>
           </div>
-          <h1 className="text-2xl font-bold text-brand-800">
+          <h1 className="text-xl font-bold text-brand-800 sm:text-2xl">
             {article.title || '（タイトル未設定）'}
           </h1>
         </div>
         <button
-          className="shrink-0 rounded-lg border border-brand-200 px-4 py-2 text-sm text-brand-600 hover:bg-brand-50"
+          className="shrink-0 self-start rounded-lg border border-brand-200 px-4 py-2 text-sm text-brand-600 hover:bg-brand-50"
           onClick={() => router.push('/dashboard/articles')}
         >
           ← 一覧へ戻る
@@ -442,7 +442,7 @@ export default function ArticleDetailPage() {
       </div>
 
       {/* ─ ステータスタイムライン ─ */}
-      <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
           ステータス遷移
         </h2>
@@ -450,7 +450,7 @@ export default function ArticleDetailPage() {
       </section>
 
       {/* ─ 次のアクション ─ */}
-      <section className="flex items-center justify-between rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+      <section className="flex flex-col gap-4 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
             次のアクション
@@ -459,15 +459,15 @@ export default function ArticleDetailPage() {
             現在のステータス: {String(STATUS_LABELS[article.status as keyof typeof STATUS_LABELS] ?? article.status)}
           </p>
         </div>
-        <div>{renderActionButton()}</div>
+        <div className="w-full sm:w-auto">{renderActionButton()}</div>
       </section>
 
       {/* ─ メタ情報 ─ */}
-      <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-brand-500">
           メタ情報
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <p className="text-xs font-medium text-slate-400">キーワード</p>
             <p className="mt-1 text-sm font-medium text-brand-700">{article.keyword}</p>
@@ -507,15 +507,15 @@ export default function ArticleDetailPage() {
 
       {/* ─ SEO / AIO スコア ─ */}
       {seoScore && (
-        <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-brand-500">
             SEO / AIO スコア
           </h2>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
             {Object.entries(seoScore).map(([key, value]) => (
               <div key={key} className="rounded-lg bg-brand-50 p-3 text-center">
-                <p className="text-xs text-slate-500">{key}</p>
-                <p className="mt-1 text-lg font-bold text-brand-700">
+                <p className="text-[10px] text-slate-500 sm:text-xs">{key}</p>
+                <p className="mt-1 text-base font-bold text-brand-700 sm:text-lg">
                   {typeof value === 'number' ? value : String(value)}
                 </p>
               </div>
@@ -526,7 +526,7 @@ export default function ArticleDetailPage() {
 
       {/* ─ CTA文言プレビュー ─ */}
       {article.cta_texts && Array.isArray(article.cta_texts) && (article.cta_texts as string[]).length > 0 && (
-        <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
             CTA文言
           </h2>
@@ -545,7 +545,7 @@ export default function ArticleDetailPage() {
 
       {/* ─ アウトラインからのCTA文言（stage1_outline） ─ */}
       {outline?.cta_texts && outline.cta_texts.length > 0 && !article.cta_texts && (
-        <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
             CTA文言（アウトライン）
           </h2>
@@ -563,12 +563,12 @@ export default function ArticleDetailPage() {
       )}
 
       {/* ─ 画像プロンプト ─ */}
-      <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
             画像プロンプト
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               className="rounded-lg border border-brand-200 px-4 py-2 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={handleGenerateImagePrompts}
@@ -642,7 +642,7 @@ export default function ArticleDetailPage() {
 
       {/* ─ FAQ ─ */}
       {(article.faq_data || outline?.faq) && (
-        <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
             FAQ（よくある質問）
           </h2>

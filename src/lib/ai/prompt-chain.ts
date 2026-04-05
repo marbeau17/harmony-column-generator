@@ -79,10 +79,10 @@ function createChainLog(articleId: string): ChainLog {
 }
 
 // ─── IMAGE プレースホルダー補正 ─────────────────────────────────────────────
-// AI が生成したプレースホルダーを hero / body / summary の3枚固定に正規化する。
+// AI が生成したプレースホルダーを body / summary の2枚固定に正規化する。
+// hero画像はテンプレート側で処理するため、ここでは含めない。
 
 const FIXED_IMAGE_SLOTS = [
-  { section_id: 'hero', suggested_filename: 'hero.jpg' },
   { section_id: 'body', suggested_filename: 'body.jpg' },
   { section_id: 'summary', suggested_filename: 'summary.jpg' },
 ] as const;
@@ -99,7 +99,7 @@ function normalizeImagePlaceholders(bodyHtml: string): string {
   for (let i = matches.length - 1; i >= 0; i--) {
     const m = matches[i];
     if (i < FIXED_IMAGE_SLOTS.length) {
-      // Replace with the fixed slot (hero/body/summary)
+      // Replace with the fixed slot (body/summary)
       const slot = FIXED_IMAGE_SLOTS[i];
       const corrected = `<!--IMAGE:${slot.section_id}:${slot.suggested_filename}-->`;
       result =
@@ -107,7 +107,7 @@ function normalizeImagePlaceholders(bodyHtml: string): string {
         corrected +
         result.substring(m.index! + m[0].length);
     } else {
-      // More placeholders than 3 slots — remove excess
+      // More placeholders than 2 slots — remove excess
       result =
         result.substring(0, m.index!) +
         result.substring(m.index! + m[0].length);
@@ -202,7 +202,7 @@ export async function executeStage2Chain(
 
       let bodyClean = response.text.trim();
 
-      // ── IMAGE プレースホルダー補正（3枚固定: hero/body/summary）──
+      // ── IMAGE プレースホルダー補正（2枚固定: body/summary）──
       const before = bodyClean;
       bodyClean = normalizeImagePlaceholders(bodyClean);
       if (before !== bodyClean) {

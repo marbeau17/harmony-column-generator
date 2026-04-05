@@ -207,7 +207,7 @@ function GenerateProgressBar({ progress }: { progress: GenerateProgress }) {
       </div>
 
       {/* Step indicators */}
-      <div className="flex justify-between mb-2">
+      <div className="flex flex-col gap-1.5 mb-2 sm:flex-row sm:justify-between sm:gap-0">
         {['キーワードリサーチ', 'プラン生成', '元記事選定・保存'].map((label, i) => {
           const done = progress.stepsCompleted > i;
           const active = progress.stepsCompleted === i && !isError && !isDone;
@@ -673,9 +673,9 @@ export default function PlannerPage() {
   return (
     <div className="space-y-8">
       {/* ── Header ───────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">AIコンテンツプランナー</h1>
+          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">AIコンテンツプランナー</h1>
           <p className="mt-1 text-sm text-gray-500">
             AIがキーワードリサーチからプラン提案まで自動で行います
           </p>
@@ -690,7 +690,7 @@ export default function PlannerPage() {
         <button
           onClick={() => setShowCountDialog(true)}
           disabled={isGenerating}
-          className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600 disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600 disabled:opacity-50 min-h-[44px] w-full sm:w-auto sm:py-2.5"
         >
           {isGenerating ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -718,20 +718,20 @@ export default function PlannerPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => handleGenerate(5)}
-                className="flex-1 rounded-lg border-2 border-brand-200 px-4 py-3 text-center font-medium text-brand-700 transition-colors hover:border-brand-500 hover:bg-brand-50"
+                className="flex-1 rounded-lg border-2 border-brand-200 px-4 py-3 text-center font-medium text-brand-700 transition-colors hover:border-brand-500 hover:bg-brand-50 min-h-[44px]"
               >
                 5件
               </button>
               <button
                 onClick={() => handleGenerate(10)}
-                className="flex-1 rounded-lg border-2 border-brand-200 px-4 py-3 text-center font-medium text-brand-700 transition-colors hover:border-brand-500 hover:bg-brand-50"
+                className="flex-1 rounded-lg border-2 border-brand-200 px-4 py-3 text-center font-medium text-brand-700 transition-colors hover:border-brand-500 hover:bg-brand-50 min-h-[44px]"
               >
                 10件
               </button>
             </div>
             <button
               onClick={() => setShowCountDialog(false)}
-              className="mt-3 w-full text-center text-sm text-gray-400 hover:text-gray-600"
+              className="mt-3 w-full text-center text-sm text-gray-400 hover:text-gray-600 min-h-[44px]"
             >
               キャンセル
             </button>
@@ -747,7 +747,7 @@ export default function PlannerPage() {
             <div className="flex justify-center">
               <button
                 onClick={handleRetry}
-                className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600"
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600 min-h-[44px]"
               >
                 <RotateCcw className="h-4 w-4" />
                 再試行
@@ -758,8 +758,8 @@ export default function PlannerPage() {
       )}
 
       {/* ── Filter + Bulk Actions ────────────────────────────────── */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Requirement 7: filter buttons with count badges */}
           {FILTER_OPTIONS.map((opt) => {
             const count = planCounts[opt.value] ?? 0;
@@ -767,7 +767,7 @@ export default function PlannerPage() {
               <button
                 key={opt.value}
                 onClick={() => setFilter(opt.value)}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${
+                className={`rounded-full px-3.5 py-2 text-xs font-medium transition-colors inline-flex items-center gap-1.5 min-h-[44px] sm:py-1.5 sm:min-h-0 ${
                   filter === opt.value
                     ? 'bg-brand-500 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -793,7 +793,7 @@ export default function PlannerPage() {
         {selectedIds.size > 0 && (
           <button
             onClick={handleBulkApprove}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-600"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-600 min-h-[44px] w-full sm:w-auto sm:py-2"
           >
             <Check className="h-4 w-4" />
             {selectedIds.size}件を一括承認
@@ -807,7 +807,7 @@ export default function PlannerPage() {
           <p>{plansError}</p>
           <button
             onClick={() => { setPlansError(null); setPlansLoading(true); fetchPlans(); }}
-            className="mt-2 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700"
+            className="mt-2 rounded-lg bg-red-600 px-3 py-2.5 text-xs font-medium text-white transition-colors hover:bg-red-700 min-h-[44px]"
           >
             再試行
           </button>
@@ -823,7 +823,7 @@ export default function PlannerPage() {
           </div>
         </div>
       ) : filteredPlans.length === 0 ? (
-        <div className="rounded-xl bg-gradient-to-br from-brand-50 to-white px-8 py-20 text-center shadow-sm border border-brand-100">
+        <div className="rounded-xl bg-gradient-to-br from-brand-50 to-white px-4 py-12 text-center shadow-sm border border-brand-100 sm:px-8 sm:py-20">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-brand-100">
             <Sparkles className="h-8 w-8 text-brand-500" />
           </div>
@@ -840,7 +840,7 @@ export default function PlannerPage() {
           <button
             onClick={() => setShowCountDialog(true)}
             disabled={isGenerating}
-            className="inline-flex items-center gap-2.5 rounded-xl bg-brand-500 px-8 py-4 text-base font-semibold text-white shadow-lg transition-all hover:bg-brand-600 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+            className="inline-flex items-center justify-center gap-2.5 rounded-xl bg-brand-500 px-6 py-4 text-base font-semibold text-white shadow-lg transition-all hover:bg-brand-600 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100 w-full sm:w-auto sm:px-8"
           >
             {isGenerating ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -865,7 +865,7 @@ export default function PlannerPage() {
             </label>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
             {filteredPlans.map((plan) => (
               <div
                 key={plan.id}
@@ -960,23 +960,23 @@ export default function PlannerPage() {
 
                 {/* Action buttons */}
                 {plan.status === 'proposed' && (
-                  <div className="mt-auto border-t border-gray-50 px-5 py-3 flex items-center gap-2">
+                  <div className="mt-auto border-t border-gray-50 px-4 py-3 flex items-center gap-2 sm:px-5">
                     <button
                       onClick={() => handleApprove(plan.id)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-600"
+                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-2.5 text-xs font-medium text-white transition-colors hover:bg-emerald-600 min-h-[44px] sm:py-1.5 sm:min-h-0"
                     >
                       <Check className="h-3.5 w-3.5" />
                       承認
                     </button>
                     <button
                       onClick={() => handleApprove(plan.id, true)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-600"
+                      className="inline-flex items-center gap-1 rounded-lg bg-red-500 px-3 py-2.5 text-xs font-medium text-white transition-colors hover:bg-red-600 min-h-[44px] sm:py-1.5 sm:min-h-0"
                     >
                       <X className="h-3.5 w-3.5" />
                       却下
                     </button>
                     <button
-                      className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200"
+                      className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-3 py-2.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 min-h-[44px] sm:py-1.5 sm:min-h-0"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                       修正
@@ -1020,9 +1020,9 @@ export default function PlannerPage() {
 
       {/* ── Generation Queue Section ─────────────────────────────── */}
       <div ref={queueSectionRef} className="rounded-xl bg-white shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+        <div className="flex flex-col gap-3 border-b border-gray-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-900">生成キュー</h2>
+            <h2 className="text-base font-semibold text-gray-900 sm:text-lg">生成キュー</h2>
             {queueRunning && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 animate-pulse">
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -1033,7 +1033,7 @@ export default function PlannerPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => { fetchQueue(); fetchPlans(); }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 min-h-[44px] sm:py-1.5 sm:min-h-0"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               更新
@@ -1043,7 +1043,7 @@ export default function PlannerPage() {
               ref={queueStartBtnRef}
               onClick={handleStartQueue}
               disabled={queueRunning}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium text-white transition-all disabled:opacity-50 ${
+              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-medium text-white transition-all disabled:opacity-50 min-h-[44px] sm:py-1.5 sm:min-h-0 ${
                 highlightQueueBtn
                   ? 'bg-emerald-500 hover:bg-emerald-600 ring-2 ring-emerald-300 ring-offset-2 animate-pulse shadow-lg scale-105'
                   : 'bg-brand-500 hover:bg-brand-600'
@@ -1061,7 +1061,7 @@ export default function PlannerPage() {
 
         {/* Requirement 4: queue all-completed notification */}
         {queueAllCompleted && queueItems.length > 0 && (
-          <div className="mx-6 mt-4 rounded-lg bg-emerald-50 border border-emerald-200 p-4 flex items-center gap-3">
+          <div className="mx-4 mt-4 rounded-lg bg-emerald-50 border border-emerald-200 p-4 flex flex-col gap-3 sm:mx-6 sm:flex-row sm:items-center">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
             <div className="flex-1">
               <p className="text-sm font-medium text-emerald-800">
@@ -1073,7 +1073,7 @@ export default function PlannerPage() {
             </div>
             <Link
               href="/dashboard/articles"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-emerald-700 shrink-0 min-h-[44px] w-full sm:w-auto sm:py-2"
             >
               記事一覧で確認
               <ArrowRight className="h-4 w-4" />
@@ -1082,7 +1082,7 @@ export default function PlannerPage() {
         )}
 
         {queueItems.length === 0 ? (
-          <div className="px-6 py-10 text-center text-sm text-gray-400">
+          <div className="px-4 py-10 text-center text-sm text-gray-400 sm:px-6">
             キューにアイテムがありません。プランを承認するとキューに追加されます。
           </div>
         ) : (
@@ -1091,8 +1091,8 @@ export default function PlannerPage() {
               const queueProgress = getQueueProgress(item.current_step);
               const isFailed = item.current_step === 'failed';
               return (
-                <li key={item.id} className={`px-6 py-4 ${isFailed ? 'bg-red-50/50' : ''}`}>
-                  <div className="flex items-center justify-between mb-2">
+                <li key={item.id} className={`px-4 py-4 sm:px-6 ${isFailed ? 'bg-red-50/50' : ''}`}>
+                  <div className="flex items-center justify-between mb-2 gap-2">
                     <span className="text-sm font-medium text-gray-800 truncate">
                       {item.plan_name}
                     </span>
@@ -1104,7 +1104,7 @@ export default function PlannerPage() {
                       {isFailed && (
                         <button
                           onClick={() => handleRetryQueueItem(item.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-red-500 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-red-600"
+                          className="inline-flex items-center gap-1 rounded-md bg-red-500 px-2.5 py-2 text-[11px] font-medium text-white transition-colors hover:bg-red-600 min-h-[44px] sm:py-1 sm:min-h-0"
                         >
                           <RotateCcw className="h-3 w-3" />
                           再試行
@@ -1134,7 +1134,7 @@ export default function PlannerPage() {
                   </div>
                   {/* Step indicators */}
                   {!isFailed && (
-                    <div className="flex justify-between mt-1">
+                    <div className="flex justify-between mt-1 overflow-x-auto">
                       {QUEUE_STEPS.filter((s) => s !== 'failed').map((step) => {
                         const stepIdx = QUEUE_STEPS.indexOf(step);
                         const currentIdx = QUEUE_STEPS.indexOf(item.current_step);

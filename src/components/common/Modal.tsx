@@ -55,7 +55,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = '2x
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center"
     >
       {/* オーバーレイ — クリックでモーダルを閉じる */}
       <div
@@ -63,19 +63,19 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = '2x
         onClick={onClose}
       />
 
-      {/* モーダル本体 — クリックイベントの伝播を止める */}
+      {/* モーダル本体 — モバイルではほぼ全画面、デスクトップでは中央配置 */}
       <div
-        className={`relative w-full ${MAX_WIDTH_MAP[maxWidth]} max-h-[85vh] flex flex-col bg-white rounded-xl shadow-2xl animate-[scaleIn_200ms_ease-out]`}
+        className={`absolute inset-2 md:inset-auto md:relative w-auto md:w-full ${MAX_WIDTH_MAP[maxWidth]} flex flex-col bg-white rounded-xl shadow-2xl animate-[scaleIn_200ms_ease-out] md:max-h-[85vh] md:mx-auto`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* ヘッダー */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900 truncate">
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6 md:py-4">
+          <h2 className="text-base md:text-lg font-semibold text-gray-900 truncate pr-2">
             {title}
           </h2>
           <button
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+            className="flex h-11 w-11 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 active:bg-gray-200"
             aria-label="閉じる"
           >
             <svg
@@ -94,8 +94,8 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = '2x
           </button>
         </div>
 
-        {/* コンテンツ */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>
+        {/* コンテンツ — モバイルでも確実にスクロール可能 */}
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3 md:px-6 md:py-4">{children}</div>
       </div>
     </div>
   );

@@ -22,12 +22,12 @@ export default function DashboardShell({ children, userName }: DashboardShellPro
 
       {/* Main area — offset by sidebar width */}
       <div
-        className={`transition-[padding] duration-300 ${
-          collapsed ? 'pl-16' : 'pl-60'
+        className={`transition-[padding] duration-300 pl-0 ${
+          collapsed ? 'md:pl-16' : 'md:pl-60'
         }`}
       >
         <Header userName={userName} />
-        <main className="p-6">{children}</main>
+        <main className="px-4 py-5 sm:p-6">{children}</main>
       </div>
     </div>
   );

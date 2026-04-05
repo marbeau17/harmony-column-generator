@@ -100,6 +100,9 @@ export default function ArticleEditPage() {
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [publishSuccessOpen, setPublishSuccessOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<'success' | 'error' | null>(null);
+  const [mobileView, setMobileView] = useState<'editor' | 'preview'>('editor');
 
   // ─── Fetch article ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -210,6 +213,13 @@ export default function ArticleEditPage() {
         throw new Error(errJson?.error ?? 'ステータス遷移に失敗しました');
       }
 
+      // バックグラウンドで静的ファイルをエクスポート（失敗しても公開は成功扱い）
+      fetch('/api/export/article', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ articleId }),
+      }).catch(() => {});
+
       setPublishDialogOpen(false);
       setPublishSuccessOpen(true);
     } catch {
@@ -250,6 +260,26 @@ export default function ArticleEditPage() {
 </html>`);
     win.document.close();
   }, [title, bodyHtml]);
+
+  const handleReExport = useCallback(async () => {
+    setExporting(true);
+    setExportResult(null);
+    try {
+      const res = await fetch('/api/export/article', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ articleId }),
+      });
+      if (!res.ok) throw new Error('Export failed');
+      setExportResult('success');
+      setTimeout(() => setExportResult(null), 3000);
+    } catch {
+      setExportResult('error');
+      setTimeout(() => setExportResult(null), 5000);
+    } finally {
+      setExporting(false);
+    }
+  }, [articleId]);
 
   // ─── Loading / Error ────────────────────────────────────────────────────
 
@@ -318,20 +348,20 @@ export default function ArticleEditPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-64px)]">
       {/* ── Top bar ────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-200 bg-white shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => router.push(`/dashboard/articles/${articleId}`)}
-            className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+            className="text-sm text-gray-500 hover:text-gray-700 transition-colors shrink-0"
           >
             &larr; 戻る
           </button>
-          <h1 className="text-lg font-semibold text-gray-900 truncate max-w-md">
+          <h1 className="text-base lg:text-lg font-semibold text-gray-900 truncate max-w-[150px] sm:max-w-xs lg:max-w-md">
             {title || '無題の記事'}
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
           {/* Auto-save indicator */}
           <span
             className={`text-xs px-2 py-1 rounded ${
@@ -356,7 +386,7 @@ export default function ArticleEditPage() {
           {/* Meta panel toggle */}
           <button
             onClick={() => setMetaPanelOpen(!metaPanelOpen)}
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             title="メタ情報"
           >
             メタ情報
@@ -369,7 +399,7 @@ export default function ArticleEditPage() {
                 `SEOチェック結果:\n- 文字数: ${charCount}文字\n- タイトル: ${title.length}文字 ${title.length >= 30 && title.length <= 60 ? '(OK)' : '(30-60文字推奨)'}\n- メタディスクリプション: ${metaDescription.length}文字 ${metaDescription.length >= 100 && metaDescription.length <= 160 ? '(OK)' : '(100-160文字推奨)'}\n- キーワード: ${keyword || '未設定'}`,
               )
             }
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="hidden sm:inline-flex px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
           >
             SEOチェック
           </button>
@@ -377,7 +407,7 @@ export default function ArticleEditPage() {
           {/* Preview in new tab */}
           <button
             onClick={handlePreviewNewTab}
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="hidden sm:inline-flex px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
           >
             プレビュー
           </button>
@@ -385,9 +415,9 @@ export default function ArticleEditPage() {
           {/* Save draft */}
           <button
             onClick={handleSaveDraft}
-            className="px-3 py-1.5 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
           >
-            下書き保存
+            保存
           </button>
 
           {/* Publish */}
@@ -399,17 +429,63 @@ export default function ArticleEditPage() {
               }
               setPublishDialogOpen(true);
             }}
-            className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
+            className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
           >
             公開
           </button>
+
+          {/* Re-export (published articles only) */}
+          {article.status === 'published' && (
+            <button
+              onClick={handleReExport}
+              disabled={exporting}
+              className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm border border-brand-300 text-brand-700 rounded-lg hover:bg-brand-50 transition-colors disabled:opacity-50"
+              title="out/ ディレクトリに再エクスポート"
+            >
+              {exporting
+                ? 'エクスポート中...'
+                : exportResult === 'success'
+                  ? 'エクスポート完了'
+                  : exportResult === 'error'
+                    ? 'エクスポート失敗'
+                    : '再エクスポート'}
+            </button>
+          )}
         </div>
+      </div>
+
+      {/* ── Mobile view toggle tabs (visible only on < lg) ─────────────────── */}
+      <div className="flex lg:hidden border-b border-gray-200 bg-white shrink-0">
+        <button
+          onClick={() => setMobileView('editor')}
+          className={`flex-1 py-2.5 text-sm font-medium text-center transition-colors ${
+            mobileView === 'editor'
+              ? 'text-brand-700 border-b-2 border-brand-600 bg-brand-50/50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          編集
+        </button>
+        <button
+          onClick={() => setMobileView('preview')}
+          className={`flex-1 py-2.5 text-sm font-medium text-center transition-colors ${
+            mobileView === 'preview'
+              ? 'text-brand-700 border-b-2 border-brand-600 bg-brand-50/50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          プレビュー
+        </button>
       </div>
 
       {/* ── Main content area ──────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Editor (left 60%) */}
-        <div className="w-[60%] flex flex-col overflow-hidden border-r border-gray-200">
+        {/* Editor (mobile: full width, toggled / desktop: left 60%) */}
+        <div
+          className={`flex flex-col overflow-hidden border-r border-gray-200 ${
+            mobileView === 'editor' ? 'flex' : 'hidden'
+          } w-full lg:!flex lg:w-[60%]`}
+        >
           <div className="flex-1 overflow-y-auto">
             <TipTapEditor
               content={bodyHtml}
@@ -419,8 +495,12 @@ export default function ArticleEditPage() {
           </div>
         </div>
 
-        {/* Preview (right 40%) */}
-        <div className="w-[40%] flex flex-col overflow-hidden">
+        {/* Preview (mobile: full width, toggled / desktop: right 40%) */}
+        <div
+          className={`flex flex-col overflow-hidden ${
+            mobileView === 'preview' ? 'flex' : 'hidden'
+          } w-full lg:!flex lg:w-[40%]`}
+        >
           <PreviewPane content={bodyHtml} />
         </div>
       </div>
@@ -467,7 +547,7 @@ export default function ArticleEditPage() {
             onClick={() => setMetaPanelOpen(false)}
           />
           {/* Panel */}
-          <div className="fixed right-0 top-0 bottom-0 w-96 bg-white shadow-xl z-50 overflow-y-auto">
+          <div className="fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-white shadow-xl z-50 overflow-y-auto">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 メタ情報
@@ -686,8 +766,11 @@ export default function ArticleEditPage() {
             <h2 className="text-lg font-semibold text-gray-900 mb-1">
               記事を公開しました
             </h2>
-            <p className="text-sm text-gray-500 mb-6">
+            <p className="text-sm text-gray-500 mb-2">
               「{title || '無題の記事'}」が正常に公開されました。
+            </p>
+            <p className="text-xs text-gray-400 mb-6">
+              静的ファイルを out/ ディレクトリにエクスポートしました。
             </p>
             <div className="flex flex-col gap-2">
               <button

@@ -183,11 +183,11 @@ h2, h3, p, ul, ol, strong, em, span のみ。
 - キャッチコピーと補足テキストは構成案の cta_texts を使用する
 - リンク先は必ず ${CTA_URL}
 
-### 画像プレースホルダー（3箇所に必ず配置）
+### 画像プレースホルダー（2箇所に必ず配置）
 形式: \`<!--IMAGE:{section_id}:{suggested_filename}-->\`
-- hero: 記事冒頭（導入文の直後）
 - body: 本文中（中盤のセクション冒頭）
 - summary: まとめセクション冒頭
+※ hero画像はテンプレートが自動挿入するため、本文には含めないこと
 
 **【最重要ルール】**
 - ユーザーメッセージに記載された「コピー必須プレースホルダー一覧」のコメントをそのまま一文字も変えずにコピーすること
@@ -232,6 +232,7 @@ export function buildWritingUserPrompt(input: Stage2Input): string {
   // 画像プレースホルダー一覧
   const imagePrompts = input.outline?.image_prompts ?? [];
   const imagePromptsText = imagePrompts
+    .filter((p) => p.section_id !== 'hero')
     .map(
       (p) => `<!--IMAGE:${p.section_id}:${p.suggested_filename}-->`
     )
@@ -282,7 +283,7 @@ ${ctaTextsText || '(CTA文言未設定)'}
 ${ctaPositionsText || '(CTA位置未設定)'}
 
 ### コピー必須プレースホルダー一覧（※一字一句変えずにコピーすること）
-必ず以下のプレースホルダーをそのまま本文中の対応する箇所に配置してください（3箇所）:
+必ず以下のプレースホルダーをそのまま本文中の対応する箇所に配置してください（2箇所）:
 ${imagePromptsText || '(画像プレースホルダーなし)'}
 **警告**: 上記のコメントを一文字も変更せずにそのまま使用すること。ファイル名やsection_idを独自に書き換えると画像が表示されません。
 
@@ -300,7 +301,7 @@ ${targetWordCount}文字（±20%の範囲で）
 2. 導入文として、読者の悩みに共感する温かい段落を最初に配置する（「〜ではないでしょうか」「〜ありませんか」で始める）
 3. H2 には section ID を付ける: <h2 id="section-1">見出し</h2>
 4. CTA を指定された3箇所に配置する（<div class="harmony-cta"> 形式、システムプロンプト参照）
-5. 画像プレースホルダーを3箇所に配置する（hero: 導入直後、body: 中盤、summary: まとめ冒頭）
+5. 画像プレースホルダーを2箇所に配置する（body: 中盤、summary: まとめ冒頭）。hero画像はテンプレートが自動挿入するため本文には含めないこと
 6. FAQ は <div class="harmony-faq"> 形式で記事末尾付近に配置する
 7. 結びは「希望」「肯定」「祈り」で温かく閉じる（「〜しますように」「それでいい」「大丈夫」）
 8. 医療アドバイスや宗教的断定は絶対に含めない

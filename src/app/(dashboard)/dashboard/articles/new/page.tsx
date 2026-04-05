@@ -142,10 +142,10 @@ export default function NewArticlePage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-2xl space-y-4 px-4 sm:space-y-6 sm:px-0">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-brand-800">新規記事作成</h1>
+        <h1 className="text-xl font-bold text-brand-800 sm:text-2xl">新規記事作成</h1>
         <p className="mt-1 text-sm text-brand-500">
           記事のテーマと方向性を設定して、AIにアウトラインを生成させます。
         </p>
@@ -154,7 +154,7 @@ export default function NewArticlePage() {
       {/* Form card */}
       <form
         onSubmit={handleSubmit}
-        className="space-y-6 rounded-xl border border-brand-200 bg-white p-6 shadow-sm"
+        className="space-y-5 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:space-y-6 sm:p-6"
       >
         {/* Theme category */}
         <fieldset>
@@ -167,7 +167,8 @@ export default function NewArticlePage() {
                 key={cat.value}
                 type="button"
                 onClick={() => setTheme(cat.value)}
-                className={`rounded-lg border px-3 py-2 text-sm transition
+                className={`rounded-lg border px-3 py-3 text-sm transition
+                  active:scale-[0.97] sm:py-2
                   ${
                     theme === cat.value
                       ? 'border-brand-500 bg-brand-500 text-white'
@@ -189,8 +190,8 @@ export default function NewArticlePage() {
             {PERSONA_TYPES.map((p) => (
               <label
                 key={p.value}
-                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-2.5
-                  text-sm transition
+                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3.5
+                  text-sm transition active:scale-[0.98] sm:py-2.5
                   ${
                     persona === p.value
                       ? 'border-brand-500 bg-brand-50'
@@ -225,9 +226,9 @@ export default function NewArticlePage() {
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             placeholder="例: チャクラ 瞑想 初心者"
-            className="w-full rounded-lg border border-brand-200 px-4 py-2.5 text-sm
+            className="w-full rounded-lg border border-brand-200 px-4 py-3 text-base
               transition focus:border-brand-500 focus:outline-none focus:ring-2
-              focus:ring-brand-500/20"
+              focus:ring-brand-500/20 sm:py-2.5 sm:text-sm"
           />
         </div>
 
@@ -242,7 +243,8 @@ export default function NewArticlePage() {
                 key={pt.value}
                 type="button"
                 onClick={() => setPerspectiveType(pt.value)}
-                className={`rounded-lg border px-3 py-2 text-sm transition
+                className={`rounded-lg border px-3 py-3 text-sm transition
+                  active:scale-[0.97] sm:py-2
                   ${
                     perspectiveType === pt.value
                       ? 'border-brand-500 bg-brand-500 text-white'
@@ -271,7 +273,7 @@ export default function NewArticlePage() {
             step={100}
             value={targetWordCount}
             onChange={(e) => setTargetWordCount(Number(e.target.value))}
-            className="w-full accent-brand-500"
+            className="h-2 w-full cursor-pointer accent-brand-500 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:w-6"
           />
           <div className="flex justify-between text-xs text-brand-400">
             <span>500</span>
@@ -314,9 +316,11 @@ export default function NewArticlePage() {
           type="submit"
           disabled={submitting}
           className="inline-flex w-full items-center justify-center gap-2 rounded-lg
-            bg-brand-500 px-6 py-3 text-sm font-medium text-white
-            transition hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed
-            focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            bg-brand-500 px-6 py-4 text-base font-medium text-white
+            transition hover:bg-brand-600 active:bg-brand-700
+            disabled:opacity-50 disabled:cursor-not-allowed
+            focus:outline-none focus:ring-2 focus:ring-brand-500/20
+            sm:py-3 sm:text-sm"
         >
           {submitting ? (
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />

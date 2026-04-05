@@ -116,20 +116,20 @@ export default function Header({ userName }: HeaderProps) {
   const breadcrumbs = buildBreadcrumbs(pathname);
 
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between h-14 px-6 bg-white border-b border-slate-200">
+    <header className="sticky top-0 z-20 flex items-center justify-between h-14 md:h-14 pl-12 md:pl-6 pr-4 md:pr-6 bg-white border-b border-slate-200">
       {/* Breadcrumb + Page title */}
       <div className="min-w-0 flex-1">
         {breadcrumbs.length > 1 && (
-          <nav aria-label="パンくずリスト" className="flex items-center gap-1 text-xs text-slate-400 mb-0.5">
+          <nav aria-label="パンくずリスト" className="flex items-center gap-1 text-xs text-slate-400 mb-0.5 overflow-hidden">
             {breadcrumbs.map((crumb, i) => (
-              <span key={i} className="flex items-center gap-1">
-                {i > 0 && <ChevronRight className="w-3 h-3" />}
+              <span key={i} className="flex items-center gap-1 min-w-0 shrink-0 last:shrink">
+                {i > 0 && <ChevronRight className="w-3 h-3 shrink-0" />}
                 {crumb.href ? (
-                  <Link href={crumb.href} className="hover:text-slate-600 transition-colors">
+                  <Link href={crumb.href} className="hover:text-slate-600 transition-colors whitespace-nowrap">
                     {crumb.label}
                   </Link>
                 ) : (
-                  <span className="text-slate-500 font-medium">{crumb.label}</span>
+                  <span className="text-slate-500 font-medium truncate">{crumb.label}</span>
                 )}
               </span>
             ))}
@@ -144,7 +144,7 @@ export default function Header({ userName }: HeaderProps) {
       <div className="relative" ref={menuRef}>
         <button
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+          className="flex items-center gap-2 px-2.5 py-1.5 min-h-[44px] min-w-[44px] justify-center rounded-lg hover:bg-slate-50 transition-colors"
         >
           <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gold to-sage grid place-items-center text-white text-xs font-semibold">
             {userName[0]?.toUpperCase() ?? 'U'}
@@ -170,7 +170,7 @@ export default function Header({ userName }: HeaderProps) {
             </div>
             <button
               onClick={handleSignOut}
-              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+              className="w-full flex items-center gap-2 px-4 py-2 min-h-[44px] text-sm text-red-500 hover:bg-red-50 transition-colors"
             >
               <LogOut className="w-4 h-4" />
               サインアウト

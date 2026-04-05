@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Hide scrollbar for horizontal scroll containers */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 :root {
   --color-primary: #b39578;
   --color-dark: #53352b;
@@ -204,10 +215,12 @@ a {
 /* ─── Scroll to Top Button ─── */
 .scroll-to-top {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
-  width: 50px;
-  height: 50px;
+  right: 1rem;       /* 16px – mobile default */
+  bottom: 1rem;      /* 16px – mobile default */
+  min-width: 44px;   /* touch-friendly minimum */
+  min-height: 44px;  /* touch-friendly minimum */
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: #b39578;
   color: #fff;
@@ -222,6 +235,14 @@ a {
   visibility: hidden;
   transition: opacity 0.3s, visibility 0.3s, transform 0.2s;
   box-shadow: 0 4px 10px rgba(83,53,43,0.2);
+}
+@media (min-width: 768px) {
+  .scroll-to-top {
+    right: 2rem;     /* 32px – desktop */
+    bottom: 2rem;    /* 32px – desktop */
+    width: 50px;
+    height: 50px;
+  }
 }
 .scroll-to-top.visible {
   opacity: 1;
@@ -243,6 +264,103 @@ a {
 .related-article-name { font-size: 0.85rem; font-weight: 600; color: #53352b; padding: 0.75rem; margin: 0; line-height: 1.4; }
 .related-article-theme { display: inline-block; font-size: 0.7rem; color: #b39578; padding: 0 0.75rem 0.75rem; }
 @media (max-width: 767px) { .related-articles-grid { grid-template-columns: 1fr; } }
+
+/* ─── Base Responsive Image Rule ─── */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ─── Prose Content Images ─── */
+.prose img,
+article img,
+[class*="article-body"] img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ─── Mobile Responsive Styles ─── */
+@media (max-width: 767px) {
+  /* CTA: smaller padding, full-width button */
+  .harmony-cta {
+    padding: 0.8rem 1rem;
+    margin: 1.5rem 0;
+    border-radius: 8px;
+  }
+  .harmony-cta-catch {
+    font-size: 0.88rem;
+  }
+  .harmony-cta-sub {
+    font-size: 0.78rem;
+  }
+  .harmony-cta-btn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 0.65rem 1rem;
+  }
+  .harmony-cta[data-cta-key="cta3"] .harmony-cta-btn {
+    padding: 0.7rem 1rem;
+  }
+
+  /* TOC: mobile-friendly padding and font sizes */
+  .article-toc {
+    padding: 0.8rem 1rem;
+    margin: 1rem 0 1.5rem;
+  }
+  .article-toc-title {
+    font-size: 14px;
+  }
+  .article-toc-list li a {
+    font-size: 13px;
+    padding: 0.15rem 0;
+    display: inline-block;
+  }
+  .article-toc-list ol {
+    padding-left: 0.8rem;
+  }
+
+  /* Copyright: proper mobile padding */
+  .site-copyright {
+    padding: 1rem 0.75rem;
+    font-size: 0.72rem;
+  }
+
+  /* Scroll to Top: closer to corner */
+  .scroll-to-top {
+    right: 1rem;
+    bottom: 1rem;
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+
+  /* Related articles: larger touch targets */
+  .related-article-card {
+    min-height: 60px;
+  }
+  .related-article-thumb {
+    height: 160px;
+  }
+  .related-article-name {
+    font-size: 0.9rem;
+    padding: 0.85rem 1rem;
+  }
+  .related-article-theme {
+    font-size: 0.75rem;
+    padding: 0 1rem 0.85rem;
+  }
+}
+
+/* ─── Tablet Responsive Styles ─── */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .related-articles-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .harmony-cta {
+    padding: 1rem 1.2rem;
+  }
+}
 
 /* Modal animations */
 @keyframes fadeIn {

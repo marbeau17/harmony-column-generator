@@ -91,28 +91,28 @@ export default async function DashboardPage() {
   const queuePendingCount = queuePendingResult.count ?? 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* ページタイトル */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">ダッシュボード</h1>
+        <p className="mt-1 text-xs sm:text-sm text-gray-500">
           Harmony Column Generator の概要
         </p>
       </div>
 
       {/* キュー処理中インジケーター */}
       {queuePendingCount > 0 && (
-        <div className="flex items-center gap-3 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
-          <span className="relative flex h-3 w-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 rounded-lg bg-amber-50 border border-amber-200 px-3 sm:px-4 py-3">
+          <span className="relative flex h-3 w-3 flex-shrink-0">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
             <span className="relative inline-flex h-3 w-3 rounded-full bg-amber-500" />
           </span>
-          <p className="text-sm text-amber-800">
+          <p className="text-xs sm:text-sm text-amber-800">
             <span className="font-medium">{queuePendingCount}件</span>の記事がキュー処理中です
           </p>
           <Link
             href="/dashboard/planner"
-            className="ml-auto text-sm font-medium text-amber-700 hover:text-amber-900"
+            className="ml-auto text-xs sm:text-sm font-medium text-amber-700 hover:text-amber-900"
           >
             確認する &rarr;
           </Link>
@@ -120,7 +120,7 @@ export default async function DashboardPage() {
       )}
 
       {/* StatCard 4つ横並び */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard
           title="公開記事数"
           value={publishedCount}
@@ -148,26 +148,26 @@ export default async function DashboardPage() {
       </div>
 
       {/* 最近の記事一覧 */}
-      <div className="rounded-xl bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">最近の記事</h2>
+      <div className="rounded-xl bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 sm:px-6 py-3 sm:py-4">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900">最近の記事</h2>
           <Link
             href="/dashboard/articles"
-            className="text-sm font-medium text-brand-600 hover:text-brand-700"
+            className="text-xs sm:text-sm font-medium text-brand-600 hover:text-brand-700"
           >
             すべて表示 &rarr;
           </Link>
         </div>
 
         {recentArticles.length === 0 ? (
-          <div className="flex flex-col items-center px-6 py-12 text-center">
+          <div className="flex flex-col items-center px-4 sm:px-6 py-10 sm:py-12 text-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
             </svg>
             <p className="mt-3 text-sm text-gray-400">まだ記事がありません</p>
             <Link
               href="/dashboard/planner"
-              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600"
+              className="mt-3 inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-600"
             >
               AIプランナーで始めましょう
             </Link>
@@ -178,13 +178,13 @@ export default async function DashboardPage() {
               <li key={article.id}>
                 <Link
                   href={`/dashboard/articles/${article.id}`}
-                  className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-gray-50"
+                  className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 transition-colors hover:bg-gray-50"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-900">
+                    <p className="truncate text-xs sm:text-sm font-medium text-gray-900">
                       {article.title || '(タイトル未設定)'}
                     </p>
-                    <p className="mt-0.5 text-xs text-gray-400">
+                    <p className="mt-0.5 text-[11px] sm:text-xs text-gray-400">
                       {article.updated_at
                         ? new Date(article.updated_at).toLocaleDateString('ja-JP', {
                             year: 'numeric',
@@ -194,7 +194,7 @@ export default async function DashboardPage() {
                         : '—'}
                     </p>
                   </div>
-                  <div className="ml-4 flex-shrink-0">
+                  <div className="ml-3 sm:ml-4 flex-shrink-0">
                     <StatusBadge status={article.status} />
                   </div>
                 </Link>
@@ -207,12 +207,12 @@ export default async function DashboardPage() {
       {/* CTA バナー */}
       <Link
         href="/dashboard/articles/new"
-        className="block rounded-xl bg-brand-500 px-6 py-6 text-center shadow-sm transition-colors hover:bg-brand-600"
+        className="block rounded-xl bg-brand-500 px-4 sm:px-6 py-5 sm:py-6 text-center shadow-sm transition-colors hover:bg-brand-600 active:bg-brand-700"
       >
-        <p className="text-lg font-bold text-white">
+        <p className="text-base sm:text-lg font-bold text-white">
           新しいコラムを作成
         </p>
-        <p className="mt-1 text-sm text-white/80">
+        <p className="mt-1 text-xs sm:text-sm text-white/80">
           元記事から AI でスピリチュアルコラムを自動生成します
         </p>
       </Link>

@@ -44,9 +44,9 @@ function HeadingNode({ heading, index, parentIndex, onUpdate }: HeadingNodeProps
   const isH2 = heading.level === 'h2';
 
   return (
-    <div className={isH2 ? 'mb-3' : 'mb-1 ml-6'}>
+    <div className={isH2 ? 'mb-3' : 'mb-1 ml-3 sm:ml-6'}>
       <div
-        className={`group flex items-center gap-3 rounded-lg border p-3 transition-colors ${
+        className={`group flex items-start gap-2 sm:items-center sm:gap-3 rounded-lg border p-2.5 sm:p-3 transition-colors ${
           isH2
             ? 'border-brand-200 bg-white hover:border-brand-400'
             : 'border-slate-200 bg-slate-50 hover:border-slate-300'
@@ -84,13 +84,13 @@ function HeadingNode({ heading, index, parentIndex, onUpdate }: HeadingNodeProps
         )}
 
         {/* 推定文字数 */}
-        <span className="shrink-0 text-xs text-slate-400">
+        <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">
           約{heading.estimated_words}字
         </span>
 
-        {/* 編集アイコン */}
+        {/* 編集アイコン（モバイルでは常時表示） */}
         <button
-          className="shrink-0 rounded p-1 text-slate-400 opacity-0 transition-opacity hover:bg-brand-100 hover:text-brand-600 group-hover:opacity-100"
+          className="shrink-0 rounded p-1.5 text-slate-400 opacity-100 sm:opacity-0 transition-opacity hover:bg-brand-100 hover:text-brand-600 group-hover:opacity-100"
           onClick={() => setEditing(true)}
           title="編集"
         >
@@ -300,22 +300,22 @@ export default function OutlinePage() {
   // ─── レンダリング ─────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-4 px-4 sm:space-y-6 sm:px-0">
       {/* ─ ヘッダー ─ */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="mb-1 flex items-center gap-2">
             <span className="text-xs font-medium text-brand-400">STEP 2</span>
             <StatusBadge status={article.status} />
           </div>
-          <h1 className="text-2xl font-bold text-brand-800">アウトライン確認</h1>
+          <h1 className="text-xl font-bold text-brand-800 sm:text-2xl">アウトライン確認</h1>
           <p className="mt-1 text-sm text-slate-500">
             キーワード:
             <span className="ml-1 font-medium text-brand-600">{article.keyword}</span>
           </p>
         </div>
         <button
-          className="rounded-lg border border-brand-200 px-4 py-2 text-sm text-brand-600 hover:bg-brand-50"
+          className="self-start rounded-lg border border-brand-200 px-4 py-2 text-sm text-brand-600 hover:bg-brand-50"
           onClick={() => router.back()}
         >
           ← 戻る
@@ -323,7 +323,7 @@ export default function OutlinePage() {
       </div>
 
       {/* ─ タイトル案 ─ */}
-      <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
             タイトル案
@@ -332,7 +332,7 @@ export default function OutlinePage() {
         </div>
         {editingTitle ? (
           <input
-            className="w-full rounded-lg border border-brand-300 px-4 py-3 text-lg font-bold text-brand-800 outline-none focus:ring-2 focus:ring-brand-300"
+            className="w-full rounded-lg border border-brand-300 px-3 py-2.5 text-base font-bold text-brand-800 outline-none focus:ring-2 focus:ring-brand-300 sm:px-4 sm:py-3 sm:text-lg"
             value={editTitle}
             onChange={(e) => setEditTitle(e.target.value)}
             onBlur={() => setEditingTitle(false)}
@@ -341,7 +341,7 @@ export default function OutlinePage() {
           />
         ) : (
           <p
-            className="cursor-pointer rounded-lg px-4 py-3 text-lg font-bold text-brand-800 transition-colors hover:bg-brand-50"
+            className="cursor-pointer rounded-lg px-3 py-2.5 text-base font-bold text-brand-800 transition-colors hover:bg-brand-50 sm:px-4 sm:py-3 sm:text-lg"
             onClick={() => setEditingTitle(true)}
             title="クリックして編集"
           >
@@ -351,7 +351,7 @@ export default function OutlinePage() {
       </section>
 
       {/* ─ メタディスクリプション ─ */}
-      <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
             メタディスクリプション
@@ -381,8 +381,8 @@ export default function OutlinePage() {
       </section>
 
       {/* ─ 見出しツリー ─ */}
-      <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
             見出し構成
           </h2>
@@ -405,9 +405,9 @@ export default function OutlinePage() {
       </section>
 
       {/* ─ CTA / 画像配置 ─ */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
         {/* CTA配置位置 */}
-        <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
             CTA配置位置
           </h2>
@@ -442,7 +442,7 @@ export default function OutlinePage() {
         </section>
 
         {/* 画像配置位置 */}
-        <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
             画像配置位置
           </h2>
@@ -466,7 +466,7 @@ export default function OutlinePage() {
 
       {/* ─ FAQ プレビュー ─ */}
       {outline.faq && outline.faq.length > 0 && (
-        <section className="rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
             FAQ（よくある質問）
           </h2>
@@ -482,14 +482,14 @@ export default function OutlinePage() {
       )}
 
       {/* ─ アクションボタン ─ */}
-      <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-col-reverse gap-3 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <button
-          className="rounded-lg border border-amber-300 bg-amber-50 px-5 py-2.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-lg border border-amber-300 bg-amber-50 px-5 py-3 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5"
           onClick={handleRegenerate}
           disabled={regenerating || submitting}
         >
           {regenerating ? (
-            <span className="flex items-center gap-2">
+            <span className="flex items-center justify-center gap-2">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-300 border-t-amber-600" />
               再生成中...
             </span>
@@ -499,12 +499,12 @@ export default function OutlinePage() {
         </button>
 
         <button
-          className="rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-lg bg-brand-500 px-6 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5"
           onClick={handleApprove}
           disabled={submitting || regenerating}
         >
           {submitting ? (
-            <span className="flex items-center gap-2">
+            <span className="flex items-center justify-center gap-2">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
               処理中...
             </span>

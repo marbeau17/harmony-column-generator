@@ -1,10 +1,10 @@
 // ============================================================================
 // src/components/layout/Sidebar.tsx
-// ダッシュボード サイドバー — スピリチュアルブランドカラー
+// ダッシュボード サイドバー — スピリチュアルブランドカラー（モバイル対応）
 // ============================================================================
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -16,6 +16,8 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Menu,
+  X,
 } from 'lucide-react';
 
 // ─── Navigation items ───────────────────────────────────────────────────────
@@ -39,6 +41,7 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const [queueCount, setQueueCount] = useState(0);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   // キュー件数を取得（処理待ち）
   useEffect(() => {
@@ -60,6 +63,25 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
+  // ページ遷移時にモバイルサイドバーを閉じる
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // モバイルオープン時にbodyスクロールを無効化
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileOpen]);
+
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === href;
     // /dashboard/articles/new は /dashboard/articles より先にチェック
@@ -68,71 +90,111 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   };
 
   return (
-    <aside
-      className={`fixed inset-y-0 left-0 z-40 flex flex-col
-        bg-brand-700 transition-[width] duration-300
-        ${collapsed ? 'w-16' : 'w-60'}`}
-    >
-      {/* ── Logo ─────────────────────────────────────────────────── */}
-      <div className="flex items-center h-14 px-3 border-b border-brand-600 gap-3">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gold to-sage grid place-items-center text-white text-sm font-bold shrink-0">
-          H
-        </div>
-        {!collapsed && (
-          <span className="text-[15px] font-semibold text-white tracking-wide truncate">
+    <>
+      {/* ── Mobile hamburger button (visible < md) ─────────────── */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="fixed top-3 left-3 z-50 md:hidden flex items-center justify-center w-10 h-10 rounded-lg bg-brand-700 text-white shadow-lg"
+        aria-label="メニューを開く"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* ── Mobile backdrop overlay (visible < md when open) ───── */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={closeMobile}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* ── Sidebar ────────────────────────────────────────────── */}
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-50 flex flex-col
+          bg-brand-700 transition-all duration-300
+          w-60
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+          md:translate-x-0
+          ${collapsed ? 'md:w-16' : 'md:w-60'}
+        `}
+      >
+        {/* ── Logo ─────────────────────────────────────────────── */}
+        <div className="flex items-center h-14 px-3 border-b border-brand-600 gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gold to-sage grid place-items-center text-white text-sm font-bold shrink-0">
+            H
+          </div>
+          {/* On mobile overlay always show label; on desktop respect collapsed */}
+          <span
+            className={`text-[15px] font-semibold text-white tracking-wide truncate
+              ${collapsed ? 'md:hidden' : ''}`}
+          >
             Harmony
           </span>
-        )}
-      </div>
 
-      {/* ── Nav ──────────────────────────────────────────────────── */}
-      <nav className="flex-1 py-3 space-y-0.5 overflow-y-auto">
-        {NAV.map((item) => {
-          const active = isActive(item.href);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={collapsed ? item.label : undefined}
-              className={`relative flex items-center gap-3 mx-2 px-2.5 py-2 rounded-lg text-[13px]
-                transition-colors
-                ${
-                  active
-                    ? 'bg-brand-500 text-white font-medium'
-                    : 'text-brand-100 hover:bg-brand-600 hover:text-white'
-                }`}
-            >
-              <Icon className="w-5 h-5 shrink-0" />
-              {!collapsed && <span className="flex-1">{item.label}</span>}
-              {/* キューバッジ */}
-              {item.badgeKey === 'queue' && queueCount > 0 && (
-                <span
-                  className={`inline-flex items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold text-amber-900
-                    ${collapsed ? 'absolute -top-1 -right-1 h-4 w-4' : 'ml-auto h-5 min-w-[20px] px-1'}`}
-                >
-                  {queueCount > 99 ? '99+' : queueCount}
+          {/* Mobile close button */}
+          <button
+            onClick={closeMobile}
+            className="ml-auto p-1.5 rounded-lg text-brand-200 hover:text-white hover:bg-brand-600 transition-colors md:hidden"
+            aria-label="メニューを閉じる"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* ── Nav ──────────────────────────────────────────────── */}
+        <nav className="flex-1 py-3 space-y-0.5 overflow-y-auto">
+          {NAV.map((item) => {
+            const active = isActive(item.href);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                title={collapsed ? item.label : undefined}
+                className={`relative flex items-center gap-3 mx-2 px-2.5 py-2 rounded-lg text-[13px]
+                  transition-colors
+                  ${
+                    active
+                      ? 'bg-brand-500 text-white font-medium'
+                      : 'text-brand-100 hover:bg-brand-600 hover:text-white'
+                  }`}
+              >
+                <Icon className="w-5 h-5 shrink-0" />
+                {/* On mobile overlay always show label; on desktop respect collapsed */}
+                <span className={`flex-1 ${collapsed ? 'md:hidden' : ''}`}>
+                  {item.label}
                 </span>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
+                {/* キューバッジ */}
+                {item.badgeKey === 'queue' && queueCount > 0 && (
+                  <span
+                    className={`inline-flex items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold text-amber-900
+                      ${collapsed ? 'md:absolute md:-top-1 md:-right-1 md:h-4 md:w-4 ml-auto h-5 min-w-[20px] px-1 md:ml-0 md:px-0' : 'ml-auto h-5 min-w-[20px] px-1'}`}
+                  >
+                    {queueCount > 99 ? '99+' : queueCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
 
-      {/* ── Footer toggle ────────────────────────────────────────── */}
-      <div className="border-t border-brand-600 p-1.5 flex items-center">
-        <button
-          onClick={onToggle}
-          className="p-2 rounded-lg text-brand-200 hover:text-white hover:bg-brand-600 transition-colors"
-          aria-label={collapsed ? 'サイドバーを展開' : 'サイドバーを折りたたむ'}
-        >
-          {collapsed ? (
-            <ChevronRight className="w-5 h-5" />
-          ) : (
-            <ChevronLeft className="w-5 h-5" />
-          )}
-        </button>
-      </div>
-    </aside>
+        {/* ── Footer toggle (desktop only) ────────────────────── */}
+        <div className="hidden md:flex border-t border-brand-600 p-1.5 items-center">
+          <button
+            onClick={onToggle}
+            className="p-2 rounded-lg text-brand-200 hover:text-white hover:bg-brand-600 transition-colors"
+            aria-label={collapsed ? 'サイドバーを展開' : 'サイドバーを折りたたむ'}
+          >
+            {collapsed ? (
+              <ChevronRight className="w-5 h-5" />
+            ) : (
+              <ChevronLeft className="w-5 h-5" />
+            )}
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }
