@@ -664,7 +664,7 @@ export async function POST(request: NextRequest) {
             throw new Error('記事が見つかりません');
           }
 
-          // ── 実際の画像生成（Banana Pro） ──
+          // ── 実際の画像生成（Gemini Image） ──
           const imagePrompts = article.image_prompts as { prompt: string; position: string; alt_text_ja?: string }[] | null;
           if (imagePrompts && imagePrompts.length > 0) {
             try {
@@ -674,8 +674,10 @@ export async function POST(request: NextRequest) {
 
               for (const imgPrompt of imagePrompts.slice(0, 3)) {
                 try {
+                  console.log(`[queue] images: Generating image for position=${imgPrompt.position} articleId=${articleId}`);
+                  const imgStart = Date.now();
                   logger.info('api', 'processQueue.generating_image', { articleId, position: imgPrompt.position });
-                  const result = await generateImage(imgPrompt.prompt, { timeoutMs: 90_000 });
+                  const result = await generateImage(imgPrompt.prompt, { timeoutMs: 60_000 });
                   const url = await uploadImage(articleId, imgPrompt.position, result.imageBuffer, result.mimeType);
                   imageFiles.push({
                     position: imgPrompt.position,
@@ -683,8 +685,10 @@ export async function POST(request: NextRequest) {
                     alt: imgPrompt.alt_text_ja || '',
                     filename: `${imgPrompt.position}.webp`,
                   });
+                  console.log(`[queue] images: Image ${imgPrompt.position} generated in ${Math.round((Date.now() - imgStart) / 1000)}s → ${url.substring(0, 60)}...`);
                   logger.info('api', 'processQueue.image_generated', { articleId, position: imgPrompt.position, url });
                 } catch (imgErr) {
+                  console.log(`[queue] images: Image ${imgPrompt.position} FAILED: ${String(imgErr).substring(0, 100)}`);
                   logger.warn('api', 'processQueue.image_failed', { articleId, position: imgPrompt.position, error: String(imgErr) });
                   // 1枚失敗しても続行
                 }
@@ -782,6 +786,7 @@ export async function POST(request: NextRequest) {
             passed: qualityResult.passed,
           });
 
+          console.log(`[queue] images: DONE. Moving to seo_check for articleId=${articleId}`);
           return NextResponse.json({
             processed: true,
             queueId: queueItem.id,
