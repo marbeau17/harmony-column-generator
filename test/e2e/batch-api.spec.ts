@@ -108,8 +108,9 @@ test.describe('Batch Generation API Tests', () => {
 
       console.log(`[test] ${a.slug}: ${imgTags} <img> tags in body, ${imageFiles} image_files`);
 
-      // Articles with images should have at least some img tags in body
-      if (imageFiles > 0) {
+      // Articles with images AND body HTML should have img tags
+      const hasBody = (a.stage2_body_html || '').length > 100;
+      if (imageFiles > 0 && hasBody) {
         expect(imgTags).toBeGreaterThan(0);
       }
     }

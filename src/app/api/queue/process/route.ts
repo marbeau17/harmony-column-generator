@@ -748,9 +748,18 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          const bodyHtml = (article.stage2_body_html || article.stage3_final_html) as string | null;
+          const bodyHtml = (article.stage2_body_html || article.stage3_final_html || article.published_html) as string | null;
           if (!bodyHtml) {
-            throw new Error('品質チェック対象の本文がありません');
+            // 本文がない場合は品質チェックをスキップしてseo_checkへ進む
+            console.log(`[queue] images: No body HTML found for article ${articleId}, skipping quality check`);
+            await updateQueueStep(serviceClient, queueItem.id, 'seo_check');
+            return NextResponse.json({
+              processed: true,
+              queueId: queueItem.id,
+              previousStep: 'images',
+              currentStep: 'seo_check',
+              articleId,
+            });
           }
 
           // 品質チェック（AI直接呼び出し）
