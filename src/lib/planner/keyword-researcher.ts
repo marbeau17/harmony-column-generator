@@ -195,11 +195,21 @@ ${themeFilter}
   const suggestions = data.keywords ?? [];
 
   // 使用済みキーワードを再度フィルタリング（AIが見落とす可能性があるため）
-  const filtered = suggestions.filter(
-    (s) => !usedKeywords.some(
-      (used) => used === s.keyword || used.includes(s.keyword) || s.keyword.includes(used),
-    ),
-  );
+  // 個別語の70%以上が重複する場合もフィルタ（「セルフレイキ やり方 初心者」と「セルフレイキ やり方」の重複を検出）
+  const filtered = suggestions.filter((s) => {
+    const newWords = new Set(s.keyword.split(/[\s　]+/).filter(Boolean));
+    return !usedKeywords.some((used) => {
+      // 完全一致
+      if (used === s.keyword) return true;
+      // 包含チェック
+      if (used.includes(s.keyword) || s.keyword.includes(used)) return true;
+      // 個別語の重複率チェック
+      const usedWords = new Set(used.split(/[\s　]+/).filter(Boolean));
+      const overlap = [...newWords].filter(w => usedWords.has(w)).length;
+      const overlapRatio = overlap / Math.min(newWords.size, usedWords.size);
+      return overlapRatio >= 0.7; // 70%以上の語が重複したら除外
+    });
+  });
 
   console.info('[keyword-researcher.researchKeywords] done', {
     rawCount: suggestions.length,
