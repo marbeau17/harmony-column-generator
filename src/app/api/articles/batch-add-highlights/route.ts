@@ -145,6 +145,11 @@ export async function POST(request: Request) {
           continue;
         }
 
+        // published_html も同期（stage2が更新されたらpublished_htmlにも反映）
+        if (updateFields.stage2_body_html && article.published_html) {
+          updateFields.published_html = updateFields.stage2_body_html;
+        }
+
         const { error: updateError } = await serviceClient
           .from('articles')
           .update({

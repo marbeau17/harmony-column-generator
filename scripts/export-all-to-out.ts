@@ -40,7 +40,7 @@ async function main() {
     const imgDir = path.join(dir, 'images');
     if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
 
-    const body = a.published_html || a.stage3_final_html || a.stage2_body_html || '';
+    const body = a.stage2_body_html || a.stage3_final_html || a.published_html || '';
     const title = a.title || '';
     const kw = a.keyword || '';
     const theme = a.theme || '';
