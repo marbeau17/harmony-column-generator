@@ -38,7 +38,7 @@ const COUNSELOR = {
   name: '小林由起子',
   role: 'スピリチュアルカウンセラー',
   bio: '20年以上のスピリチュアルカウンセリング経験を持つ。ツインレイ・前世療法・チャクラヒーリングを専門とし、多くの方の魂の成長をサポート。グリーフケアにも力を入れ、悲しみを抱える方々に寄り添うセッションを提供している。',
-  avatarUrl: 'https://harmony-mc.com/wp-content/uploads/2019/12/brand.png',
+  avatarUrl: 'https://khsorerqojgwbmtiqrac.supabase.co/storage/v1/object/public/article-images/profile/author-sketch.jpg',
 } as const;
 
 const DISCLAIMER_TEXT =
@@ -527,7 +527,7 @@ export function generateArticleHtml(
   <header class="siteHeader">
     <div class="siteHeader-container">
       <a href="https://harmony-mc.com/" class="siteHeader-logo">
-        <img src="https://harmony-mc.com/wp-content/uploads/2019/12/brand.png" alt="スピリチュアルカウンセラー小林由起子">
+        <img src="https://khsorerqojgwbmtiqrac.supabase.co/storage/v1/object/public/article-images/profile/author-sketch.jpg" alt="スピリチュアルカウンセラー小林由起子">
       </a>
       <nav class="gMenu">
         <ul>

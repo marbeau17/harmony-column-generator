@@ -111,7 +111,7 @@ async function main() {
 <img src="./images/hero.jpg" alt="${esc(title)}" style="width:100%;border-radius:0.75rem;margin-bottom:2rem;aspect-ratio:16/9;object-fit:cover">
 <div style="line-height:1.85;font-size:1rem">${cleanBody}</div>
 <div style="margin:2rem 0;padding:1.5rem;border:1px solid #e8ddd4;border-radius:0.75rem;display:flex;gap:1rem;align-items:center">
-<img src="https://harmony-mc.com/wp-content/uploads/2019/12/brand.png" alt="小林由起子" width="80" height="80" style="border-radius:50%;flex-shrink:0">
+<img src="https://khsorerqojgwbmtiqrac.supabase.co/storage/v1/object/public/article-images/profile/author-sketch.jpg" alt="小林由起子" width="80" height="80" style="border-radius:50%;flex-shrink:0">
 <div><p style="font-weight:700;color:var(--color-dark);margin:0">小林由起子</p><p style="font-size:0.85rem;color:var(--color-primary);margin:0.25rem 0">スピリチュアルカウンセラー</p><p style="font-size:0.8rem;color:#666;margin:0;line-height:1.6">あなたの魂が本来持つ輝きを取り戻すお手伝いをしています。</p></div></div>
 <div style="margin:2rem 0;padding:1rem;background:rgba(255,255,255,0.6);border:1px solid #e8ddd4;border-radius:0.5rem;font-size:0.75rem;color:#999;line-height:1.6"><p style="margin:0">※ 本コラムの内容はスピリチュアルカウンセラーの経験と知見に基づく情報提供を目的としています。</p></div>
 <footer style="border-top:1px solid #e8ddd4;margin-top:2rem;padding:1.5rem 0;text-align:center;font-size:0.8rem;color:#a09080"><p>Copyright &copy; スピリチュアルハーモニー All Rights Reserved.</p></footer>
