@@ -8,6 +8,7 @@
 // ============================================================================
 
 import { insertCtasIntoHtml, selectCtaTexts } from '@/lib/content/cta-generator';
+import { getStickyCtaBarCss, getStickyCtaBarHtml } from '@/lib/generators/sticky-cta-bar';
 import {
   generateArticleSchema,
   generateFAQSchema,
@@ -517,9 +518,10 @@ export function generateArticleHtml(
     .article-related-card-title { font-size: 0.85rem; font-weight: 600; color: #53352b; padding: 0.75rem; margin: 0; line-height: 1.4; }
     .article-related-empty { font-size: 0.9rem; color: #b39578; font-style: italic; }
     @media (max-width: 767px) { .article-related-grid { grid-template-columns: 1fr; } }
+    ${getStickyCtaBarCss()}
   </style>
 </head>
-<body>
+<body style="padding-bottom:72px;">
 
   <!-- ヘッダー（hub/index.html と同一） -->
   <header class="siteHeader">
@@ -710,6 +712,7 @@ export function generateArticleHtml(
   <button class="scroll-to-top-btn" id="scrollToTopBtn" aria-label="トップに戻る">&uarr;</button>
 
   <script src="./js/hub.js"></script>
+  ${getStickyCtaBarHtml()}
 </body>
 </html>`;
 }

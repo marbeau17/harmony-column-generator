@@ -91,8 +91,14 @@ async function main() {
 .article-toc-title{font-size:.95rem;margin:0}.article-toc-list{margin:.75rem 0 0;padding-left:1.5rem;font-size:.88rem;line-height:2}
 .article-toc-list a{color:#53352b;text-decoration:none}.article-toc-list a:hover{color:#b39578;text-decoration:underline}
 .article-toc-list ol{list-style:none;padding-left:1.2rem;margin:.2rem 0 0}
+.sticky-cta-bar{position:fixed;bottom:0;left:0;right:0;z-index:9999;background:rgba(250,243,237,0.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid rgba(179,149,120,0.3);padding:10px 12px;display:flex;justify-content:center;gap:8px}
+.sticky-cta-bar a{display:inline-flex;align-items:center;gap:4px;padding:8px 14px;border-radius:99px;font-size:.78rem;font-weight:600;font-family:'Noto Sans JP',sans-serif;text-decoration:none;white-space:nowrap;transition:transform .15s,box-shadow .2s;line-height:1}
+.sticky-cta-bar .cta-booking{background:linear-gradient(135deg,#d4a574,#c4856e);color:#fff;box-shadow:0 2px 8px rgba(212,165,116,0.4)}
+.sticky-cta-bar .cta-counseling{background:#53352b;color:#fff;box-shadow:0 2px 8px rgba(83,53,43,0.3)}
+.sticky-cta-bar .cta-contact{background:#fff;color:#53352b;border:1.5px solid #b39578}
+@media(max-width:359px){.sticky-cta-bar{gap:5px;padding:8px}.sticky-cta-bar a{padding:7px 10px;font-size:.72rem;gap:2px}}
 </style></head>
-<body style="min-height:100vh;background-color:var(--color-bg);font-family:'Noto Sans JP',sans-serif;margin:0;color:#333">
+<body style="min-height:100vh;background-color:var(--color-bg);font-family:'Noto Sans JP',sans-serif;margin:0;color:#333;padding-bottom:72px">
 <nav style="max-width:48rem;margin:0 auto;padding:1rem 1rem 0;font-size:0.85rem;color:#888">
 <a href="https://harmony-mc.com/" style="color:var(--color-primary);text-decoration:none">ホーム</a>
 <span style="margin:0 0.4rem">&gt;</span>
@@ -109,7 +115,13 @@ async function main() {
 <div><p style="font-weight:700;color:var(--color-dark);margin:0">小林由起子</p><p style="font-size:0.85rem;color:var(--color-primary);margin:0.25rem 0">スピリチュアルカウンセラー</p><p style="font-size:0.8rem;color:#666;margin:0;line-height:1.6">あなたの魂が本来持つ輝きを取り戻すお手伝いをしています。</p></div></div>
 <div style="margin:2rem 0;padding:1rem;background:rgba(255,255,255,0.6);border:1px solid #e8ddd4;border-radius:0.5rem;font-size:0.75rem;color:#999;line-height:1.6"><p style="margin:0">※ 本コラムの内容はスピリチュアルカウンセラーの経験と知見に基づく情報提供を目的としています。</p></div>
 <footer style="border-top:1px solid #e8ddd4;margin-top:2rem;padding:1.5rem 0;text-align:center;font-size:0.8rem;color:#a09080"><p>Copyright &copy; スピリチュアルハーモニー All Rights Reserved.</p></footer>
-</main></body></html>`;
+</main>
+<div class="sticky-cta-bar">
+  <a href="https://harmony-booking.web.app/" class="cta-booking" target="_blank" rel="noopener">📅 予約する</a>
+  <a href="https://harmony-mc.com/counseling/" class="cta-counseling">✨ カウンセリング</a>
+  <a href="https://harmony-mc.com/contact/" class="cta-contact">💬 お問い合わせ</a>
+</div>
+</body></html>`;
 
     fs.writeFileSync(path.join(dir, 'index.html'), html, 'utf-8');
 
@@ -188,8 +200,15 @@ a{text-decoration:none;color:inherit}
 .card-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .3s}
 .article-card:hover .card-thumb img{transform:scale(1.05)}
 .site-footer{text-align:center;padding:32px 16px;border-top:1px solid #e8ddd4;font-size:.8rem;color:#a09080}
-</style></head><body>
+.sticky-cta-bar{position:fixed;bottom:0;left:0;right:0;z-index:9999;background:rgba(250,243,237,0.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid rgba(179,149,120,0.3);padding:10px 12px;display:flex;justify-content:center;gap:8px}
+.sticky-cta-bar a{display:inline-flex;align-items:center;gap:4px;padding:8px 14px;border-radius:99px;font-size:.78rem;font-weight:600;font-family:'Noto Sans JP',sans-serif;text-decoration:none;white-space:nowrap;transition:transform .15s,box-shadow .2s;line-height:1}
+.sticky-cta-bar .cta-booking{background:linear-gradient(135deg,#d4a574,#c4856e);color:#fff;box-shadow:0 2px 8px rgba(212,165,116,0.4)}
+.sticky-cta-bar .cta-counseling{background:#53352b;color:#fff;box-shadow:0 2px 8px rgba(83,53,43,0.3)}
+.sticky-cta-bar .cta-contact{background:#fff;color:#53352b;border:1.5px solid #b39578}
+@media(max-width:359px){.sticky-cta-bar{gap:5px;padding:8px}.sticky-cta-bar a{padding:7px 10px;font-size:.72rem;gap:2px}}
+</style></head><body style="padding-bottom:72px">
 <header class="page-header">
+<p style="margin-bottom:12px"><a href="https://harmony-mc.com/" style="color:var(--color-primary);font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
 <h1>魂の気づきコラム</h1>
 <p class="subtitle">「今を生きるヒント」</p>
 <p>スピリチュアルカウンセラー小林由起子が、魂の成長やヒーリング、人間関係など日々の気づきを綴るコラムです。</p>
@@ -217,6 +236,11 @@ function filterArticles(theme) {
   });
 }
 </script>
+<div class="sticky-cta-bar">
+  <a href="https://harmony-booking.web.app/" class="cta-booking" target="_blank" rel="noopener">📅 予約する</a>
+  <a href="https://harmony-mc.com/counseling/" class="cta-counseling">✨ カウンセリング</a>
+  <a href="https://harmony-mc.com/contact/" class="cta-contact">💬 お問い合わせ</a>
+</div>
 </body></html>`;
 
   fs.writeFileSync(path.join(outDir, 'column', 'index.html'), hub, 'utf-8');

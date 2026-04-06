@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import type { Article, ThemeCategory } from '@/types/article';
+import StickyCtaBar from '@/components/common/StickyCtaBar';
 
 // ─── 定数 ───────────────────────────────────────────────────────────────────
 
@@ -154,7 +155,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
   const totalPages = Math.ceil(total / PER_PAGE);
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg)]">
+    <div className="min-h-screen bg-[var(--color-bg)] pb-[72px]">
       {/* ヘッダー */}
       <header className="border-b border-[#b39578]/20 bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:py-8">
@@ -379,6 +380,9 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
       <footer className="site-copyright">
         Copyright &copy; スピリチュアルハーモニー All Rights Reserved.
       </footer>
+
+      {/* スティッキーCTAバー */}
+      <StickyCtaBar />
     </div>
   );
 }

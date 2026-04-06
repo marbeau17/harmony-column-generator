@@ -12,6 +12,7 @@ import type { Article, RelatedArticle as DbRelatedArticle } from '@/types/articl
 import ScrollDepthTracker from '@/components/common/ScrollDepthTracker';
 import CtaTracker from '@/components/common/CtaTracker';
 import ScrollToTop from '@/components/common/ScrollToTop';
+import StickyCtaBar from '@/components/common/StickyCtaBar';
 
 // ─── 定数 ───────────────────────────────────────────────────────────────────
 
@@ -302,7 +303,7 @@ export default async function ColumnArticlePage({ params }: PageProps) {
       <ScrollDepthTracker />
       <CtaTracker />
 
-      <div className="min-h-screen bg-[var(--color-bg)]">
+      <div className="min-h-screen bg-[var(--color-bg)] pb-[72px]">
         {/* パンくずリスト */}
         <nav
           className="mx-auto max-w-3xl px-4 pt-6 text-sm text-[var(--color-primary)]"
@@ -458,6 +459,9 @@ export default async function ColumnArticlePage({ params }: PageProps) {
 
         {/* トップに戻るボタン */}
         <ScrollToTop />
+
+        {/* スティッキーCTAバー */}
+        <StickyCtaBar />
       </div>
     </>
   );

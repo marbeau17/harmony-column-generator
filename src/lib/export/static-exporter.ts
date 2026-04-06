@@ -15,6 +15,7 @@ import {
   buildCategories,
   generateAllHubPages,
 } from '@/lib/generators/hub-generator';
+import { getStickyCtaBarCss, getStickyCtaBarHtml } from '@/lib/generators/sticky-cta-bar';
 import type { Article } from '@/types/article';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
@@ -395,6 +396,7 @@ function buildHubHtml(cards: HubCard[]): string {
       font-family: 'Noto Sans JP', sans-serif;
       color: #333;
       line-height: 1.8;
+      padding-bottom: 72px;
     }
     a { text-decoration: none; color: inherit; }
 
@@ -514,11 +516,13 @@ function buildHubHtml(cards: HubCard[]): string {
       font-size: 0.8rem;
       color: #a09080;
     }
+    ${getStickyCtaBarCss()}
   </style>
 </head>
 <body>
 
   <header class="page-header">
+    <p style="margin-bottom:12px"><a href="https://harmony-mc.com/" style="color:#b39578;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
     <h1>魂の気づきコラム</h1>
     <p class="page-subtitle">「今を生きるヒント」</p>
     <p>スピリチュアルカウンセラー小林由起子が、魂の成長やヒーリング、人間関係など日々の気づきを綴るコラムです。あなたの心に寄り添うメッセージをお届けします。</p>
@@ -532,6 +536,7 @@ ${cardListHtml}
     <p>Copyright &copy; ${year} スピリチュアルハーモニー All Rights Reserved.</p>
   </footer>
 
+  ${getStickyCtaBarHtml()}
 </body>
 </html>`;
 }
@@ -553,9 +558,10 @@ function buildEmptyHubHtml(): string {
     gtag('config', 'G-TH2XJ24V3T');
   </script>
   <style>
-    body { background: #faf3ed; font-family: 'Noto Sans JP', sans-serif; color: #333; text-align: center; padding: 80px 16px; }
+    body { background: #faf3ed; font-family: 'Noto Sans JP', sans-serif; color: #333; text-align: center; padding: 80px 16px 72px; }
     h1 { font-size: 2rem; color: #53352b; margin-bottom: 16px; }
     p { color: #7a6a5e; }
+    ${getStickyCtaBarCss()}
   </style>
 </head>
 <body>
@@ -565,6 +571,7 @@ function buildEmptyHubHtml(): string {
   <footer style="margin-top:64px; font-size:0.8rem; color:#a09080;">
     <p>Copyright &copy; ${year} スピリチュアルハーモニー All Rights Reserved.</p>
   </footer>
+  ${getStickyCtaBarHtml()}
 </body>
 </html>`;
 }
