@@ -834,8 +834,44 @@ export async function POST(request: NextRequest) {
 
           if (articleError || !article) throw new Error('記事が見つかりません');
 
-          // Set to published with all required fields
+          // Content quality gate: prevent broken articles from being published
           const publishedHtml = article.stage3_final_html || article.stage2_body_html || '';
+          const plainText = publishedHtml.replace(/<[^>]*>/g, '').trim();
+
+          const ERROR_PATTERNS = ['CORRECTIONS_START', 'エラー：', '品質チェック対象', 'お手数ですが', '再度送信してください', 'プロンプトの途中で', 'IMAGE:hero', 'IMAGE:body', 'IMAGE:summary'];
+          const foundErrors = ERROR_PATTERNS.filter(p => plainText.includes(p));
+
+          if (foundErrors.length > 0 || plainText.length < 500) {
+            const reason = foundErrors.length > 0
+              ? `不完全なコンテンツを検出: ${foundErrors.join(', ')}`
+              : `本文が短すぎます (${plainText.length}文字)`;
+
+            console.log(`[queue] seo_check: BLOCKED publication of ${articleId}: ${reason}`);
+            logger.warn('api', 'processQueue.publish_blocked', { articleId, reason });
+
+            // Set to editing instead of published (manual review required)
+            await serviceClient
+              .from('articles')
+              .update({ status: 'editing', updated_at: new Date().toISOString() })
+              .eq('id', articleId);
+
+            await updateQueueStep(serviceClient, queueItem.id, 'completed', {
+              completed_at: new Date().toISOString(),
+            });
+            if (plan?.id) await updatePlanStatus(serviceClient, plan.id, 'completed');
+
+            return NextResponse.json({
+              processed: true,
+              queueId: queueItem.id,
+              previousStep: 'seo_check',
+              currentStep: 'completed',
+              articleId,
+              published: false,
+              blocked: true,
+              reason,
+              title: article.title,
+            });
+          }
 
           await serviceClient
             .from('articles')
