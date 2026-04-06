@@ -28,11 +28,11 @@ const THEME_TABS: { value: ThemeCategory | 'all'; label: string }[] = [
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: 'スピリチュアルコラム | Harmony',
+    title: '魂の気づきコラム「今を生きるヒント」 | Harmony',
     description:
       'スピリチュアルカウンセラー小林由起子が贈る、魂の成長と癒しのコラム集。霊視・前世リーディング・チャクラなど、スピリチュアルな視点から人生をサポートする記事をお届けします。',
     openGraph: {
-      title: 'スピリチュアルコラム | Harmony',
+      title: '魂の気づきコラム「今を生きるヒント」 | Harmony',
       description:
         'スピリチュアルカウンセラー小林由起子が贈る、魂の成長と癒しのコラム集。',
       url: `${SITE_URL}/column`,
@@ -167,13 +167,16 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
               </li>
               <li aria-hidden="true">/</li>
               <li className="text-[#53352b]" aria-current="page">
-                コラム
+                魂の気づきコラム
               </li>
             </ol>
           </nav>
           <h1 className="text-xl font-bold text-[#53352b] sm:text-3xl">
-            スピリチュアルコラム
+            魂の気づきコラム
           </h1>
+          <p className="mt-1 text-sm sm:text-lg font-medium text-[#d4a574]">
+            「今を生きるヒント」
+          </p>
           <p className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-[#b39578] leading-relaxed">
             魂の成長と癒しのための、スピリチュアルな視点からのコラム集
           </p>

@@ -268,11 +268,12 @@ function buildHubPageHtml(articles: Article[]): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>コラム一覧 | Harmony スピリチュアルコラム</title>
+  <title>魂の気づきコラム｜今を生きるヒント | Harmony スピリチュアルコラム</title>
   <style>body { background: #faf3ed; font-family: 'Noto Sans JP', sans-serif; color: #333; text-align: center; padding: 80px 16px; }</style>
 </head>
 <body>
-  <h1>コラム</h1>
+  <h1>魂の気づきコラム</h1>
+  <p>「今を生きるヒント」</p>
   <p>公開済みの記事はまだありません。</p>
 </body>
 </html>`;
@@ -328,7 +329,7 @@ function buildHubPageHtml(articles: Article[]): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>コラム一覧 | Harmony スピリチュアルコラム</title>
+  <title>魂の気づきコラム｜今を生きるヒント | Harmony スピリチュアルコラム</title>
   <meta name="description" content="スピリチュアルカウンセラー小林由起子によるコラム一覧。魂の成長、ヒーリング、人間関係など、スピリチュアルな視点からの気づきをお届けします。">
   <link rel="stylesheet" href="../css/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -468,7 +469,8 @@ function buildHubPageHtml(articles: Article[]): string {
 <body>
 
   <header class="page-header">
-    <h1>コラム</h1>
+    <h1>魂の気づきコラム</h1>
+    <p class="page-subtitle">「今を生きるヒント」</p>
     <p>スピリチュアルカウンセラー小林由起子が、魂の成長やヒーリング、人間関係など日々の気づきを綴るコラムです。あなたの心に寄り添うメッセージをお届けします。</p>
   </header>
 

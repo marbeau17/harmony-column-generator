@@ -117,7 +117,8 @@ async function main() {
     const imgs = Array.isArray(a.image_files) ? a.image_files : [];
     for (const img of imgs) {
       if (!img.url) continue;
-      const fn = img.position ? `${img.position}.jpg` : 'image.jpg';
+      const pos = img.position || (['hero', 'body', 'summary'][imgs.indexOf(img)] ?? 'image');
+      const fn = `${pos}.jpg`;
       const dest = path.join(imgDir, fn);
       if (!fs.existsSync(dest)) await downloadImage(img.url, dest);
     }
@@ -126,20 +127,97 @@ async function main() {
     process.stdout.write(`\r${count}/${articles.length} ${slug}                         `);
   }
 
-  // Hub page
-  const cards = articles.map(a => {
+  // Build category filter tabs
+  const themeCounts: Record<string, number> = {};
+  for (const a of articles) {
+    const t = a.theme || 'other';
+    themeCounts[t] = (themeCounts[t] || 0) + 1;
+  }
+
+  const filterTabs = Object.entries(themeCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([theme, count]) => {
+      const label = THEME[theme] || theme;
+      return `<button class="filter-tab" data-filter="${theme}" onclick="filterArticles('${theme}')">${esc(label)} (${count})</button>`;
+    })
+    .join('\n');
+
+  // Add data-theme to cards
+  const cardsWithTheme = articles.map(a => {
     const s = a.slug || a.id;
-    const c = THEME[a.theme || ''] || a.theme || '';
+    const t = a.theme || 'other';
+    const c = THEME[t] || t;
     const pd = a.published_at ? new Date(a.published_at) : new Date();
     const ds = `${pd.getFullYear()}.${String(pd.getMonth() + 1).padStart(2, '0')}.${String(pd.getDate()).padStart(2, '0')}`;
     const bdy = (a.stage3_final_html || a.stage2_body_html || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
     const ex = bdy.length > 120 ? bdy.slice(0, 117) + '...' : bdy;
     const imgDir2 = path.join(outDir, 'column', s, 'images');
     const ext = fs.existsSync(path.join(imgDir2, 'hero.svg')) ? 'svg' : 'jpg';
-    return `<a href="./${s}/index.html" class="article-card"><div class="card-thumb"><img src="./${s}/images/hero.${ext}" alt="${esc(a.title || '')}" loading="lazy"></div><div class="card-body"><h2>${esc(a.title || '')}</h2><div class="card-meta"><span class="badge">${esc(c)}</span><span class="card-date">${ds}</span></div><p class="card-excerpt">${esc(ex)}</p></div></a>`;
+    return `<a href="./${s}/index.html" class="article-card" data-theme="${t}"><div class="card-thumb"><img src="./${s}/images/hero.${ext}" alt="${esc(a.title || '')}" loading="lazy"></div><div class="card-body"><h2>${esc(a.title || '')}</h2><div class="card-meta"><span class="badge">${esc(c)}</span><span class="card-date">${ds}</span></div><p class="card-excerpt">${esc(ex)}</p></div></a>`;
   }).join('\n');
 
-  const hub = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>コラム一覧 | Harmony</title><link rel="stylesheet" href="../css/style.css"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet"><style>:root{--color-primary:#b39578;--color-dark:#53352b;--color-gold:#d4a574;--color-bg:#faf3ed}*{margin:0;padding:0;box-sizing:border-box}body{background-color:var(--color-bg);font-family:"Noto Sans JP",sans-serif;color:#333;line-height:1.8}a{text-decoration:none;color:inherit}.page-header{text-align:center;padding:64px 16px 48px}.page-header h1{font-size:2rem;font-weight:700;color:var(--color-dark)}.page-header p{font-size:.95rem;color:#7a6a5e;max-width:560px;margin:12px auto 0}.article-grid{display:grid;grid-template-columns:1fr;gap:24px;max-width:1152px;margin:0 auto;padding:0 16px 64px}@media(min-width:640px){.article-grid{grid-template-columns:repeat(2,1fr)}}@media(min-width:1024px){.article-grid{grid-template-columns:repeat(3,1fr)}}.article-card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden;transition:transform .2s;display:flex;flex-direction:column}.article-card:hover{transform:translateY(-4px)}.card-body{padding:20px 20px 24px;flex:1;display:flex;flex-direction:column}.card-body h2{font-size:1.05rem;font-weight:500;color:var(--color-dark);line-height:1.6;margin-bottom:10px}.card-meta{display:flex;align-items:center;gap:10px;margin-bottom:12px}.badge{display:inline-block;font-size:.72rem;font-weight:500;padding:2px 10px;border-radius:99px;background:var(--color-bg);color:var(--color-primary);border:1px solid var(--color-primary)}.card-date{font-size:.78rem;color:#a09080}.card-excerpt{font-size:.88rem;color:#6b5e54;line-height:1.7;margin-top:auto;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.card-thumb{aspect-ratio:16/9;overflow:hidden}.card-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .3s}.article-card:hover .card-thumb img{transform:scale(1.05)}.site-footer{text-align:center;padding:32px 16px;border-top:1px solid #e8ddd4;font-size:.8rem;color:#a09080}</style></head><body><header class="page-header"><h1>コラム</h1><p>スピリチュアルカウンセラー小林由起子が、魂の成長やヒーリング、人間関係など日々の気づきを綴るコラムです。</p></header><main class="article-grid">${cards}</main><footer class="site-footer"><p>Copyright &copy; ${new Date().getFullYear()} スピリチュアルハーモニー All Rights Reserved.</p></footer></body></html>`;
+  const hub = `<!DOCTYPE html><html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>魂の気づきコラム | Harmony スピリチュアルコラム</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--color-primary:#b39578;--color-dark:#53352b;--color-gold:#d4a574;--color-bg:#faf3ed}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background-color:var(--color-bg);font-family:"Noto Sans JP",sans-serif;color:#333;line-height:1.8}
+a{text-decoration:none;color:inherit}
+.page-header{text-align:center;padding:64px 16px 32px}
+.page-header h1{font-size:2rem;font-weight:700;color:var(--color-dark);letter-spacing:0.08em}
+.page-header .subtitle{font-size:1rem;color:var(--color-gold);margin-top:8px;font-weight:500}
+.page-header p{font-size:.95rem;color:#7a6a5e;max-width:560px;margin:16px auto 0}
+.filter-bar{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:900px;margin:0 auto 32px;padding:0 16px}
+.filter-tab{padding:6px 16px;border-radius:99px;border:1px solid var(--color-primary);background:transparent;color:var(--color-primary);font-size:.8rem;font-weight:500;cursor:pointer;transition:all .2s;font-family:inherit}
+.filter-tab:hover,.filter-tab.active{background:var(--color-primary);color:#fff}
+.article-grid{display:grid;grid-template-columns:1fr;gap:24px;max-width:1152px;margin:0 auto;padding:0 16px 64px}
+@media(min-width:640px){.article-grid{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:1024px){.article-grid{grid-template-columns:repeat(3,1fr)}}
+.article-card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden;transition:transform .2s,opacity .3s;display:flex;flex-direction:column}
+.article-card:hover{transform:translateY(-4px)}
+.article-card.hidden{display:none}
+.card-body{padding:20px 20px 24px;flex:1;display:flex;flex-direction:column}
+.card-body h2{font-size:1.05rem;font-weight:500;color:var(--color-dark);line-height:1.6;margin-bottom:10px}
+.card-meta{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.badge{display:inline-block;font-size:.72rem;font-weight:500;padding:2px 10px;border-radius:99px;background:var(--color-bg);color:var(--color-primary);border:1px solid var(--color-primary)}
+.card-date{font-size:.78rem;color:#a09080}
+.card-excerpt{font-size:.88rem;color:#6b5e54;line-height:1.7;margin-top:auto;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.card-thumb{aspect-ratio:16/9;overflow:hidden}
+.card-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .3s}
+.article-card:hover .card-thumb img{transform:scale(1.05)}
+.site-footer{text-align:center;padding:32px 16px;border-top:1px solid #e8ddd4;font-size:.8rem;color:#a09080}
+</style></head><body>
+<header class="page-header">
+<h1>魂の気づきコラム</h1>
+<p class="subtitle">「今を生きるヒント」</p>
+<p>スピリチュアルカウンセラー小林由起子が、魂の成長やヒーリング、人間関係など日々の気づきを綴るコラムです。</p>
+</header>
+<nav class="filter-bar">
+<button class="filter-tab active" onclick="filterArticles('all')">すべて (${articles.length})</button>
+${filterTabs}
+</nav>
+<main class="article-grid">
+${cardsWithTheme}
+</main>
+<footer class="site-footer">
+<p>Copyright &copy; ${new Date().getFullYear()} スピリチュアルハーモニー All Rights Reserved.</p>
+</footer>
+<script>
+function filterArticles(theme) {
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.querySelectorAll('.article-card').forEach(card => {
+    if (theme === 'all' || card.dataset.theme === theme) {
+      card.classList.remove('hidden');
+    } else {
+      card.classList.add('hidden');
+    }
+  });
+}
+</script>
+</body></html>`;
 
   fs.writeFileSync(path.join(outDir, 'column', 'index.html'), hub, 'utf-8');
   console.log(`\n\nDone! ${count} articles → out/column/`);
