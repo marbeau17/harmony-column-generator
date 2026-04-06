@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     //    stage2_body_html にハイライトが未適用のものを優先取得
     const { data: articles, error: fetchError } = await serviceClient
       .from('articles')
-      .select('id, stage2_body_html, stage3_final_html')
+      .select('id, stage2_body_html, stage3_final_html, published_html')
       .or('stage2_body_html.not.is.null,stage3_final_html.not.is.null');
 
     if (fetchError) {
