@@ -15,6 +15,28 @@ function esc(s: string) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function buildRelatedHtml(article: any, allArticles: any[]): string {
+  const related = article.related_articles;
+  if (!related || !Array.isArray(related) || related.length === 0) return '';
+
+  const cards = related.slice(0, 3).map((r: { href: string; title: string }) => {
+    // Extract slug from href like /column/slug/
+    const slug = r.href.replace(/^\/column\//, '').replace(/\/$/, '');
+    const imgExt = fs.existsSync(path.join(process.cwd(), 'out', 'column', slug, 'images', 'hero.svg')) ? 'svg' : 'jpg';
+    return `<a href="../${slug}/index.html" style="display:flex;gap:1rem;padding:1rem;background:#fff;border-radius:0.75rem;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-decoration:none;color:inherit">
+      <img src="../${slug}/images/hero.${imgExt}" alt="" style="width:100px;height:67px;object-fit:cover;border-radius:0.5rem;flex-shrink:0" loading="lazy">
+      <span style="font-size:0.9rem;color:#53352b;font-weight:500;line-height:1.5">${esc(r.title)}</span>
+    </a>`;
+  }).join('\n');
+
+  return `<section style="margin:2.5rem 0">
+  <h2 style="font-size:1.25rem;font-weight:700;color:#53352b;margin-bottom:1rem">合わせて読みたい記事</h2>
+  <div style="display:grid;grid-template-columns:1fr;gap:1rem">
+    ${cards}
+  </div>
+</section>`;
+}
+
 async function downloadImage(url: string, dest: string): Promise<boolean> {
   try {
     const r = await fetch(url);
@@ -113,6 +135,7 @@ async function main() {
 <div style="margin:2rem 0;padding:1.5rem;border:1px solid #e8ddd4;border-radius:0.75rem;display:flex;gap:1rem;align-items:center">
 <img src="https://khsorerqojgwbmtiqrac.supabase.co/storage/v1/object/public/article-images/profile/author-sketch.jpg" alt="小林由起子" width="80" height="80" style="border-radius:50%;flex-shrink:0">
 <div><p style="font-weight:700;color:var(--color-dark);margin:0">小林由起子</p><p style="font-size:0.85rem;color:var(--color-primary);margin:0.25rem 0">スピリチュアルカウンセラー</p><p style="font-size:0.8rem;color:#666;margin:0;line-height:1.6">あなたの魂が本来持つ輝きを取り戻すお手伝いをしています。</p></div></div>
+${buildRelatedHtml(a, articles)}
 <div style="margin:2rem 0;padding:1rem;background:rgba(255,255,255,0.6);border:1px solid #e8ddd4;border-radius:0.5rem;font-size:0.75rem;color:#999;line-height:1.6"><p style="margin:0">※ 本コラムの内容はスピリチュアルカウンセラーの経験と知見に基づく情報提供を目的としています。</p></div>
 <footer style="border-top:1px solid #e8ddd4;margin-top:2rem;padding:1.5rem 0;text-align:center;font-size:0.8rem;color:#a09080"><p>Copyright &copy; スピリチュアルハーモニー All Rights Reserved.</p></footer>
 </main>
