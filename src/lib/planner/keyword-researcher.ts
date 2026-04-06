@@ -61,6 +61,48 @@ async function getUsedKeywords(): Promise<string[]> {
 }
 
 /**
+ * 未処理のソース記事からテーマ別の件数とキーワードを取得する
+ */
+async function getUnprocessedSourceSummary(): Promise<{
+  themeCounts: Record<string, number>;
+  sampleKeywords: Record<string, string[]>;
+}> {
+  const supabase = await createServiceRoleClient();
+
+  const { data, error } = await supabase
+    .from('source_articles')
+    .select('themes, keywords')
+    .eq('is_processed', false);
+
+  if (error) {
+    console.error('[keyword-researcher.getUnprocessedSourceSummary] failed:', error.message);
+    return { themeCounts: {}, sampleKeywords: {} };
+  }
+
+  const themeCounts: Record<string, number> = {};
+  const sampleKeywords: Record<string, string[]> = {};
+
+  for (const row of data ?? []) {
+    const themes: string[] = row.themes ?? [];
+    const keywords: string[] = row.keywords ?? [];
+    for (const theme of themes) {
+      themeCounts[theme] = (themeCounts[theme] ?? 0) + 1;
+      if (!sampleKeywords[theme]) sampleKeywords[theme] = [];
+      if (sampleKeywords[theme].length < 10) {
+        sampleKeywords[theme].push(...keywords.slice(0, 3));
+      }
+    }
+  }
+
+  // 重複除去
+  for (const theme of Object.keys(sampleKeywords)) {
+    sampleKeywords[theme] = [...new Set(sampleKeywords[theme])].slice(0, 10);
+  }
+
+  return { themeCounts, sampleKeywords };
+}
+
+/**
  * テーマごとの既存記事数を取得する
  */
 async function getThemeArticleCounts(): Promise<Record<string, number>> {
@@ -101,14 +143,23 @@ export async function researchKeywords(
   const targetCount = options?.count ?? 15;
   const targetTheme = options?.theme;
 
-  // 既存キーワードとテーマ別記事数を並行取得
-  const [usedKeywords, themeCounts] = await Promise.all([
+  // 既存キーワード・テーマ別記事数・未処理ソース記事を並行取得
+  const [usedKeywords, themeCounts, sourceSummary] = await Promise.all([
     getUsedKeywords(),
     getThemeArticleCounts(),
+    getUnprocessedSourceSummary(),
   ]);
 
   const themeCountsText = Object.entries(themeCounts)
     .map(([theme, count]) => `  - ${theme} (${THEME_DEFINITIONS[theme] ?? theme}): ${count}記事`)
+    .join('\n');
+
+  const sourceThemeText = Object.entries(sourceSummary.themeCounts)
+    .sort(([, a], [, b]) => b - a)
+    .map(([theme, count]) => {
+      const kws = sourceSummary.sampleKeywords[theme]?.join('、') ?? '';
+      return `  - ${theme}: 未処理${count}件${kws ? `（例: ${kws}）` : ''}`;
+    })
     .join('\n');
 
   const usedKeywordsText =
@@ -131,6 +182,9 @@ export async function researchKeywords(
 ## 7つのテーマカテゴリ
 ${themeCountsText}
 
+## 未処理のソース記事（コラム化できる素材）
+${sourceThemeText || '  （未処理ソース記事なし）'}
+
 ## 出力ルール
 1. レスポンスは **JSON のみ** で返してください
 2. 各キーワードに theme, searchIntent, difficulty, reasoning を付与
@@ -140,6 +194,8 @@ ${themeCountsText}
 6. difficultyは競合の強さに基づく概算（low / medium / high）
 7. reasoningはそのキーワードを推奨する理由を30〜60文字で記載
 8. 記事数が少ないテーマを優先的に提案（コンテンツの偏りを防ぐ）
+9. 各キーワード提案には、元になるソース記事のテーマとの関連性を考慮すること
+10. 同じテーマの記事が既に多い場合は、記事数の少ないテーマを優先すること
 
 ## 出力JSONスキーマ
 \`\`\`json
@@ -165,6 +221,9 @@ ${themeCountsText}
 ## 既に使用済みのキーワード（これらは除外してください）
 ${usedKeywordsText}
 
+## 未処理のソース記事（テーマ別の残り素材）
+${sourceThemeText || '（未処理ソース記事なし）'}
+
 ## キーワード選定のポイント
 - 月間検索ボリュームが100〜1,000程度のロングテールを狙う
 - 「○○ やり方」「○○ 意味」「○○ 効果」「○○ 初心者」などのパターンを活用
@@ -172,6 +231,8 @@ ${usedKeywordsText}
 - 季節やトレンドに左右されにくい普遍的なキーワードを優先
 - 記事数が少ないテーマのキーワードを多めに提案する
 - 使用済みキーワードと重複しないこと（類似表現もできるだけ避ける）
+- 未処理ソース記事が多いテーマのキーワードを優先する（素材があるほうが高品質な記事を書ける）
+- ソース記事のキーワード例を参考に、関連性の高いキーワードを提案する
 ${themeFilter}
 
 上記を踏まえて、キーワード提案をJSON形式で出力してください。`;

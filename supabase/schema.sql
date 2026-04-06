@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS source_articles (
   emotional_tone TEXT,
   spiritual_concepts TEXT[] DEFAULT '{}',
   is_processed BOOLEAN DEFAULT FALSE,
+  usage_count INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

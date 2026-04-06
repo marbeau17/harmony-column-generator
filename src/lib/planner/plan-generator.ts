@@ -90,11 +90,11 @@ export async function selectSourceArticles(
 ): Promise<{ id: string; title: string }[]> {
   const supabase = await createServiceRoleClient();
 
-  // テーマ一致＋未使用の記事を取得
+  // テーマ一致の記事を取得（未使用優先、使用回数が少ない順）
   let query = supabase
     .from('source_articles')
     .select('id, title, content, themes, keywords, is_processed')
-    .eq('is_processed', false)
+    .order('is_processed', { ascending: true })   // 未使用を優先
     .limit(50);
 
   // テーマでフィルタ（themesカラムにテーマを含む、またはタイトル/本文にテーマ関連語を含む）
@@ -111,11 +111,11 @@ export async function selectSourceArticles(
   }
 
   if (!data || data.length === 0) {
-    // テーマフィルタで見つからなかった場合、未使用の記事から取得
+    // テーマフィルタで見つからなかった場合、使用回数が少ない記事から取得
     const { data: fallbackData, error: fallbackError } = await supabase
       .from('source_articles')
       .select('id, title')
-      .eq('is_processed', false)
+      .order('is_processed', { ascending: true })
       .limit(limit);
 
     if (fallbackError || !fallbackData) {
@@ -162,10 +162,24 @@ export async function selectSourceArticles(
   // スコア順でソートして上位を返す
   scored.sort((a, b) => b.score - a.score);
 
-  return scored.slice(0, limit).map((row) => ({
+  const selected = scored.slice(0, limit).map((row) => ({
     id: row.id,
     title: row.title,
   }));
+
+  // 選択した元記事を is_processed = true に設定（再利用を防止）
+  for (const s of selected) {
+    const { error: updateError } = await supabase
+      .from('source_articles')
+      .update({ is_processed: true })
+      .eq('id', s.id);
+
+    if (updateError) {
+      console.warn('[plan-generator] is_processed update failed for', s.id, updateError.message);
+    }
+  }
+
+  return selected;
 }
 
 // ─── SEOスコア予測 ─────────────────────────────────────────────────────────

@@ -413,7 +413,16 @@ export async function POST(request: NextRequest) {
             throw new Error(`記事のアウトライン保存に失敗: ${articleUpdateError.message}`);
           }
 
-          // --- 7. キューステップを進める ---
+          // --- 7. 元記事を使用済みにマーク ---
+          const sourceArticleId = newArticle.source_article_id as string | null;
+          if (sourceArticleId) {
+            await serviceClient
+              .from('source_articles')
+              .update({ is_processed: true })
+              .eq('id', sourceArticleId);
+          }
+
+          // --- 8. キューステップを進める ---
           await updateQueueStep(serviceClient, queueItem.id, 'outline');
 
           logger.info('api', 'processQueue.pending_complete', {
@@ -871,6 +880,23 @@ export async function POST(request: NextRequest) {
               reason,
               title: article.title,
             });
+          }
+
+          // Check for forbidden expressions (client feedback)
+          const FORBIDDEN_EXPRESSIONS = ['愛の涙', '走馬灯', '光の使者', '愛の記憶', '命の境界線'];
+          const foundForbidden = FORBIDDEN_EXPRESSIONS.filter(p => plainText.includes(p));
+
+          // Check 愛 usage (max 5 per article)
+          const loveCount = (plainText.match(/愛/g) || []).length;
+          const loveTooMany = loveCount > 10; // Warn but don't block at >10
+
+          if (foundForbidden.length > 0) {
+            console.log(`[queue] seo_check: WARNING - forbidden expressions found: ${foundForbidden.join(', ')} in article ${articleId}`);
+            // Don't block, just log for now. Future: block publication
+          }
+
+          if (loveTooMany) {
+            console.log(`[queue] seo_check: WARNING - excessive 愛 usage (${loveCount} times) in article ${articleId}`);
           }
 
           await serviceClient
