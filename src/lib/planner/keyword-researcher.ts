@@ -22,7 +22,7 @@ export interface KeywordSuggestion {
 
 const THEME_DEFINITIONS: Record<string, string> = {
   soul_mission:
-    '魂の使命・ライフパーパス — 魂の目的、天命、ライトワーカー、生まれてきた意味、宇宙的な使命',
+    '魂の使命・ライフパーパス — 魂の目的、天命、光の使者、生まれてきた意味、宇宙的な使命',
   relationships:
     '人間関係・恋愛・ソウルメイト — ツインレイ、パートナーシップ、親子関係、職場の人間関係、共依存、境界線',
   grief_care:

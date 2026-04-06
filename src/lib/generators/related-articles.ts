@@ -137,7 +137,7 @@ const SPIRITUAL_TERMS = [
   '守護霊',
   '波動',
   'サイキック',
-  'ライトワーカー',
+  '光の使者',
 ];
 
 function spiritualTermBonus(keyword: string, title: string): number {

@@ -30,7 +30,7 @@ const CTA_URL = 'https://harmony-booking.web.app/';
 
 const THEME_DEFINITIONS: Record<string, string> = {
   soul_mission:
-    '魂の使命・ライフパーパス — 魂の目的、天命、ライトワーカー、宇宙的使命、生まれてきた意味の探求',
+    '魂の使命・ライフパーパス — 魂の目的、天命、光の使者、宇宙的使命、生まれてきた意味の探求',
   relationships:
     '人間関係・恋愛・ソウルメイト — ツインレイ、パートナーシップ、親子関係、職場の人間関係、共依存、境界線',
   grief_care:
