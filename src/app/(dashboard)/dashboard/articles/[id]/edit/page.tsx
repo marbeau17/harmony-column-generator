@@ -216,22 +216,15 @@ export default function ArticleEditPage() {
         throw new Error(errJson?.error ?? 'ステータス遷移に失敗しました');
       }
 
-      // バックグラウンドでZIPエクスポート＆ダウンロード（失敗しても公開は成功扱い）
-      fetch('/api/export/article', {
+      // バックグラウンドでFTPに自動アップロード（失敗しても公開は成功扱い）
+      fetch(`/api/articles/${articleId}/deploy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ articleId }),
-      }).then(async (res) => {
-        if (!res.ok) return;
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `article-${articleId}.zip`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      }).then((res) => {
+        if (res.ok) {
+          console.log('[publish] FTP自動アップロード完了');
+        } else {
+          console.warn('[publish] FTPアップロード失敗（手動で再試行してください）');
+        }
       }).catch(() => {});
 
       setPublishDialogOpen(false);
