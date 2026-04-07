@@ -279,39 +279,26 @@ export function insertCtasIntoHtml(
   const h2Elements = $('h2');
   const h2Count = h2Elements.length;
 
-  const cta1Html = buildCtaHtml('cta1', 'intro', ctaTexts.cta1.catch, ctaTexts.cta1.sub, articleSlug, ctaSettings?.cta1);
+  // CTA1は削除（冒頭CTAは読者の没入を妨げるため）
+  // CTA2（中盤・検討促進）とCTA3（終盤・コンバージョン）の2つのみ配置
   const cta2Html = buildCtaHtml('cta2', 'mid', ctaTexts.cta2.catch, ctaTexts.cta2.sub, articleSlug, ctaSettings?.cta2);
   const cta3Html = buildCtaHtml('cta3', 'end', ctaTexts.cta3.catch, ctaTexts.cta3.sub, articleSlug, ctaSettings?.cta3);
 
   if (h2Count === 0) {
-    // H2がない場合: 先頭・中間・末尾に配置
     const body = $('body');
-    body.prepend(cta1Html);
-    body.append(cta3Html);
-    // 中間: 子要素の真ん中あたりに挿入
     const children = body.children();
     const midIndex = Math.floor(children.length / 2);
     if (midIndex > 0) {
       $(children[midIndex]).before(cta2Html);
-    } else {
-      body.append(cta2Html);
     }
+    body.append(cta3Html);
   } else if (h2Count === 1) {
-    // H2が1つ: CTA1を前、CTA2とCTA3を後ろに配置
-    $(h2Elements[0]).before(cta1Html);
     $(h2Elements[0]).after(cta2Html);
     $('body').append(cta3Html);
   } else {
-    // H2が2つ以上: 標準配置
-    // CTA1: 1番目のH2の直前
-    $(h2Elements[0]).before(cta1Html);
-
-    // CTA2: 中間のH2の直前
+    // H2が2つ以上: CTA2を中間H2の直前、CTA3を末尾に配置
     const midH2Index = Math.floor(h2Count / 2);
     $(h2Elements[midH2Index]).before(cta2Html);
-
-    // CTA3: 最後のH2セクション末尾
-    // 最後のH2の次のH2がないので、bodyの末尾に配置
     $('body').append(cta3Html);
   }
 
