@@ -94,6 +94,7 @@ export default function ArticleEditPage() {
   const [keyword, setKeyword] = useState('');
   const [theme, setTheme] = useState('');
   const [bodyHtml, setBodyHtml] = useState('');
+  const [initialBodyHtml, setInitialBodyHtml] = useState(''); // 変更検知用
 
   // UI state
   const [metaPanelOpen, setMetaPanelOpen] = useState(false);
@@ -141,6 +142,7 @@ export default function ArticleEditPage() {
           }
         }
         setBodyHtml(html);
+        setInitialBodyHtml(html);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : '不明なエラー');
       } finally {
@@ -510,18 +512,31 @@ export default function ArticleEditPage() {
           </button>
 
           {/* Publish */}
-          <button
-            onClick={() => {
-              if (charCount === 0) {
-                alert('本文が空です。公開するには本文を入力してください。');
-                return;
-              }
-              setPublishDialogOpen(true);
-            }}
-            className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
-          >
-            公開
-          </button>
+          {(() => {
+            const hasChanges = bodyHtml !== initialBodyHtml || title !== (article.title ?? '') || metaDescription !== (article.meta_description ?? '');
+            const isAlreadyPublished = article.status === 'published';
+            const isDisabled = isAlreadyPublished && !hasChanges;
+            return (
+              <button
+                onClick={() => {
+                  if (charCount === 0) {
+                    alert('本文が空です。公開するには本文を入力してください。');
+                    return;
+                  }
+                  setPublishDialogOpen(true);
+                }}
+                disabled={isDisabled}
+                className={`px-2 sm:px-3 py-1.5 text-xs sm:text-sm rounded-lg transition-colors ${
+                  isDisabled
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-brand-600 text-white hover:bg-brand-700'
+                }`}
+                title={isDisabled ? '変更がありません' : '記事を公開します'}
+              >
+                {isAlreadyPublished && !hasChanges ? '変更なし' : '公開'}
+              </button>
+            );
+          })()}
 
           {/* Re-export (published articles only) */}
           {article.status === 'published' && (
