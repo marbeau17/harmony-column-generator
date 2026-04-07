@@ -527,6 +527,48 @@ export default function ArticleDetailPage() {
         </section>
       )}
 
+      {/* ─ 由起子さん確認 ─ */}
+      {article.status === 'published' && (
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">由起子さん確認</h2>
+              {(article as Record<string, unknown>).reviewed_at ? (
+                <p className="text-xs text-emerald-600 mt-1">
+                  ✅ 確認済み（{new Date(String((article as Record<string, unknown>).reviewed_at)).toLocaleDateString('ja-JP')}）
+                  {(article as Record<string, unknown>).reviewed_by && ` by ${(article as Record<string, unknown>).reviewed_by}`}
+                </p>
+              ) : (
+                <p className="text-xs text-amber-500 mt-1">⏳ 未確認</p>
+              )}
+            </div>
+            <button
+              onClick={async () => {
+                const isReviewed = !!(article as Record<string, unknown>).reviewed_at;
+                try {
+                  const res = await fetch(`/api/articles/${articleId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(isReviewed
+                      ? { reviewed_at: null, reviewed_by: null }
+                      : { reviewed_at: new Date().toISOString(), reviewed_by: '小林由起子' }
+                    ),
+                  });
+                  if (res.ok) await fetchArticle();
+                } catch { /* ignore */ }
+              }}
+              className={`rounded-lg px-4 py-2 text-xs font-medium flex items-center gap-2 ${
+                (article as Record<string, unknown>).reviewed_at
+                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+              }`}
+            >
+              {(article as Record<string, unknown>).reviewed_at ? '確認を取消' : '✅ 確認済みにする'}
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* ─ メタ情報 ─ */}
       <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-brand-500">

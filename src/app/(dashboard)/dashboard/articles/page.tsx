@@ -486,8 +486,11 @@ export default function ArticlesPage() {
                     {(page - 1) * PER_PAGE + idx + 1}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-brand-800 truncate max-w-md">
+                    <div className="font-medium text-brand-800 truncate max-w-md flex items-center gap-1.5">
                       {article.title || '(タイトル未設定)'}
+                      {Boolean((article as unknown as Record<string, unknown>).reviewed_at) && (
+                        <span title="由起子さん確認済み" className="text-emerald-500 flex-shrink-0">✅</span>
+                      )}
                     </div>
                     {article.keyword && (
                       <div className="mt-0.5 text-xs text-brand-400">
