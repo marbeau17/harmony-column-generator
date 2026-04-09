@@ -73,6 +73,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // published への遷移時は品質チェックリストを実行
+    if (status === 'published') {
+      const { runQualityChecklist } = await import('@/lib/content/quality-checklist');
+      const html = existing.published_html || existing.stage2_body_html || '';
+      if (html) {
+        const checkResult = runQualityChecklist({
+          title: existing.title || '',
+          html,
+          keyword: existing.keyword || undefined,
+          metaDescription: existing.meta_description || undefined,
+          theme: existing.theme || undefined,
+        });
+
+        if (!checkResult.passed) {
+          const failedItems = checkResult.items
+            .filter(i => i.status === 'fail' && i.severity === 'error')
+            .map(i => `${i.label}${i.detail ? ` (${i.detail})` : ''}`)
+            .join('; ');
+
+          return NextResponse.json({
+            error: `品質チェック不合格: ${failedItems}`,
+            qualityCheck: checkResult,
+          }, { status: 422 });
+        }
+      }
+    }
+
     // ステータス遷移実行（transitionArticleStatus 内で VALID_TRANSITIONS を検証）
     const updated = await transitionArticleStatus(id, status as ArticleStatus);
 

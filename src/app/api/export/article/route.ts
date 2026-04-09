@@ -273,7 +273,7 @@ function buildHubPageHtml(articles: Article[]): string {
   <style>body { background: #faf3ed; font-family: 'Noto Sans JP', sans-serif; color: #333; text-align: center; padding: 80px 16px; }</style>
 </head>
 <body>
-  <p style="margin-bottom:12px"><a href="https://harmony-mc.com/" style="color:#b39578;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
+  <p style="margin-bottom:12px"><a href="https://harmony-mc.com/" style="color:#8b6f5e;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
   <h1>魂の気づきコラム</h1>
   <p>「今を生きるヒント」</p>
   <p>公開済みの記事はまだありません。</p>
@@ -346,7 +346,7 @@ function buildHubPageHtml(articles: Article[]): string {
   </script>
   <style>
     :root {
-      --color-primary: #b39578;
+      --color-primary: #8b6f5e;
       --color-dark: #53352b;
       --color-gold: #d4a574;
       --color-bg: #faf3ed;
@@ -473,7 +473,7 @@ function buildHubPageHtml(articles: Article[]): string {
 <body>
 
   <header class="page-header">
-    <p style="margin-bottom:12px"><a href="https://harmony-mc.com/" style="color:#b39578;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
+    <p style="margin-bottom:12px"><a href="https://harmony-mc.com/" style="color:#8b6f5e;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
   <h1>魂の気づきコラム</h1>
     <p class="page-subtitle">「今を生きるヒント」</p>
     <p>スピリチュアルカウンセラー小林由起子が、魂の成長やヒーリング、人間関係など日々の気づきを綴るコラムです。あなたの心に寄り添うメッセージをお届けします。</p>

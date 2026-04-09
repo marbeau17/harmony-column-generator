@@ -20,7 +20,7 @@
 - apolloONEBlog (marbeau17/apolloONEBlog) のコードを最大限流用
 
 ## カラーパレット
-- Primary: #b39578 (ウォームブラウン)
+- Primary: #8b6f5e (ウォームブラウン — WCAG AA準拠に調整済み)
 - Dark: #53352b (ダークブラウン)
 - Gold: #d4a574 (アクセント)
 - Background: #faf3ed (クリームベージュ)

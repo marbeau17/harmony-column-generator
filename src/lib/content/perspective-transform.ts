@@ -25,6 +25,18 @@ export const PERSPECTIVE_LABELS: Record<PerspectiveType, string> = {
   deep_to_intro: '深掘り → 入門',
 };
 
+const COMMON_REWRITE_RULES = `
+
+### 共通リライトルール（全視点タイプ共通・厳守）
+- 元記事は1つだけを使用する。他の記事の内容を混ぜない
+- 元記事の文章をそのまま使わない。語彙・言い回し・文の順序を大きく変える
+- 独自の比喩・メタファーを2つ以上創作して入れる（元記事にないオリジナルのたとえ話）
+- 意味やメッセージは変えない。見方・切り口・表現だけを変える
+- 不自然な同義語置換はしない。流れるような自然な文章にする
+- ""（ダブルクォーテーション）は使用禁止。「」のみ使用可
+- 「当たり前のこと」で終わらない。読者が深く納得できる視点の転換を入れる
+`;
+
 /**
  * 各視点変換タイプの変換指示テンプレート
  */
@@ -147,7 +159,7 @@ export function getPerspectivePrompt(type: PerspectiveType): string {
   if (!prompt) {
     throw new Error(`Unknown perspective type: ${type}`);
   }
-  return prompt;
+  return prompt + COMMON_REWRITE_RULES;
 }
 
 /**

@@ -144,7 +144,7 @@ function buildRelatedArticlesHtml(
       const thumbSrc = `/column/${slug}/images/hero.jpg`;
       return `<a href="${escAttr(a.href)}" class="article-related-card">
           <div class="article-related-card-thumb">
-            <img src="${escAttr(thumbSrc)}" alt="" loading="lazy">
+            <img src="${escAttr(thumbSrc)}" alt="${escHtml(a.title)}" loading="lazy">
           </div>
           <div class="article-related-card-title">${escHtml(a.title)}</div>
         </a>`;
@@ -163,7 +163,7 @@ function buildSidebarRecentHtml(
       (a) =>
         `<li>
           <a href="${escAttr(a.url)}">
-            ${a.thumbnail ? `<img src="${escAttr(a.thumbnail)}" alt="" width="60" height="60" loading="lazy">` : ''}
+            ${a.thumbnail ? `<img src="${escAttr(a.thumbnail)}" alt="${escHtml(a.title)}" width="60" height="60" loading="lazy">` : ''}
             <span>${escHtml(a.title)}</span>
           </a>
         </li>`,
@@ -396,18 +396,18 @@ export function generateArticleHtml(
     /* CTA1: ウォームブラウン系 */
     .harmony-cta[data-cta-key="cta1"] {
       background: linear-gradient(135deg, #f5ebe0 0%, #e8ddd0 100%);
-      border-left: 4px solid #b39578;
+      border-left: 4px solid #8b6f5e;
     }
     .harmony-cta[data-cta-key="cta1"] .harmony-cta-badge {
       background: rgba(179,149,120,0.15);
-      color: #b39578;
+      color: #8b6f5e;
     }
     .harmony-cta[data-cta-key="cta1"] .harmony-cta-catch,
     .harmony-cta[data-cta-key="cta1"] .harmony-cta-sub {
       color: #53352b;
     }
     .harmony-cta[data-cta-key="cta1"] .harmony-cta-btn {
-      background: #b39578;
+      background: #8b6f5e;
       color: #fff;
       box-shadow: 0 2px 8px rgba(179,149,120,0.3);
     }
@@ -473,7 +473,7 @@ export function generateArticleHtml(
     .article-toc details summary::after {
       content: '▼';
       font-size: 12px;
-      color: #b39578;
+      color: #8b6f5e;
       transition: transform 0.2s;
     }
     .article-toc details[open] summary::after {
@@ -494,7 +494,7 @@ export function generateArticleHtml(
     }
     .article-toc-list li { padding: 0.2rem 0; }
     .article-toc-list li a { color: #53352b; text-decoration: none; font-size: 14px; }
-    .article-toc-list li a:hover { color: #b39578; text-decoration: underline; }
+    .article-toc-list li a:hover { color: #8b6f5e; text-decoration: underline; }
     .article-toc-list ol { list-style: none; padding-left: 1.2rem; margin: 0.2rem 0 0; }
 
     /* ─── Highlight Markers ─── */
@@ -509,14 +509,14 @@ export function generateArticleHtml(
 
     /* ─── Related Articles ─── */
     .article-related { margin: 2rem 0; }
-    .article-related h2 { font-size: 1.1rem; font-weight: 600; color: #53352b; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #b39578; }
+    .article-related h2 { font-size: 1.1rem; font-weight: 600; color: #53352b; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #8b6f5e; }
     .article-related-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
     .article-related-card { display: block; border-radius: 8px; overflow: hidden; border: 1px solid #e8ddd0; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; }
     .article-related-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(83,53,43,0.1); }
     .article-related-card-thumb { height: 120px; background: linear-gradient(135deg, #f5ebe0, #e8ddd0); overflow: hidden; }
     .article-related-card-thumb img { width: 100%; height: 100%; object-fit: cover; }
     .article-related-card-title { font-size: 0.85rem; font-weight: 600; color: #53352b; padding: 0.75rem; margin: 0; line-height: 1.4; }
-    .article-related-empty { font-size: 0.9rem; color: #b39578; font-style: italic; }
+    .article-related-empty { font-size: 0.9rem; color: #8b6f5e; font-style: italic; }
     @media (max-width: 767px) { .article-related-grid { grid-template-columns: 1fr; } }
     ${getStickyCtaBarCss()}
   </style>
@@ -733,6 +733,20 @@ function buildBodyWithCtas(article: Article, slug: string): string {
   bodyHtml = bodyHtml.replace(/<img[^>]*(?:hero\.jpg|hero\.webp|hero\.svg)[^>]*>\s*/g, '');
 
   if (!bodyHtml.trim()) return '';
+
+  // ── AI生成HTMLの修復 ──
+  // 1. バックスラッシュエスケープされた属性値を修復
+  //    パターン: ="\"value\"" → ="value"  /  ="\&quot;value\&quot;" → ="value"
+  bodyHtml = bodyHtml.replace(/="\\&quot;/g, '="').replace(/\\&quot;"/g, '"');
+  bodyHtml = bodyHtml.replace(/="\\"/g, '="').replace(/\\""/g, '"');
+  // 2. TOC/CTA内の不要な<br>タグを除去（構造タグの直後/直前）
+  bodyHtml = bodyHtml.replace(/<br\s*\/?>\s*(<\/?(?:nav|details|summary|ol|li|div|a|p)\b)/gi, '$1');
+  bodyHtml = bodyHtml.replace(/(<\/?(?:nav|details|summary|ol|li|div|a|p)[^>]*>)\s*<br\s*\/?>/gi, '$1');
+  // 3. AI が勝手に挿入した壊れCTAを除去（正規のinsertCtasIntoHtmlで再挿入される）
+  bodyHtml = bodyHtml.replace(/<div class="harmony-cta">\s*<p class="harmony-cta-catch">[\s\S]*?<\/a>\s*<\/div>/gi, '');
+  // 4. <p> 内のブロック要素を修復（<p><div...> → </p><div...>）
+  bodyHtml = bodyHtml.replace(/<p>\s*(<div\s)/gi, '$1');
+  bodyHtml = bodyHtml.replace(/(<\/div>)\s*<\/p>/gi, '$1');
 
   // テーマからCTAテキスト選択
   // cta-generator の theme マッピング: daily_awareness → daily, spiritual_intro → introduction

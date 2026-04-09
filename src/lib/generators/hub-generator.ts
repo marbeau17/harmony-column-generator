@@ -34,7 +34,7 @@ export interface HubPageData {
 
 const ARTICLES_PER_PAGE = 10;
 const SITE_NAME = 'Harmonyスピリチュアルコラム';
-const SITE_URL = 'https://harmony-spiritual.com';
+const SITE_URL = 'https://harmony-mc.com';
 const COLUMNS_BASE = `${SITE_URL}/columns`;
 const BOOKING_URL = 'https://harmony-booking.web.app/';
 const GA4_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-TH2XJ24V3T';
@@ -106,7 +106,7 @@ function getHubCSS(): string {
     a { text-decoration: none; color: inherit; }
 
     /* ナビゲーション */
-    #sticky-nav { position: fixed; top: 0; left: 0; width: 100%; height: 50px; background: linear-gradient(135deg, #53352b, #b39578); box-shadow: 0 2px 5px rgba(83,53,43,0.15); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+    #sticky-nav { position: fixed; top: 0; left: 0; width: 100%; height: 50px; background: linear-gradient(135deg, #53352b, #8b6f5e); box-shadow: 0 2px 5px rgba(83,53,43,0.15); z-index: 9999; display: flex; justify-content: center; align-items: center; }
     .nav-inner { width: 100%; max-width: 1000px; display: flex; justify-content: space-around; align-items: center; padding: 0 10px; }
     #sticky-nav a { text-decoration: none; font-weight: bold; color: #fff; font-size: 13px; padding: 6px 15px; border-radius: 20px; transition: all 0.3s; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
     #sticky-nav a:hover { background: #fff; color: #53352b; }
@@ -126,11 +126,11 @@ function getHubCSS(): string {
     .card-thumbnail { width: 100%; height: 100%; object-fit: cover; min-height: 160px; }
     .card-body { padding: 20px; display: flex; flex-direction: column; justify-content: space-between; }
     .card-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-    .card-category { background: #f5ebe0; color: #b39578; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px; }
+    .card-category { background: #f5ebe0; color: #8b6f5e; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px; }
     .card-date { font-size: 12px; color: #999; }
     .card-title { font-size: 17px; font-weight: 700; color: #53352b; margin-bottom: 8px; line-height: 1.5; }
     .card-excerpt { font-size: 13px; color: #666; line-height: 1.7; }
-    .card-link { display: inline-block; margin-top: 10px; color: #b39578; font-size: 13px; font-weight: 700; }
+    .card-link { display: inline-block; margin-top: 10px; color: #8b6f5e; font-size: 13px; font-weight: 700; }
     .card-link:hover { text-decoration: underline; }
 
     /* サイドバー */
@@ -140,13 +140,13 @@ function getHubCSS(): string {
     .category-list { list-style: none; }
     .category-list li { margin-bottom: 8px; }
     .category-list li a { display: flex; justify-content: space-between; align-items: center; color: #555; font-size: 14px; padding: 6px 0; border-bottom: 1px dashed #eee; transition: color 0.2s; }
-    .category-list li a:hover { color: #b39578; }
-    .category-count { background: #f5ebe0; color: #b39578; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+    .category-list li a:hover { color: #8b6f5e; }
+    .category-count { background: #f5ebe0; color: #8b6f5e; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
     .recent-list { list-style: none; }
     .recent-list li { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f0ebe5; }
     .recent-list li:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
     .recent-list li a { font-size: 13px; color: #555; line-height: 1.6; }
-    .recent-list li a:hover { color: #b39578; }
+    .recent-list li a:hover { color: #8b6f5e; }
     .recent-date { font-size: 11px; color: #aaa; display: block; margin-top: 2px; }
 
     /* ページネーション */
@@ -160,7 +160,7 @@ function getHubCSS(): string {
 
     /* フッター */
     footer { text-align: center; padding: 20px 0; color: #888; font-size: 12px; border-top: 1px solid #e8d5c4; margin-top: 40px; }
-    .site-copyright { text-align: center; padding: 1.5rem 0; background: #53352b; color: rgba(255,255,255,0.7); font-size: 0.8rem; border-top: 3px solid #b39578; }
+    .site-copyright { text-align: center; padding: 1.5rem 0; background: #53352b; color: rgba(255,255,255,0.7); font-size: 0.8rem; border-top: 3px solid #8b6f5e; }
 
     /* レスポンシブ */
     @media (max-width: 768px) {
@@ -279,7 +279,7 @@ ${recentItems}
       <div class="sidebar-section">
         <h3>セッションのご案内</h3>
         <p style="font-size:13px; color:#666; margin-bottom:12px;">スピリチュアルカウンセリングで、あなたの魂の声に耳を傾けてみませんか？</p>
-        <a href="${escAttr(BOOKING_URL)}" style="display:block; text-align:center; background:#b39578; color:#fff; padding:12px; border-radius:25px; font-weight:bold; font-size:14px;">セッションを予約する</a>
+        <a href="${escAttr(BOOKING_URL)}" style="display:block; text-align:center; background:#8b6f5e; color:#fff; padding:12px; border-radius:25px; font-weight:bold; font-size:14px;">セッションを予約する</a>
       </div>
     </aside>`;
 }

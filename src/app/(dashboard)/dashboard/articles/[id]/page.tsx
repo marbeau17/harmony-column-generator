@@ -124,6 +124,8 @@ export default function ArticleDetailPage() {
   const [imageGenLoading, setImageGenLoading] = useState(false);
   const [ftpUploading, setFtpUploading] = useState(false);
   const [ftpResult, setFtpResult] = useState<string | null>(null);
+  const [qualityCheck, setQualityCheck] = useState<Record<string, unknown> | null>(null);
+  const [qualityLoading, setQualityLoading] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // ─── データ取得 ─────────────────────────────────────────────────────────
@@ -278,6 +280,22 @@ export default function ArticleDetailPage() {
       setTimeout(() => setFtpResult(null), 8000);
     } finally {
       setFtpUploading(false);
+    }
+  };
+
+  // ─── 品質チェック実行 ────────────────────────────────────────────────────
+
+  const handleQualityCheck = async () => {
+    setQualityLoading(true);
+    try {
+      const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '品質チェックに失敗しました');
+      setQualityCheck(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '予期せぬエラー');
+    } finally {
+      setQualityLoading(false);
     }
   };
 
@@ -566,6 +584,106 @@ export default function ArticleDetailPage() {
               {(article as Record<string, unknown>).reviewed_at ? '確認を取消' : '✅ 確認済みにする'}
             </button>
           </div>
+        </section>
+      )}
+
+      {/* ─ 品質チェックリスト ─ */}
+      {(article.stage2_body_html || article.published_html) && (
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
+                品質チェックリスト
+              </h2>
+              {qualityCheck && (
+                <p className="text-xs mt-1">
+                  <span className={`font-bold ${(qualityCheck as Record<string, unknown>).passed ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {(qualityCheck as Record<string, unknown>).passed ? '合格' : '不合格'}
+                  </span>
+                  <span className="text-slate-400 ml-2">
+                    スコア: {String((qualityCheck as Record<string, unknown>).score)}/100
+                    {' | '}エラー: {String((qualityCheck as Record<string, unknown>).errorCount)}件
+                    {' | '}警告: {String((qualityCheck as Record<string, unknown>).warningCount)}件
+                  </span>
+                </p>
+              )}
+            </div>
+            <button
+              onClick={handleQualityCheck}
+              disabled={qualityLoading}
+              className="rounded-lg bg-brand-500 px-4 py-2 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {qualityLoading ? (
+                <>
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  チェック中...
+                </>
+              ) : (
+                'チェック実行'
+              )}
+            </button>
+          </div>
+
+          {qualityCheck && (
+            <div className="space-y-3">
+              {/* サマリ */}
+              <div className={`rounded-lg px-4 py-3 text-sm ${(qualityCheck as Record<string, unknown>).passed ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                {String((qualityCheck as Record<string, unknown>).summary)}
+              </div>
+
+              {/* チェック項目一覧 */}
+              {(() => {
+                const items = (qualityCheck as Record<string, unknown>).items as Array<{
+                  id: string; category: string; label: string;
+                  status: string; severity: string; detail?: string; value?: string | number;
+                }>;
+                if (!items) return null;
+
+                // カテゴリ別にグループ化
+                const groups: Record<string, typeof items> = {};
+                for (const item of items) {
+                  if (!groups[item.category]) groups[item.category] = [];
+                  groups[item.category].push(item);
+                }
+
+                return Object.entries(groups).map(([category, groupItems]) => (
+                  <div key={category} className="rounded-lg border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-50 px-4 py-2">
+                      <span className="text-xs font-semibold text-slate-600">{category}</span>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {groupItems.map((item) => (
+                        <div key={item.id} className="flex items-start gap-3 px-4 py-2.5">
+                          <span className="mt-0.5 shrink-0 text-base">
+                            {item.status === 'pass' ? '\u2705' : item.status === 'warn' ? '\u26A0\uFE0F' : '\u274C'}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-slate-700">{item.label}</p>
+                            {item.detail && (
+                              <p className={`text-xs mt-0.5 ${
+                                item.status === 'fail' ? 'text-red-500' : item.status === 'warn' ? 'text-amber-600' : 'text-slate-400'
+                              }`}>
+                                {item.detail}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()}
+
+              {/* チェック日時 */}
+              <p className="text-xs text-slate-400 text-right">
+                チェック日時: {new Date(String((qualityCheck as Record<string, unknown>).checkedAt)).toLocaleString('ja-JP')}
+              </p>
+            </div>
+          )}
+
+          {!qualityCheck && (
+            <p className="text-sm text-slate-400">「チェック実行」ボタンを押すと、17項目の品質チェックを実行します。</p>
+          )}
         </section>
       )}
 

@@ -51,12 +51,21 @@ export function buildQualityCheckSystemPrompt(): string {
 - Trustworthiness（信頼性）: 免責事項、出典への言及、誠実なトーンが保たれているか
 - 判定: [strong] 十分 / [adequate] 最低限 / [weak] 改善必要
 
-### 6. CTA文言適切性
+### 6. オリジナリティ確認
+- 文章が自然で流れるような読み心地になっているか
+- 機械的な同義語置換（不自然な言い換え）がないか
+- 独自の比喩・メタファーが含まれているか（2つ以上推奨）
+- 「当たり前のこと」だけで終わっていないか。読者が深く納得できる内容か
+- ""（ダブルクォーテーション）が文章中に使われていないか（「」のみ使用可）
+- 語尾が「です」「ます」「ですよね」「ですね」「なんです」で優しく語りかけているか
+- 判定: [strong] 十分にオリジナル / [adequate] 最低限 / [weak] 改善必要
+
+### 7. CTA文言適切性
 - CTAのキャッチコピーが不安を煽っていないか（「このままでは...」等はNG）
 - CTAが記事内容と自然につながっているか
 - 押し売り感のない、温かく寄り添うトーンになっているか
 - CTA先URL（https://harmony-booking.web.app/）が正しいか
-- 3箇所のCTAが適切に配置されているか
+- 2箇所のCTAが適切に配置されているか
 - 判定: [appropriate] 適切 / [needs_adjustment] 調整推奨
 
 ## 出力フォーマット（必ずこの形式で出力）
@@ -78,6 +87,7 @@ export function buildQualityCheckSystemPrompt(): string {
 - fear_mongering（不安煽り）
 - discrimination（差別表現）
 - eeat（E-E-A-T）
+- originality（オリジナリティ）
 - cta_quality（CTA適切性）
 
 問題がない場合も、各カテゴリについて [safe] 判定の確認結果を記載すること。`;
@@ -103,8 +113,8 @@ ${proofreadHtml}
 ## 特に注意すべき点
 - 「${theme}」に関連する表現で、医療効果の断定がないか重点的に確認
 - 読者の不安を煽らず、希望と安心を届けるトーンになっているか確認
-- CTA（<div class="harmony-cta">）が3箇所あり、文言が適切か確認
-- 画像プレースホルダー（<!--IMAGE:...-->）が3箇所（hero/body/summary）あるか確認
+- CTA（<div class="harmony-cta">）が2箇所あり、文言が適切か確認
+- 画像プレースホルダー（<!--IMAGE:...-->）が本文中に2箇所（hero画像はテンプレートが自動挿入）あるか確認
 
 ## 注意事項
 - HTMLタグ構造は変更しない
@@ -142,6 +152,7 @@ export type QualityCategory =
   | 'fear_mongering'
   | 'discrimination'
   | 'eeat'
+  | 'originality'
   | 'cta_quality';
 
 export type QualityJudgment =

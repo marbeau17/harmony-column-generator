@@ -11,7 +11,7 @@ export function getStickyCtaBarCss(): string {
 .sticky-cta-bar a:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(0,0,0,.12)}
 .sticky-cta-bar .cta-booking{background:linear-gradient(135deg,#d4a574,#c4856e);color:#fff;box-shadow:0 2px 8px rgba(212,165,116,0.4)}
 .sticky-cta-bar .cta-counseling{background:#53352b;color:#fff;box-shadow:0 2px 8px rgba(83,53,43,0.3)}
-.sticky-cta-bar .cta-contact{background:#fff;color:#53352b;border:1.5px solid #b39578}
+.sticky-cta-bar .cta-contact{background:#fff;color:#53352b;border:1.5px solid #8b6f5e}
 @media(max-width:359px){.sticky-cta-bar{gap:5px;padding:8px}.sticky-cta-bar a{padding:7px 10px;font-size:.72rem;gap:2px}}
 `;
 }

@@ -829,9 +829,9 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // ── seo_check → 完了 → published（自動公開） ──
+        // ── seo_check → 品質チェックリスト → 合格時のみ published ──
         case 'seo_check': {
-          console.log(`[queue] seo_check: Finalizing and auto-publishing`);
+          console.log(`[queue] seo_check: Running quality checklist before publishing`);
           const articleId = queueItem.article_id;
           if (!articleId) throw new Error('article_id が設定されていません');
 
@@ -843,22 +843,39 @@ export async function POST(request: NextRequest) {
 
           if (articleError || !article) throw new Error('記事が見つかりません');
 
-          // Content quality gate: prevent broken articles from being published
           const publishedHtml = article.stage3_final_html || article.stage2_body_html || '';
-          const plainText = publishedHtml.replace(/<[^>]*>/g, '').trim();
 
-          const ERROR_PATTERNS = ['CORRECTIONS_START', 'エラー：', '品質チェック対象', 'お手数ですが', '再度送信してください', 'プロンプトの途中で', 'IMAGE:hero', 'IMAGE:body', 'IMAGE:summary'];
-          const foundErrors = ERROR_PATTERNS.filter(p => plainText.includes(p));
+          // ── 品質チェックリスト実行 ──
+          const { runQualityChecklist } = await import('@/lib/content/quality-checklist');
+          const checkResult = runQualityChecklist({
+            title: article.title || '',
+            html: publishedHtml,
+            keyword: article.keyword || undefined,
+            metaDescription: article.meta_description || undefined,
+            theme: article.theme || undefined,
+          });
 
-          if (foundErrors.length > 0 || plainText.length < 500) {
-            const reason = foundErrors.length > 0
-              ? `不完全なコンテンツを検出: ${foundErrors.join(', ')}`
-              : `本文が短すぎます (${plainText.length}文字)`;
+          console.log(`[queue] seo_check: Quality score=${checkResult.score}, passed=${checkResult.passed}, errors=${checkResult.errorCount}, warnings=${checkResult.warningCount}`);
+
+          // チェック結果をDBに保存（カラムが存在する場合）
+          try {
+            await serviceClient
+              .from('articles')
+              .update({ quality_check: checkResult } as Record<string, unknown>)
+              .eq('id', articleId);
+          } catch { /* quality_check column may not exist yet */ }
+
+          // ── 不合格: editing に回す ──
+          if (!checkResult.passed) {
+            const failedItems = checkResult.items
+              .filter(i => i.status === 'fail' && i.severity === 'error')
+              .map(i => `${i.label}${i.detail ? ` (${i.detail})` : ''}`)
+              .join('; ');
+            const reason = `品質チェック不合格 (${checkResult.errorCount}件): ${failedItems}`;
 
             console.log(`[queue] seo_check: BLOCKED publication of ${articleId}: ${reason}`);
-            logger.warn('api', 'processQueue.publish_blocked', { articleId, reason });
+            logger.warn('api', 'processQueue.publish_blocked', { articleId, reason, score: checkResult.score });
 
-            // Set to editing instead of published (manual review required)
             await serviceClient
               .from('articles')
               .update({ status: 'editing', updated_at: new Date().toISOString() })
@@ -878,27 +895,12 @@ export async function POST(request: NextRequest) {
               published: false,
               blocked: true,
               reason,
+              qualityCheck: checkResult,
               title: article.title,
             });
           }
 
-          // Check for forbidden expressions (client feedback)
-          const FORBIDDEN_EXPRESSIONS = ['愛の涙', '走馬灯', '光の使者', '愛の記憶', '命の境界線'];
-          const foundForbidden = FORBIDDEN_EXPRESSIONS.filter(p => plainText.includes(p));
-
-          // Check 愛 usage (max 5 per article)
-          const loveCount = (plainText.match(/愛/g) || []).length;
-          const loveTooMany = loveCount > 10; // Warn but don't block at >10
-
-          if (foundForbidden.length > 0) {
-            console.log(`[queue] seo_check: WARNING - forbidden expressions found: ${foundForbidden.join(', ')} in article ${articleId}`);
-            // Don't block, just log for now. Future: block publication
-          }
-
-          if (loveTooMany) {
-            console.log(`[queue] seo_check: WARNING - excessive 愛 usage (${loveCount} times) in article ${articleId}`);
-          }
-
+          // ── 合格: published ──
           await serviceClient
             .from('articles')
             .update({

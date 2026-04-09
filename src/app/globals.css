@@ -14,7 +14,7 @@
 }
 
 :root {
-  --color-primary: #b39578;
+  --color-primary: #8b6f5e;
   --color-dark: #53352b;
   --color-gold: #d4a574;
   --color-bg: #faf3ed;
@@ -89,18 +89,18 @@ a {
 /* ─── CTA1: 情報提供 (ウォームブラウン系) ─── */
 .harmony-cta[data-cta-key="cta1"] {
   background: linear-gradient(135deg, #f5ebe0 0%, #e8ddd0 100%);
-  border-left: 4px solid #b39578;
+  border-left: 4px solid #8b6f5e;
 }
 .harmony-cta[data-cta-key="cta1"] .harmony-cta-badge {
   background: rgba(179,149,120,0.15);
-  color: #b39578;
+  color: #8b6f5e;
 }
 .harmony-cta[data-cta-key="cta1"] .harmony-cta-catch,
 .harmony-cta[data-cta-key="cta1"] .harmony-cta-sub {
   color: #53352b;
 }
 .harmony-cta[data-cta-key="cta1"] .harmony-cta-btn {
-  background: #b39578;
+  background: #8b6f5e;
   color: #fff;
   box-shadow: 0 2px 8px rgba(179,149,120,0.3);
 }
@@ -168,7 +168,7 @@ a {
 .article-toc details summary::after {
   content: '▼';
   font-size: 12px;
-  color: #b39578;
+  color: #8b6f5e;
   transition: transform 0.2s;
 }
 .article-toc details[open] summary::after {
@@ -189,7 +189,7 @@ a {
 }
 .article-toc-list li { padding: 0.2rem 0; }
 .article-toc-list li a { color: #53352b; text-decoration: none; font-size: 14px; }
-.article-toc-list li a:hover { color: #b39578; text-decoration: underline; }
+.article-toc-list li a:hover { color: #8b6f5e; text-decoration: underline; }
 .article-toc-list ol { list-style: none; padding-left: 1.2rem; margin: 0.2rem 0 0; }
 
 /* ─── Highlight Markers (蛍光ペン風マーカー) ─── */
@@ -209,7 +209,7 @@ a {
   background: #53352b;
   color: rgba(255,255,255,0.7);
   font-size: 0.8rem;
-  border-top: 3px solid #b39578;
+  border-top: 3px solid #8b6f5e;
 }
 
 /* ─── Scroll to Top Button ─── */
@@ -222,7 +222,7 @@ a {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #b39578;
+  background: #8b6f5e;
   color: #fff;
   border: none;
   cursor: pointer;
@@ -255,14 +255,14 @@ a {
 
 /* ─── Related Articles (column pages) ─── */
 .related-articles { margin: 2rem 0; }
-.related-articles-title { font-size: 1.1rem; font-weight: 600; color: #53352b; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #b39578; }
+.related-articles-title { font-size: 1.1rem; font-weight: 600; color: #53352b; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #8b6f5e; }
 .related-articles-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
 .related-article-card { display: block; border-radius: 8px; overflow: hidden; border: 1px solid #e8ddd0; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; }
 .related-article-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(83,53,43,0.1); }
 .related-article-thumb { height: 120px; background: linear-gradient(135deg, #f5ebe0, #e8ddd0); overflow: hidden; }
 .related-article-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .related-article-name { font-size: 0.85rem; font-weight: 600; color: #53352b; padding: 0.75rem; margin: 0; line-height: 1.4; }
-.related-article-theme { display: inline-block; font-size: 0.7rem; color: #b39578; padding: 0 0.75rem 0.75rem; }
+.related-article-theme { display: inline-block; font-size: 0.7rem; color: #8b6f5e; padding: 0 0.75rem 0.75rem; }
 @media (max-width: 767px) { .related-articles-grid { grid-template-columns: 1fr; } }
 
 /* ─── Base Responsive Image Rule ─── */

@@ -157,9 +157,9 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
   return (
     <div className="min-h-screen bg-[var(--color-bg)] pb-[72px]">
       {/* ヘッダー */}
-      <header className="border-b border-[#b39578]/20 bg-white/80 backdrop-blur">
+      <header className="border-b border-[#8b6f5e]/20 bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:py-8">
-          <nav className="mb-3 sm:mb-4 text-xs sm:text-sm text-[#b39578]" aria-label="パンくずリスト">
+          <nav className="mb-3 sm:mb-4 text-xs sm:text-sm text-[#8b6f5e]" aria-label="パンくずリスト">
             <ol className="flex items-center gap-1">
               <li>
                 <a href={SITE_URL} className="hover:underline">
@@ -178,7 +178,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
           <p className="mt-1 text-sm sm:text-lg font-medium text-[#d4a574]">
             「今を生きるヒント」
           </p>
-          <p className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-[#b39578] leading-relaxed">
+          <p className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-[#8b6f5e] leading-relaxed">
             魂の成長と癒しのための、スピリチュアルな視点からのコラム集
           </p>
         </div>
@@ -202,7 +202,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                   className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm font-medium transition ${
                     isActive
                       ? 'bg-[#53352b] text-white shadow-sm'
-                      : 'bg-white text-[#53352b] border border-[#b39578]/30 hover:bg-[#b39578]/10'
+                      : 'bg-white text-[#53352b] border border-[#8b6f5e]/30 hover:bg-[#8b6f5e]/10'
                   }`}
                 >
                   {tab.label}
@@ -216,7 +216,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
         {articles.length === 0 ? (
           <div className="py-20 text-center">
             <p className="mb-2 text-4xl">&#x1F4DD;</p>
-            <p className="text-lg text-[#b39578]">
+            <p className="text-lg text-[#8b6f5e]">
               {currentTheme !== 'all'
                 ? `「${getThemeLabel(currentTheme)}」のコラムはまだありません。`
                 : 'まだ公開されたコラムがありません。'}
@@ -224,7 +224,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
             {currentTheme !== 'all' && (
               <Link
                 href="/column"
-                className="mt-4 inline-block rounded-full border border-[#b39578]/30 px-5 py-2 text-sm text-[#53352b] hover:bg-[#b39578]/10 transition"
+                className="mt-4 inline-block rounded-full border border-[#8b6f5e]/30 px-5 py-2 text-sm text-[#53352b] hover:bg-[#8b6f5e]/10 transition"
               >
                 全てのコラムを見る
               </Link>
@@ -241,7 +241,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                   <Link
                     key={article.id}
                     href={`/column/${slug}`}
-                    className="group flex flex-row sm:flex-col overflow-hidden rounded-xl border border-[#b39578]/20 bg-white shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 sm:hover:-translate-y-1 active:scale-[0.98] sm:active:scale-100"
+                    className="group flex flex-row sm:flex-col overflow-hidden rounded-xl border border-[#8b6f5e]/20 bg-white shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 sm:hover:-translate-y-1 active:scale-[0.98] sm:active:scale-100"
                   >
                     {/* サムネイル */}
                     <div className="relative aspect-square w-28 shrink-0 overflow-hidden sm:aspect-[16/9] sm:w-full">
@@ -257,7 +257,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                           className="flex h-full w-full items-center justify-center"
                           style={{
                             background:
-                              'linear-gradient(135deg, #b39578 0%, #53352b 100%)',
+                              'linear-gradient(135deg, #8b6f5e 0%, #53352b 100%)',
                           }}
                         >
                           <span className="text-3xl text-white/60">&#x2728;</span>
@@ -268,13 +268,13 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                     {/* カード本文 */}
                     <div className="flex flex-1 flex-col justify-center p-3 sm:p-4">
                       {/* カテゴリバッジ */}
-                      <span className="mb-1.5 sm:mb-2 inline-block self-start rounded-full bg-[#b39578]/15 px-2 py-0.5 text-[10px] sm:text-xs sm:px-2.5 font-medium text-[#53352b]">
+                      <span className="mb-1.5 sm:mb-2 inline-block self-start rounded-full bg-[#8b6f5e]/15 px-2 py-0.5 text-[10px] sm:text-xs sm:px-2.5 font-medium text-[#53352b]">
                         {getThemeLabel(article.theme)}
                       </span>
 
                       {/* タイトル（2行clamp） */}
                       <h2
-                        className="mb-1 sm:mb-2 text-sm sm:text-base font-bold leading-snug text-[#53352b] group-hover:text-[#b39578] transition"
+                        className="mb-1 sm:mb-2 text-sm sm:text-base font-bold leading-snug text-[#53352b] group-hover:text-[#8b6f5e] transition"
                         style={{
                           display: '-webkit-box',
                           WebkitLineClamp: 2,
@@ -286,7 +286,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                       </h2>
 
                       {/* 抜粋（モバイルでは非表示） */}
-                      <p className="mb-3 hidden text-sm leading-relaxed text-[#b39578] sm:block">
+                      <p className="mb-3 hidden text-sm leading-relaxed text-[#8b6f5e] sm:block">
                         {getExcerpt(article.meta_description)}
                       </p>
 
@@ -294,7 +294,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                       {article.published_at && (
                         <time
                           dateTime={article.published_at}
-                          className="text-[10px] sm:text-xs text-[#b39578]/70"
+                          className="text-[10px] sm:text-xs text-[#8b6f5e]/70"
                         >
                           {formatDate(article.published_at)}
                         </time>
@@ -312,7 +312,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                 {currentPage > 1 && (
                   <Link
                     href={`/column?page=${currentPage - 1}${currentTheme !== 'all' ? `&theme=${currentTheme}` : ''}`}
-                    className="rounded-lg border border-[#b39578]/30 px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm text-[#53352b] hover:bg-[#b39578]/10 transition"
+                    className="rounded-lg border border-[#8b6f5e]/30 px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm text-[#53352b] hover:bg-[#8b6f5e]/10 transition"
                   >
                     前へ
                   </Link>
@@ -340,7 +340,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                     pageNum === '...' ? (
                       <span
                         key={`ellipsis-${idx}`}
-                        className="px-1.5 py-1.5 text-xs sm:px-2 sm:py-2 sm:text-sm text-[#b39578]"
+                        className="px-1.5 py-1.5 text-xs sm:px-2 sm:py-2 sm:text-sm text-[#8b6f5e]"
                       >
                         ...
                       </span>
@@ -351,7 +351,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                         className={`rounded-lg px-2.5 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm font-medium transition ${
                           pageNum === currentPage
                             ? 'bg-[#53352b] text-white'
-                            : 'border border-[#b39578]/30 text-[#53352b] hover:bg-[#b39578]/10'
+                            : 'border border-[#8b6f5e]/30 text-[#53352b] hover:bg-[#8b6f5e]/10'
                         }`}
                         aria-current={pageNum === currentPage ? 'page' : undefined}
                       >
@@ -365,7 +365,7 @@ export default async function ColumnListPage({ searchParams }: PageProps) {
                 {currentPage < totalPages && (
                   <Link
                     href={`/column?page=${currentPage + 1}${currentTheme !== 'all' ? `&theme=${currentTheme}` : ''}`}
-                    className="rounded-lg border border-[#b39578]/30 px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm text-[#53352b] hover:bg-[#b39578]/10 transition"
+                    className="rounded-lg border border-[#8b6f5e]/30 px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm text-[#53352b] hover:bg-[#8b6f5e]/10 transition"
                   >
                     次へ
                   </Link>

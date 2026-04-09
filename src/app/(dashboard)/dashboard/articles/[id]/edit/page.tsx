@@ -101,6 +101,8 @@ export default function ArticleEditPage() {
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [publishSuccessOpen, setPublishSuccessOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [qualityCheck, setQualityCheck] = useState<Record<string, unknown> | null>(null);
+  const [qualityLoading, setQualityLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState<'success' | 'error' | null>(null);
   const [mobileView, setMobileView] = useState<'editor' | 'preview'>('editor');
@@ -518,12 +520,30 @@ export default function ArticleEditPage() {
             const isDisabled = isAlreadyPublished && !hasChanges;
             return (
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (charCount === 0) {
                     alert('本文が空です。公開するには本文を入力してください。');
                     return;
                   }
+                  // 公開ダイアログを開くと同時に品質チェックを実行
                   setPublishDialogOpen(true);
+                  setQualityLoading(true);
+                  setQualityCheck(null);
+                  try {
+                    // まず最新の本文を保存
+                    await fetch(`/api/articles/${articleId}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ stage2_body_html: bodyHtml, title, meta_description: metaDescription }),
+                    });
+                    const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST' });
+                    const data = await res.json();
+                    setQualityCheck(data);
+                  } catch {
+                    setQualityCheck(null);
+                  } finally {
+                    setQualityLoading(false);
+                  }
                 }}
                 disabled={isDisabled}
                 className={`px-2 sm:px-3 py-1.5 text-xs sm:text-sm rounded-lg transition-colors ${
@@ -812,9 +832,9 @@ export default function ArticleEditPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/40"
-            onClick={() => setPublishDialogOpen(false)}
+            onClick={() => !publishing && setPublishDialogOpen(false)}
           />
-          <div className="relative bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
+          <div className="relative bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4 max-h-[80vh] overflow-y-auto">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">
               記事を公開しますか？
             </h2>
@@ -827,16 +847,81 @@ export default function ArticleEditPage() {
               </p>
             )}
             <div className="text-sm text-gray-600 mb-4 p-3 bg-gray-50 rounded-lg">
-              <p>
-                <strong>タイトル:</strong> {title || '(未設定)'}
-              </p>
-              <p>
-                <strong>文字数:</strong> {charCount.toLocaleString()}文字
-              </p>
-              <p>
-                <strong>キーワード:</strong> {keyword || '(未設定)'}
-              </p>
+              <p><strong>タイトル:</strong> {title || '(未設定)'}</p>
+              <p><strong>文字数:</strong> {charCount.toLocaleString()}文字</p>
+              <p><strong>キーワード:</strong> {keyword || '(未設定)'}</p>
             </div>
+
+            {/* 品質チェック結果 */}
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">品質チェック結果</h3>
+              {qualityLoading && (
+                <div className="flex items-center gap-2 text-sm text-gray-500 py-3">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+                  品質チェック実行中...
+                </div>
+              )}
+              {qualityCheck && !qualityLoading && (
+                <div className="space-y-2">
+                  {/* 合否バナー */}
+                  <div className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                    (qualityCheck as Record<string, unknown>).passed
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-red-50 text-red-700 border border-red-200'
+                  }`}>
+                    {(qualityCheck as Record<string, unknown>).passed ? '\u2705 ' : '\u274C '}
+                    {String((qualityCheck as Record<string, unknown>).summary)}
+                  </div>
+
+                  {/* エラー項目のみ表示（不合格時） */}
+                  {!(qualityCheck as Record<string, unknown>).passed && (
+                    <div className="rounded-lg border border-red-200 divide-y divide-red-100">
+                      {((qualityCheck as Record<string, unknown>).items as Array<{
+                        id: string; label: string; status: string; severity: string; detail?: string;
+                      }>)
+                        ?.filter(i => i.status === 'fail' && i.severity === 'error')
+                        .map(item => (
+                          <div key={item.id} className="px-3 py-2 flex items-start gap-2">
+                            <span className="text-red-500 shrink-0">{'\u274C'}</span>
+                            <div>
+                              <p className="text-xs text-gray-700">{item.label}</p>
+                              {item.detail && <p className="text-xs text-red-500">{item.detail}</p>}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {/* 警告項目（折りたたみ） */}
+                  {((qualityCheck as Record<string, unknown>).warningCount as number) > 0 && (
+                    <details className="text-xs text-gray-500">
+                      <summary className="cursor-pointer hover:text-gray-700">
+                        警告 {String((qualityCheck as Record<string, unknown>).warningCount)}件を表示
+                      </summary>
+                      <div className="mt-1 rounded-lg border border-amber-200 divide-y divide-amber-100">
+                        {((qualityCheck as Record<string, unknown>).items as Array<{
+                          id: string; label: string; status: string; severity: string; detail?: string;
+                        }>)
+                          ?.filter(i => i.status === 'warn' || (i.status === 'fail' && i.severity === 'warning'))
+                          .map(item => (
+                            <div key={item.id} className="px-3 py-1.5 flex items-start gap-2">
+                              <span className="shrink-0">{'\u26A0\uFE0F'}</span>
+                              <div>
+                                <p className="text-xs text-gray-600">{item.label}</p>
+                                {item.detail && <p className="text-xs text-amber-600">{item.detail}</p>}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
+              {!qualityCheck && !qualityLoading && (
+                <p className="text-xs text-gray-400">品質チェックを読み込めませんでした。</p>
+              )}
+            </div>
+
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setPublishDialogOpen(false)}
@@ -847,10 +932,15 @@ export default function ArticleEditPage() {
               </button>
               <button
                 onClick={handlePublish}
-                disabled={publishing}
-                className="px-4 py-2 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-50"
+                disabled={publishing || qualityLoading || (qualityCheck ? !(qualityCheck as Record<string, unknown>).passed : false)}
+                className={`px-4 py-2 text-sm rounded-lg transition-colors disabled:opacity-50 ${
+                  qualityCheck && !(qualityCheck as Record<string, unknown>).passed
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-brand-600 text-white hover:bg-brand-700'
+                }`}
+                title={qualityCheck && !(qualityCheck as Record<string, unknown>).passed ? '品質チェックに合格してから公開してください' : ''}
               >
-                {publishing ? '公開中...' : '公開する'}
+                {publishing ? '公開中...' : qualityCheck && !(qualityCheck as Record<string, unknown>).passed ? '品質チェック不合格' : '公開する'}
               </button>
             </div>
           </div>
