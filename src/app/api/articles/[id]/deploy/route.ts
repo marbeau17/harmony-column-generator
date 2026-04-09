@@ -46,7 +46,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     // Post-process: fix paths for static hosting
     html = html.replace(/https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g, './images/$1.jpg');
-    html = html.replace('href="./css/hub.css"', 'href="../../css/style.css"');
+    html = html.replace('href="./css/hub.css"', 'href="../../css/hub.css"');
     html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
     html = html.replace(/href="\/column\/([^"]+)\/"/g, 'href="../$1/index.html"');
     html = html.replace(/src="\/column\/([^"]+)\/images\//g, 'src="../$1/images/');

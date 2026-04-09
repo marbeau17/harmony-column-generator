@@ -146,7 +146,7 @@ export async function exportArticleToOut(
     './images/$1.jpg'
   );
   // Fix CSS path
-  html = html.replace('href="./css/hub.css"', 'href="../../css/style.css"');
+  html = html.replace('href="./css/hub.css"', 'href="../../css/hub.css"');
   // Fix JS path
   html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
   // Fix related article links: /column/slug/ → ../slug/index.html
