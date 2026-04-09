@@ -518,6 +518,31 @@ export function generateArticleHtml(
     .article-related-card-title { font-size: 0.85rem; font-weight: 600; color: #53352b; padding: 0.75rem; margin: 0; line-height: 1.4; }
     .article-related-empty { font-size: 0.9rem; color: #8b6f5e; font-style: italic; }
     @media (max-width: 767px) { .article-related-grid { grid-template-columns: 1fr; } }
+
+    /* ─── Article Layout ─── */
+    .article-hero { margin: 0 0 24px; }
+    .article-hero img { width: 100%; max-width: 800px; border-radius: 4px; display: block; height: auto; }
+    .article-title { font-size: 26px; color: #333; font-weight: 700; line-height: 1.5; margin-bottom: 20px; }
+    .article-quick-answer { background: #faf5f0; border: 1px solid #8b6f5e; border-radius: 4px; padding: 20px 24px; margin-bottom: 32px; font-size: 15px; line-height: 1.9; color: #333; }
+    .article-quick-answer::before { content: "\u2728 この記事のポイント"; display: block; font-weight: 700; font-size: 14px; color: #8b6f5e; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed #d4c5b5; }
+
+    /* ─── Article Body ─── */
+    .article-body { margin-bottom: 48px; }
+    .article-body h2 { font-size: 22px; color: #333; font-weight: 700; border-left: 4px solid #8b6f5e; background: #faf5f0; padding: 12px 15px; margin: 2.5rem 0 1rem; line-height: 1.5; }
+    .article-body h3 { font-size: 18px; color: #333; font-weight: 700; border-bottom: 2px solid #8b6f5e; padding-bottom: 8px; margin: 2rem 0 0.8rem; line-height: 1.5; }
+    .article-body h4 { font-size: 16px; color: #333; font-weight: 700; padding-left: 12px; border-left: 3px solid #d4c5b5; margin: 1.5rem 0 0.6rem; }
+    .article-body p { margin-bottom: 1.4em; font-size: 16px; line-height: 1.9; }
+    .article-body img { border-radius: 4px; margin: 1.2em 0; display: block; max-width: 100%; height: auto; }
+    .article-body ul, .article-body ol { margin: 1em 0 1.4em 1.5em; }
+    .article-body li { margin-bottom: 0.5em; font-size: 15px; line-height: 1.8; }
+    .article-body blockquote { border-left: 4px solid #8b6f5e; padding: 12px 16px; margin: 1.5em 0; background: #faf5f0; border-radius: 0 4px 4px 0; color: #555; font-style: italic; }
+    .article-body table { width: 100%; border-collapse: collapse; margin: 1.5em 0; }
+    .article-body th { background: #faf5f0; font-weight: 700; color: #333; padding: 10px 12px; border: 1px solid #ddd; text-align: left; }
+    .article-body td { padding: 10px 12px; border: 1px solid #ddd; }
+    .article-body strong { color: #53352b; }
+
+    /* ─── Global image safety ─── */
+    img { max-width: 100%; height: auto; }
     ${getStickyCtaBarCss()}
   </style>
 </head>
