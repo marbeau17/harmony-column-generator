@@ -137,7 +137,7 @@ const DEFAULT_THEME = 'healing';
  * テーマに基づいてCTA文言を選択する
  * @param theme テーマ名
  * @param _articleId 記事ID（将来のA/Bテスト等で使用可能）
- * @returns cta1, cta2, cta3 の文言オブジェクト
+ * @returns cta2, cta3 の文言オブジェクト
  */
 export function selectCtaTexts(
   theme: string,
@@ -169,7 +169,7 @@ const CTA_BADGES: Record<string, string> = {
  * - data-cta-key属性でCSSから3種類を色分け
  * - コンパクトで記事の流れを妨げない
  *
- * @param ctaKey CTA識別子 (cta1, cta2, cta3)
+ * @param ctaKey CTA識別子 (cta2, cta3)
  * @param position CTA配置位置
  * @param catchText キャッチコピー
  * @param subText サブテキスト
@@ -205,10 +205,9 @@ export function buildCtaHtml(
 }
 
 /**
- * 記事HTMLにCTAを3箇所自動挿入する
+ * 記事HTMLにCTAを2箇所自動挿入する
  *
  * 配置ロジック:
- * - CTA1: 1番目のH2タグの直前（情報提供 → カウンセリング説明ページ）
  * - CTA2: 中間のH2タグの直前（検討促進 → 予約の流れページ）
  * - CTA3: 最後のH2セクション末尾（コンバージョン → 予約ページ）
  *

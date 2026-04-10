@@ -57,7 +57,7 @@ export function buildStage1SystemPrompt(input: Stage1Input): string {
 9. faq は **2〜3個**（読者がよく検索する疑問を想定）
 10. image_prompts は **3個**（hero / body / summary の3箇所用）
 11. cta_positions は **2箇所**（本文中盤・まとめ直前）の見出しIDを指定
-12. cta_texts は cta2 / cta3 それぞれに catch（キャッチコピー）と sub（補足文）を設定（cta1は不要）
+12. cta_texts は cta2 / cta3 それぞれに catch（キャッチコピー）と sub（補足文）を設定
 13. CTA のリンク先は必ず ${CTA_URL} とすること
 
 ## 絶対禁止事項

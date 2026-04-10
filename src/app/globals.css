@@ -86,25 +86,6 @@ a {
   opacity: 0.9;
 }
 
-/* ─── CTA1: 情報提供 (ウォームブラウン系) ─── */
-.harmony-cta[data-cta-key="cta1"] {
-  background: linear-gradient(135deg, #f5ebe0 0%, #e8ddd0 100%);
-  border-left: 4px solid #8b6f5e;
-}
-.harmony-cta[data-cta-key="cta1"] .harmony-cta-badge {
-  background: rgba(179,149,120,0.15);
-  color: #8b6f5e;
-}
-.harmony-cta[data-cta-key="cta1"] .harmony-cta-catch,
-.harmony-cta[data-cta-key="cta1"] .harmony-cta-sub {
-  color: #53352b;
-}
-.harmony-cta[data-cta-key="cta1"] .harmony-cta-btn {
-  background: #8b6f5e;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(179,149,120,0.3);
-}
-
 /* ─── CTA2: 検討促進 (ラベンダー系) ─── */
 .harmony-cta[data-cta-key="cta2"] {
   background: linear-gradient(135deg, #ede7f0 0%, #ddd5e4 100%);

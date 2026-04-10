@@ -10,7 +10,7 @@ const BUCKET_NAME = 'article-images';
 /**
  * CTAバナー画像をSupabase Storageにアップロードし、公開URLを返す。
  *
- * @param position - CTAポジション (cta1 / cta2 / cta3)
+ * @param position - CTAポジション (cta2 / cta3)
  * @param imageBuffer - 画像データ (Buffer)
  * @param mimeType - MIMEタイプ
  * @returns 公開URL

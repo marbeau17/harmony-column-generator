@@ -29,7 +29,6 @@ interface CtaItemSettings {
 }
 
 interface CTASettings {
-  cta1: CtaItemSettings;
   cta2: CtaItemSettings;
   cta3: CtaItemSettings;
 }
@@ -84,11 +83,6 @@ const DEFAULT_CTA_ITEM: CtaItemSettings = {
 };
 
 const DEFAULT_CTA: CTASettings = {
-  cta1: {
-    ...DEFAULT_CTA_ITEM,
-    url: 'https://harmony-mc.com/counseling/',
-    buttonText: 'カウンセリングについて詳しく見る',
-  },
   cta2: {
     ...DEFAULT_CTA_ITEM,
     url: 'https://harmony-mc.com/system/',
@@ -223,7 +217,6 @@ export default function SettingsPage() {
       }
       if (data.cta && typeof data.cta === 'object') {
         setCTA({
-          cta1: { ...DEFAULT_CTA.cta1, ...(data.cta.cta1 || {}) },
           cta2: { ...DEFAULT_CTA.cta2, ...(data.cta.cta2 || {}) },
           cta3: { ...DEFAULT_CTA.cta3, ...(data.cta.cta3 || {}) },
         });
@@ -478,67 +471,6 @@ export default function SettingsPage() {
         {/* ─── CTA 設定 ─── */}
         {activeTab === 'cta' && (
           <div className="space-y-8 w-full max-w-2xl">
-            {/* CTA1: カウンセリング説明ページ */}
-            <div className="rounded-lg border-2 border-blue-200 bg-blue-50/30 p-3 sm:p-5 space-y-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">1</span>
-                  <h3 className="text-sm font-semibold text-gray-800">
-                    導入部（カウンセリング説明ページ）
-                  </h3>
-                </div>
-                <span className="self-start text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-medium sm:self-auto">情報提供</span>
-              </div>
-              <div>
-                <label className={labelClass}>リンク先 URL</label>
-                <input
-                  type="url"
-                  value={cta.cta1.url}
-                  onChange={(e) =>
-                    updateCTA({ ...cta, cta1: { ...cta.cta1, url: e.target.value } })
-                  }
-                  placeholder="https://harmony-mc.com/counseling/"
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>ボタンテキスト</label>
-                <input
-                  type="text"
-                  value={cta.cta1.buttonText}
-                  onChange={(e) =>
-                    updateCTA({ ...cta, cta1: { ...cta.cta1, buttonText: e.target.value } })
-                  }
-                  placeholder="カウンセリングについて詳しく見る"
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>キャッチコピー（上書き用・空欄でテーマ別自動選択）</label>
-                <textarea
-                  rows={2}
-                  value={cta.cta1.catchText}
-                  onChange={(e) =>
-                    updateCTA({ ...cta, cta1: { ...cta.cta1, catchText: e.target.value } })
-                  }
-                  placeholder="テーマ別テンプレートから自動選択されます"
-                  className={textareaClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>サブテキスト（上書き用・空欄でテーマ別自動選択）</label>
-                <textarea
-                  rows={2}
-                  value={cta.cta1.subText}
-                  onChange={(e) =>
-                    updateCTA({ ...cta, cta1: { ...cta.cta1, subText: e.target.value } })
-                  }
-                  placeholder="テーマ別テンプレートから自動選択されます"
-                  className={textareaClass}
-                />
-              </div>
-            </div>
-
             {/* CTA2: 予約の流れページ */}
             <div className="rounded-lg border-2 border-amber-200 bg-amber-50/30 p-3 sm:p-5 space-y-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

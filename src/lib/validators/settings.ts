@@ -35,7 +35,6 @@ const ctaItemSchema = z.object({
 });
 
 const ctaSettingsSchema = z.object({
-  cta1: ctaItemSchema.optional(),
   cta2: ctaItemSchema.optional(),
   cta3: ctaItemSchema.optional(),
 });

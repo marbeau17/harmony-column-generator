@@ -28,7 +28,7 @@ const OVERLAY_READY_STYLE = [
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
 export interface CtaBannerPromptItem {
-  position: 'cta1' | 'cta2' | 'cta3';
+  position: 'cta2' | 'cta3';
   label: string;
   prompt: string;
   negative_prompt: string;
@@ -41,9 +41,8 @@ export interface CtaBannerPromptItem {
 // ─── バナープロンプト生成 ────────────────────────────────────────────────────
 
 /**
- * 3つのCTAバナー用画像生成プロンプトを返す。
+ * 2つのCTAバナー用画像生成プロンプトを返す。
  *
- * - CTA1（説明ページ向け）: 柔らかな光のカウンセリングルーム、温かいブラウン系
  * - CTA2（流れページ向け）: ステップを象徴する光の道、階段、扉が開くイメージ
  * - CTA3（予約ページ向け）: 手と手が光で繋がるイメージ、ゴールド系、希望
  *
@@ -52,26 +51,6 @@ export interface CtaBannerPromptItem {
  */
 export function buildCtaBannerPrompts(): CtaBannerPromptItem[] {
   return [
-    {
-      position: 'cta1',
-      label: 'カウンセリング説明ページ向けバナー',
-      prompt: [
-        'A serene panoramic view of a counseling room with soft warm golden light,',
-        'seen from a distance, comfortable armchairs arranged near a large window,',
-        'gentle sunlight streaming through sheer curtains creating light rays in upper half,',
-        'small table with herbal tea and a single flower in a vase,',
-        'warm brown and beige color palette with touches of soft gold,',
-        'cozy and welcoming atmosphere, peaceful interior,',
-        'no people visible, minimalist Japanese aesthetic,',
-        'lower portion fades into deep warm brown tones,',
-        OVERLAY_READY_STYLE,
-      ].join(' '),
-      negative_prompt: COMMON_NEGATIVE_PROMPT,
-      aspect_ratio: '3:1',
-      width: 1200,
-      height: 400,
-      alt_text_ja: '温かな光に包まれた癒しのカウンセリングルーム',
-    },
     {
       position: 'cta2',
       label: '予約の流れページ向けバナー',
@@ -118,7 +97,7 @@ export function buildCtaBannerPrompts(): CtaBannerPromptItem[] {
  * 特定のCTAポジション用のプロンプトを取得する
  */
 export function getCtaBannerPrompt(
-  position: 'cta1' | 'cta2' | 'cta3',
+  position: 'cta2' | 'cta3',
 ): CtaBannerPromptItem | undefined {
   return buildCtaBannerPrompts().find((p) => p.position === position);
 }
