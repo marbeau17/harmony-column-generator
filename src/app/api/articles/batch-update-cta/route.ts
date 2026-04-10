@@ -151,6 +151,13 @@ function replaceCtas(
     const ctaKey = ($el.attr('data-cta-key') as 'cta1' | 'cta2' | 'cta3') || keyMap[idx] || 'cta1';
     const position = ($el.attr('data-cta-position') as 'intro' | 'mid' | 'end') || posMap[idx] || 'intro';
 
+    // cta1は廃止済み — 旧記事に残っている場合は削除する
+    if (ctaKey === 'cta1') {
+      $el.remove();
+      changed = true;
+      return;
+    }
+
     const config = ctaSettings[ctaKey];
     if (!config) return;
 

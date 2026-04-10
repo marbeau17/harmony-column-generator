@@ -16,12 +16,6 @@ export const CTA_URLS = {
 // ─── CTA デフォルト設定 ──────────────────────────────────────────────────────
 
 export const CTA_DEFAULTS = {
-  cta1: {
-    url: CTA_URLS.counseling,
-    buttonText: 'カウンセリングについて詳しく見る',
-    position: 'intro' as const,
-    purpose: 'information', // 情報提供
-  },
   cta2: {
     url: CTA_URLS.system,
     buttonText: 'ご予約の流れを確認する',
@@ -50,27 +44,21 @@ export interface CtaConfig {
 }
 
 export interface CtaSettingsAll {
-  cta1: CtaConfig;
   cta2: CtaConfig;
   cta3: CtaConfig;
 }
 
 // ─── テーマ別CTA文言テンプレート ──────────────────────────────────────────────
-// 各テーマに cta1_intro(説明ページ向け) / cta2_mid(流れページ向け) / cta3_end(予約向け) の3パターン
+// 各テーマに cta2_mid(流れページ向け) / cta3_end(予約向け) の2パターン
 
 export const CTA_TEMPLATES: Record<
   string,
   {
-    cta1_intro: { catch: string; sub: string };
     cta2_mid: { catch: string; sub: string };
     cta3_end: { catch: string; sub: string };
   }
 > = {
   soul_mission: {
-    cta1_intro: {
-      catch: 'スピリチュアルカウンセリングでは、魂の使命についても丁寧にお伝えしています。',
-      sub: 'あなたの魂が本当に求めている道を知りたい方は、まずカウンセリングの内容をご覧ください。',
-    },
     cta2_mid: {
       catch: 'カウンセリングの流れや準備についてはこちらをご覧ください。',
       sub: '初めての方でも安心して受けていただけるよう、丁寧にご説明しています。',
@@ -81,10 +69,6 @@ export const CTA_TEMPLATES: Record<
     },
   },
   relationships: {
-    cta1_intro: {
-      catch: 'スピリチュアルカウンセリングでは、人間関係の根本にある魂のつながりについてもお伝えしています。',
-      sub: '大切な人との関係に悩んでいる方は、まずカウンセリングの内容をご覧ください。',
-    },
     cta2_mid: {
       catch: 'カウンセリングではどんなことが分かるのか、流れをご紹介しています。',
       sub: 'お気持ちの整理から始められますので、安心してお越しください。',
@@ -95,10 +79,6 @@ export const CTA_TEMPLATES: Record<
     },
   },
   grief_care: {
-    cta1_intro: {
-      catch: 'スピリチュアルカウンセリングでは、大切な方とのつながりについても丁寧にお伝えしています。',
-      sub: '悲しみの中にいる方へ、まずはカウンセリングでどんなことができるかをご覧ください。',
-    },
     cta2_mid: {
       catch: 'カウンセリングの流れや当日の過ごし方についてはこちらをご覧ください。',
       sub: 'あなたのペースを大切にしながら、安心できる空間をお作りします。',
@@ -109,10 +89,6 @@ export const CTA_TEMPLATES: Record<
     },
   },
   self_growth: {
-    cta1_intro: {
-      catch: 'スピリチュアルカウンセリングでは、あなたの内なる成長の道筋についてもお伝えしています。',
-      sub: '自分らしく生きるためのヒントを知りたい方は、まずカウンセリングの内容をご覧ください。',
-    },
     cta2_mid: {
       catch: 'カウンセリングの具体的な流れや準備についてはこちらをご確認ください。',
       sub: '初めての方にも分かりやすくご案内していますので、ご安心ください。',
@@ -123,10 +99,6 @@ export const CTA_TEMPLATES: Record<
     },
   },
   healing: {
-    cta1_intro: {
-      catch: 'スピリチュアルカウンセリングでは、心の深いところにある疲れについても丁寧にお伝えしています。',
-      sub: '癒しを求めている方は、まずカウンセリングの内容をご覧ください。',
-    },
     cta2_mid: {
       catch: 'カウンセリングの流れや当日の過ごし方についてはこちらをご覧ください。',
       sub: 'リラックスした状態で受けていただけるよう、丁寧にご案内しています。',
@@ -137,10 +109,6 @@ export const CTA_TEMPLATES: Record<
     },
   },
   daily: {
-    cta1_intro: {
-      catch: 'スピリチュアルカウンセリングでは、日々の暮らしに潜む気づきについてもお伝えしています。',
-      sub: '毎日をもっと心地よく過ごしたい方は、まずカウンセリングの内容をご覧ください。',
-    },
     cta2_mid: {
       catch: 'カウンセリングの流れやご準備についてはこちらをご覧ください。',
       sub: 'ちょっとした悩みでも、安心してお話しいただける場所です。',
@@ -151,10 +119,6 @@ export const CTA_TEMPLATES: Record<
     },
   },
   introduction: {
-    cta1_intro: {
-      catch: 'スピリチュアルカウンセリングでは、初めての方にも分かりやすく丁寧にお伝えしています。',
-      sub: '「ちょっと気になる」方は、まずカウンセリングの内容をご覧ください。',
-    },
     cta2_mid: {
       catch: 'カウンセリングの具体的な流れや当日の準備についてはこちらをご覧ください。',
       sub: '初めてでも安心して受けていただけるよう、丁寧にご説明しています。',
@@ -179,14 +143,12 @@ export function selectCtaTexts(
   theme: string,
   _articleId: string
 ): {
-  cta1: { catch: string; sub: string };
   cta2: { catch: string; sub: string };
   cta3: { catch: string; sub: string };
 } {
   const templates = CTA_TEMPLATES[theme] ?? CTA_TEMPLATES[DEFAULT_THEME];
 
   return {
-    cta1: templates.cta1_intro,
     cta2: templates.cta2_mid,
     cta3: templates.cta3_end,
   };
@@ -195,7 +157,6 @@ export function selectCtaTexts(
 // ─── CTAバッジラベル ─────────────────────────────────────────────────────
 
 const CTA_BADGES: Record<string, string> = {
-  cta1: 'カウンセリングについて',
   cta2: 'ご予約の流れ',
   cta3: 'ご予約はこちら',
 };
@@ -217,7 +178,7 @@ const CTA_BADGES: Record<string, string> = {
  * @returns CTA HTMLブロック
  */
 export function buildCtaHtml(
-  ctaKey: 'cta1' | 'cta2' | 'cta3',
+  ctaKey: 'cta2' | 'cta3',
   position: 'intro' | 'mid' | 'end',
   catchText: string,
   subText: string,
@@ -262,7 +223,6 @@ export function buildCtaHtml(
 export function insertCtasIntoHtml(
   html: string,
   ctaTexts: {
-    cta1: { catch: string; sub: string };
     cta2: { catch: string; sub: string };
     cta3: { catch: string; sub: string };
   },

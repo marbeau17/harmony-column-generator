@@ -376,7 +376,7 @@ function checkImagePlaceholders(html: string): CheckItem[] {
 
 function checkDoubleQuotes(text: string): CheckItem[] {
   const stripped = stripHtml(text);
-  const count = (stripped.match(/\u201C|\u201D/g) || []).length;
+  const count = (stripped.match(/\u201C|\u201D|"/g) || []).length;
   return [{
     id: 'double_quotes',
     category: '記号',
@@ -392,6 +392,8 @@ const ABSTRACT_EXPRESSIONS = [
   '宇宙のエネルギー', '高い波動', 'すべてはつながっている',
   '本来のあなた', '魂のレベル', '次元上昇', 'アセンション',
   '光に満たされ', '愛と光',
+  '波動が上がる', '宇宙に委ねる', 'ハイアーセルフ',
+  '光のエネルギー', '引き寄せの法則', 'スターシード',
 ];
 
 function checkAbstractExpressions(text: string): CheckItem[] {

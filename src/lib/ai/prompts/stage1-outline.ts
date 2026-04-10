@@ -114,10 +114,6 @@ export function buildStage1SystemPrompt(input: Stage1Input): string {
   ],
   "cta_positions": ["section-1", "section-2", "section-3"],
   "cta_texts": {
-    "cta1": {
-      "catch": "キャッチコピー（20文字以内）",
-      "sub": "補足テキスト（40文字以内）"
-    },
     "cta2": {
       "catch": "キャッチコピー（20文字以内）",
       "sub": "補足テキスト（40文字以内）"
