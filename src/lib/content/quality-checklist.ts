@@ -442,6 +442,32 @@ function checkMetaphors(text: string): CheckItem[] {
   }];
 }
 
+// ─── リンク整合性チェック ───────────────────────────────────────────────────
+
+/**
+ * 記事内の相対リンク（../slug/index.html）が有効かチェック
+ * @param html 記事HTML
+ * @param existingSlugs 現在公開中の全記事スラッグ一覧
+ */
+export function checkBrokenLinks(html: string, existingSlugs: string[]): CheckItem[] {
+  const linkPattern = /href="\.\.\/([^/"]+)\/index\.html"/g;
+  const brokenLinks: string[] = [];
+  let match;
+  while ((match = linkPattern.exec(html)) !== null) {
+    if (!existingSlugs.includes(match[1])) {
+      brokenLinks.push(match[1]);
+    }
+  }
+  return [{
+    id: 'broken_links',
+    category: 'リンク',
+    label: '関連記事リンクが有効か',
+    status: brokenLinks.length === 0 ? 'pass' : 'warn',
+    severity: 'warning',
+    detail: brokenLinks.length > 0 ? `存在しないスラッグ: ${brokenLinks.join(', ')}` : undefined,
+  }];
+}
+
 // ─── メインチェックリスト関数 ────────────────────────────────────────────────
 
 export interface ChecklistInput {
@@ -523,6 +549,179 @@ export function runQualityChecklist(input: ChecklistInput): ChecklistResult {
     checkedAt: new Date().toISOString(),
     errorCount,
     warningCount,
+  };
+}
+
+// ─── デプロイ前HTML品質チェッカー ─────────────────────────────────────────────
+// 最終HTMLの出力（ジェネレーター処理後）をデプロイ可能か検証する。
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface DeployCheckItem {
+  id: string;
+  label: string;
+  status: 'pass' | 'fail' | 'warn';
+  detail?: string;
+}
+
+export interface DeployCheckResult {
+  passed: boolean;
+  items: DeployCheckItem[];
+  checkedAt: string;
+}
+
+/**
+ * デプロイ前の最終HTMLを検証する。
+ * ジェネレーター処理後の完全なHTMLを対象に、構造・SEO・アクセシビリティを確認。
+ */
+export function runDeployChecklist(html: string, slug: string): DeployCheckResult {
+  const items: DeployCheckItem[] = [];
+
+  // A1: 空のalt属性がないか
+  {
+    const emptyAlts = (html.match(/alt=["']\s*["']/g) || []).length;
+    items.push({
+      id: 'A1',
+      label: '空のalt属性がないか',
+      status: emptyAlts === 0 ? 'pass' : 'fail',
+      detail: emptyAlts > 0 ? `${emptyAlts}箇所の空alt属性を検出` : undefined,
+    });
+  }
+
+  // A2: CTAの構造不備（harmony-ctaがあるのにharmony-cta-innerがない）
+  {
+    const hasCta = html.includes('harmony-cta');
+    const hasCtaInner = html.includes('harmony-cta-inner');
+    const broken = hasCta && !hasCtaInner;
+    items.push({
+      id: 'A2',
+      label: 'CTA構造が正しいか（harmony-cta-inner必須）',
+      status: !hasCta || hasCtaInner ? 'pass' : 'fail',
+      detail: broken ? 'harmony-ctaはあるがharmony-cta-innerが見つかりません' : undefined,
+    });
+  }
+
+  // A5: hub.cssを参照しているか（style.cssではなく）
+  {
+    const hasHubCss = html.includes('hub.css');
+    const hasOldStyleCss = /href=["'][^"']*style\.css["']/i.test(html);
+    const status: DeployCheckItem['status'] = hasHubCss && !hasOldStyleCss ? 'pass' : !hasHubCss ? 'fail' : 'warn';
+    items.push({
+      id: 'A5',
+      label: 'hub.cssを参照しているか（style.css非推奨）',
+      status,
+      detail: !hasHubCss
+        ? 'hub.cssへの参照がありません'
+        : hasOldStyleCss
+          ? '旧style.cssへの参照が残っています'
+          : undefined,
+    });
+  }
+
+  // A6: 旧カラー #b39578 が残っていないか
+  {
+    const oldColorCount = (html.match(/#b39578/gi) || []).length;
+    items.push({
+      id: 'A6',
+      label: '旧カラー #b39578 が残っていないか',
+      status: oldColorCount === 0 ? 'pass' : 'fail',
+      detail: oldColorCount > 0 ? `${oldColorCount}箇所で旧カラー #b39578 を検出` : undefined,
+    });
+  }
+
+  // A7: 旧ドメイン harmony-spiritual.com が残っていないか
+  {
+    const oldDomainCount = (html.match(/harmony-spiritual\.com/gi) || []).length;
+    items.push({
+      id: 'A7',
+      label: '旧ドメイン harmony-spiritual.com が残っていないか',
+      status: oldDomainCount === 0 ? 'pass' : 'fail',
+      detail: oldDomainCount > 0 ? `${oldDomainCount}箇所で旧ドメインを検出` : undefined,
+    });
+  }
+
+  // A8: canonicalリンクがあるか
+  {
+    const hasCanonical = /<link[^>]+rel=["']canonical["'][^>]*>/i.test(html);
+    items.push({
+      id: 'A8',
+      label: 'canonicalリンクが設定されているか',
+      status: hasCanonical ? 'pass' : 'fail',
+      detail: !hasCanonical ? '<link rel="canonical"> が見つかりません' : undefined,
+    });
+  }
+
+  // A9: JSON-LD構造化データがあるか
+  {
+    const hasJsonLd = /application\/ld\+json/i.test(html);
+    items.push({
+      id: 'A9',
+      label: 'JSON-LD構造化データがあるか',
+      status: hasJsonLd ? 'pass' : 'fail',
+      detail: !hasJsonLd ? 'type="application/ld+json" のscriptタグが見つかりません' : undefined,
+    });
+  }
+
+  // A11: 本文が500文字以上あるか（HTMLタグ除去後）
+  {
+    const plainText = stripHtml(html);
+    const len = plainText.length;
+    const MIN = 500;
+    items.push({
+      id: 'A11',
+      label: `本文が${MIN}文字以上あるか`,
+      status: len >= MIN ? 'pass' : 'fail',
+      detail: `テキスト長: ${len}文字${len < MIN ? `（最低${MIN}文字必要）` : ''}`,
+    });
+  }
+
+  // A12: siteHeader-logo img用のCSSがあるか
+  {
+    const hasLogoStyle = /siteHeader-logo/i.test(html);
+    items.push({
+      id: 'A12',
+      label: 'siteHeader-logo img用CSSがあるか',
+      status: hasLogoStyle ? 'pass' : 'warn',
+      detail: !hasLogoStyle ? 'siteHeader-logoのスタイル定義が見つかりません' : undefined,
+    });
+  }
+
+  // C2: GA4タグ（googletagmanager）があるか
+  {
+    const hasGa4 = html.includes('googletagmanager');
+    items.push({
+      id: 'C2',
+      label: 'GA4タグ（googletagmanager）が設置されているか',
+      status: hasGa4 ? 'pass' : 'fail',
+      detail: !hasGa4 ? 'googletagmanagerへの参照が見つかりません' : undefined,
+    });
+  }
+
+  // C3: OGPメタタグ（og:title）があるか
+  {
+    const hasOgTitle = /property=["']og:title["']/i.test(html);
+    items.push({
+      id: 'C3',
+      label: 'OGPメタタグ（og:title）があるか',
+      status: hasOgTitle ? 'pass' : 'fail',
+      detail: !hasOgTitle ? 'og:titleメタタグが見つかりません' : undefined,
+    });
+  }
+
+  // C4: </html>の閉じタグがあるか
+  {
+    const hasClosingHtml = /<\/html\s*>/i.test(html);
+    items.push({
+      id: 'C4',
+      label: '正しい</html>閉じタグがあるか',
+      status: hasClosingHtml ? 'pass' : 'fail',
+      detail: !hasClosingHtml ? '</html>閉じタグが見つかりません' : undefined,
+    });
+  }
+
+  return {
+    passed: items.every(i => i.status !== 'fail'),
+    items,
+    checkedAt: new Date().toISOString(),
   };
 }
 

@@ -7,6 +7,7 @@ import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 import { getStickyCtaBarCss, getStickyCtaBarHtml } from '@/lib/generators/sticky-cta-bar';
 import { getFtpConfig, uploadToFtp } from '@/lib/deploy/ftp-uploader';
 import { logger } from '@/lib/logger';
+import { runDeployChecklist } from '@/lib/content/quality-checklist';
 import type { Article } from '@/types/article';
 
 export const maxDuration = 120;
@@ -52,6 +53,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     html = html.replace(/src="\/column\/([^"]+)\/images\//g, 'src="../$1/images/');
     html = html.replace(/<img[^>]*src="\.\/images\/hero\.(jpg|svg)"[^>]*style="max-width:100%[^"]*"[^>]*>/g, '');
     html = html.replace(/<!--IMAGE:hero:[^>]*-->/g, '');
+
+    // 2.5 Pre-deploy quality gate
+    const deployCheck = runDeployChecklist(html, slug);
+    if (!deployCheck.passed) {
+      const failedItems = deployCheck.items.filter(i => i.status === 'fail');
+      return NextResponse.json({
+        error: 'デプロイ前品質チェックに失敗しました',
+        failedChecks: failedItems.map(i => ({ id: i.id, label: i.label, detail: i.detail })),
+      }, { status: 422 });
+    }
 
     // 3. Prepare files for upload
     const files: { remotePath: string; content: string }[] = [];
