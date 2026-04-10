@@ -519,6 +519,38 @@ export function generateArticleHtml(
     .article-related-empty { font-size: 0.9rem; color: #8b6f5e; font-style: italic; }
     @media (max-width: 767px) { .article-related-grid { grid-template-columns: 1fr; } }
 
+    /* ─── Header/Layout Safety ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Noto Sans JP", sans-serif; line-height: 1.8; background: #f5f5f5; color: #333; min-height: 100vh; }
+    ul, ol { list-style: none; }
+    a { color: #8b6f5e; text-decoration: none; }
+    .siteHeader { background: #fff; border-bottom: 1px solid #8b6f5e; position: relative; z-index: 100; }
+    .siteHeader-container { max-width: 1100px; margin: 0 auto; padding: 0 15px; display: flex; align-items: center; justify-content: space-between; min-height: 70px; }
+    .siteHeader-logo img { max-height: 50px; width: auto; }
+    .gMenu > ul { display: flex; align-items: center; }
+    .gMenu > ul > li { position: relative; }
+    .gMenu > ul > li > a { display: block; padding: 15px; color: #333; font-size: 14px; font-weight: 500; text-decoration: none; }
+    .gMenu > ul > li > a:hover { color: #8b6f5e; }
+    .gMenu .sub-menu { position: absolute; top: 100%; left: 0; background: #fff; min-width: 200px; box-shadow: 0 3px 10px rgba(0,0,0,0.1); border-radius: 0 0 4px 4px; opacity: 0; visibility: hidden; transform: translateY(-5px); transition: all 0.3s; z-index: 200; }
+    .gMenu .menu-item-has-children:hover .sub-menu { opacity: 1; visibility: visible; transform: translateY(0); }
+    .gMenu .sub-menu li a { display: block; padding: 10px 20px; color: #333; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    .gMenu .sub-menu li:last-child a { border-bottom: none; }
+    .gMenu .sub-menu li a:hover { background: #faf5f0; color: #8b6f5e; }
+    .breadcrumb { max-width: 1100px; margin: 0 auto; padding: 12px 15px; font-size: 12px; color: #999; }
+    .breadcrumb ol { display: flex; flex-wrap: wrap; align-items: center; }
+    .breadcrumb li { display: flex; align-items: center; }
+    .breadcrumb li::after { content: ">"; margin: 0 8px; color: #ccc; font-size: 11px; }
+    .breadcrumb li:last-child::after { content: ""; margin: 0; }
+    .breadcrumb a { color: #999; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 15px 60px; display: flex; gap: 30px; }
+    .mainSection { flex: 1; min-width: 0; }
+    .sideBar { width: 280px; flex-shrink: 0; }
+    @media (max-width: 767px) {
+      .gMenu { display: none; }
+      .container { flex-direction: column; }
+      .sideBar { width: 100%; }
+    }
+
     /* ─── Article Layout ─── */
     .article-hero { margin: 0 0 24px; }
     .article-hero img { width: 100%; max-width: 800px; border-radius: 4px; display: block; height: auto; }
@@ -540,6 +572,19 @@ export function generateArticleHtml(
     .article-body th { background: #faf5f0; font-weight: 700; color: #333; padding: 10px 12px; border: 1px solid #ddd; text-align: left; }
     .article-body td { padding: 10px 12px; border: 1px solid #ddd; }
     .article-body strong { color: #53352b; }
+
+    /* ─── Author Profile ─── */
+    .article-author { margin-bottom: 40px; }
+    .article-author-inner { display: flex; gap: 20px; padding: 24px; background: #fff; border: 1px solid #eee; border-radius: 4px; align-items: flex-start; }
+    .article-author-avatar img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .article-author-name { font-size: 16px; font-weight: 700; color: #333; margin-bottom: 2px; }
+    .article-author-role { font-size: 13px; color: #8b6f5e; font-weight: 500; margin-bottom: 8px; }
+    .article-author-bio { font-size: 14px; color: #666; line-height: 1.7; }
+    .article-disclaimer { margin-bottom: 30px; padding: 16px 20px; background: #faf5f0; border-radius: 4px; font-size: 13px; color: #999; line-height: 1.7; }
+    /* ─── Footer ─── */
+    .siteFooter { background: #53352b; color: rgba(255,255,255,0.7); padding: 30px 0; }
+    .siteFooter-inner { max-width: 1100px; margin: 0 auto; padding: 0 15px; }
+    .siteFooter-copyright { text-align: center; font-size: 13px; padding-top: 20px; }
 
     /* ─── Global image safety ─── */
     img { max-width: 100%; height: auto; }
