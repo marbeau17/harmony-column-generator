@@ -501,39 +501,7 @@ export function generateArticleHtml(
     .article-related-empty { font-size: 0.9rem; color: #8b6f5e; font-style: italic; }
     @media (max-width: 767px) { .article-related-grid { grid-template-columns: 1fr; } }
 
-    /* ─── Header/Layout Safety ─── */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: "Noto Sans JP", sans-serif; line-height: 1.8; background: #f5f5f5; color: #333; min-height: 100vh; }
-    ul, ol { list-style: none; }
-    a { color: #8b6f5e; text-decoration: none; }
-    .siteHeader { background: #fff; border-bottom: 1px solid #8b6f5e; position: relative; z-index: 100; }
-    .siteHeader-container { max-width: 1100px; margin: 0 auto; padding: 0 15px; display: flex; align-items: center; justify-content: space-between; min-height: 70px; }
-    .siteHeader-logo img { max-height: 50px; width: auto; }
-    .gMenu > ul { display: flex; align-items: center; }
-    .gMenu > ul > li { position: relative; }
-    .gMenu > ul > li > a { display: block; padding: 15px; color: #333; font-size: 14px; font-weight: 500; text-decoration: none; }
-    .gMenu > ul > li > a:hover { color: #8b6f5e; }
-    .gMenu .sub-menu { position: absolute; top: 100%; left: 0; background: #fff; min-width: 200px; box-shadow: 0 3px 10px rgba(0,0,0,0.1); border-radius: 0 0 4px 4px; opacity: 0; visibility: hidden; transform: translateY(-5px); transition: all 0.3s; z-index: 200; }
-    .gMenu .menu-item-has-children:hover .sub-menu { opacity: 1; visibility: visible; transform: translateY(0); }
-    .gMenu .sub-menu li a { display: block; padding: 10px 20px; color: #333; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
-    .gMenu .sub-menu li:last-child a { border-bottom: none; }
-    .gMenu .sub-menu li a:hover { background: #faf5f0; color: #8b6f5e; }
-    .breadcrumb { max-width: 1100px; margin: 0 auto; padding: 12px 15px; font-size: 12px; color: #999; }
-    .breadcrumb ol { display: flex; flex-wrap: wrap; align-items: center; }
-    .breadcrumb li { display: flex; align-items: center; }
-    .breadcrumb li::after { content: ">"; margin: 0 8px; color: #ccc; font-size: 11px; }
-    .breadcrumb li:last-child::after { content: ""; margin: 0; }
-    .breadcrumb a { color: #999; }
-    .container { max-width: 1100px; margin: 0 auto; padding: 0 15px 60px; display: flex; gap: 30px; }
-    .mainSection { flex: 1; min-width: 0; }
-    .sideBar { width: 280px; flex-shrink: 0; }
-    @media (max-width: 767px) {
-      .gMenu { display: none; }
-      .container { flex-direction: column; }
-      .sideBar { width: 100%; }
-    }
-
-    /* ─── Article Layout ─── */
+    /* ─── Article Layout (hub.css provides header/nav/layout) ─── */
     .article-hero { margin: 0 0 24px; }
     .article-hero img { width: 100%; max-width: 800px; border-radius: 4px; display: block; height: auto; }
     .article-title { font-size: 26px; color: #333; font-weight: 700; line-height: 1.5; margin-bottom: 20px; }
