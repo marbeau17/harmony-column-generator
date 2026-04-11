@@ -501,8 +501,7 @@ export function generateArticleHtml(
     .article-related-empty { font-size: 0.9rem; color: #8b6f5e; font-style: italic; }
     @media (max-width: 767px) { .article-related-grid { grid-template-columns: 1fr; } }
 
-    /* ─── Critical Layout (prevents broken display if hub.css loads late) ─── */
-    .siteHeader-logo img { max-height: 50px; width: auto; }
+    /* ─── Critical Layout ─── */
     .siteHeader-container { display: flex; align-items: center; justify-content: space-between; max-width: 1100px; margin: 0 auto; padding: 0 15px; min-height: 70px; }
     .article-hero img { width: 100%; max-width: 800px; height: auto; display: block; }
     img { max-width: 100%; height: auto; }
@@ -552,8 +551,8 @@ export function generateArticleHtml(
   <!-- ヘッダー（hub/index.html と同一） -->
   <header class="siteHeader">
     <div class="siteHeader-container">
-      <a href="https://harmony-mc.com/" class="siteHeader-logo">
-        <img src="https://khsorerqojgwbmtiqrac.supabase.co/storage/v1/object/public/article-images/profile/author-sketch.jpg" alt="スピリチュアルカウンセラー小林由起子">
+      <a href="https://harmony-mc.com/" class="siteHeader-logo" style="font-size:16px;font-weight:700;color:#53352b;text-decoration:none;">
+        スピリチュアルカウンセラー 小林由起子
       </a>
       <nav class="gMenu">
         <ul>
