@@ -501,7 +501,13 @@ export function generateArticleHtml(
     .article-related-empty { font-size: 0.9rem; color: #8b6f5e; font-style: italic; }
     @media (max-width: 767px) { .article-related-grid { grid-template-columns: 1fr; } }
 
-    /* ─── Article Layout (hub.css provides header/nav/layout) ─── */
+    /* ─── Critical Layout (prevents broken display if hub.css loads late) ─── */
+    .siteHeader-logo img { max-height: 50px; width: auto; }
+    .siteHeader-container { display: flex; align-items: center; justify-content: space-between; max-width: 1100px; margin: 0 auto; padding: 0 15px; min-height: 70px; }
+    .article-hero img { width: 100%; max-width: 800px; height: auto; display: block; }
+    img { max-width: 100%; height: auto; }
+
+    /* ─── Article Layout ─── */
     .article-hero { margin: 0 0 24px; }
     .article-hero img { width: 100%; max-width: 800px; border-radius: 4px; display: block; height: auto; }
     .article-title { font-size: 26px; color: #333; font-weight: 700; line-height: 1.5; margin-bottom: 20px; }
