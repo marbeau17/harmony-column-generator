@@ -143,6 +143,20 @@ export async function createArticle(
 ): Promise<ArticleRow> {
   const supabase = await createServiceRoleClient();
 
+  // ソース記事の重複使用を防止（1ソース→1記事の原則）
+  if (input.source_article_id) {
+    const { data: existing } = await supabase
+      .from('articles')
+      .select('id, slug')
+      .eq('source_article_id', input.source_article_id)
+      .not('status', 'in', '("deleted")');
+    if (existing && existing.length > 0) {
+      throw new Error(
+        `このソース記事は既に「${existing[0].slug}」で使用されています。1つのソース記事から複数の記事を生成することは禁止されています。`,
+      );
+    }
+  }
+
   const { data, error } = await supabase
     .from('articles')
     .insert({
