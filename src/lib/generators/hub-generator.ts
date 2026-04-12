@@ -467,8 +467,8 @@ export async function buildArticleCards(): Promise<HubArticleCard[]> {
       date: dateStr,
       theme,
       categoryLabel: getThemeLabel(theme),
-      thumbnailUrl: `./${slug}/images/hero.jpg`,
-      articleUrl: `./${slug}/index.html`,
+      thumbnailUrl: `/spiritual/column/${slug}/images/hero.jpg`,
+      articleUrl: `/spiritual/column/${slug}/index.html`,
     };
   });
 }
