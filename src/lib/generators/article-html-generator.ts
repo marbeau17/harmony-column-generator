@@ -348,50 +348,59 @@ export function generateArticleHtml(
   <style>
     /* ─── CTA Blocks ─── */
     .harmony-cta {
-      margin: 2rem 0;
-      border-radius: 12px;
-      padding: 1.2rem 1.5rem;
+      margin: 1.5rem 0;
+      border-radius: 10px;
+      padding: 0.8rem 1rem;
       max-width: 100%;
       text-align: center;
+      max-height: 25vh;
+      overflow: hidden;
     }
     .harmony-cta-inner {
-      max-width: 520px;
+      max-width: 480px;
       margin: 0 auto;
     }
     .harmony-cta-badge {
       display: inline-block;
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       font-weight: 700;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.05em;
       border-radius: 20px;
-      padding: 0.15rem 0.7rem;
-      margin-bottom: 0.5rem;
+      padding: 0.1rem 0.6rem;
+      margin-bottom: 0.3rem;
     }
     .harmony-cta-catch {
-      font-size: 0.95rem;
+      font-size: 0.82rem;
       font-weight: 600;
-      margin: 0 0 0.25rem;
-      line-height: 1.6;
+      margin: 0 0 0.15rem;
+      line-height: 1.4;
     }
     .harmony-cta-sub {
-      font-size: 0.82rem;
-      margin: 0 0 0.7rem;
-      line-height: 1.5;
+      font-size: 0.72rem;
+      margin: 0 0 0.4rem;
+      line-height: 1.3;
       opacity: 0.85;
     }
     .harmony-cta-btn {
       display: inline-block;
-      padding: 0.55rem 1.8rem;
+      padding: 0.4rem 1.4rem;
       border-radius: 25px;
       text-decoration: none;
       font-weight: 600;
-      font-size: 0.88rem;
+      font-size: 0.78rem;
       transition: transform 0.2s ease, box-shadow 0.3s ease, opacity 0.3s ease;
     }
     .harmony-cta-btn:hover {
       transform: translateY(-1px);
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       opacity: 0.9;
+    }
+    @media (min-width: 768px) {
+      .harmony-cta { padding: 1.2rem 1.5rem; max-height: none; margin: 2rem 0; }
+      .harmony-cta-catch { font-size: 0.95rem; }
+      .harmony-cta-sub { font-size: 0.82rem; }
+      .harmony-cta-btn { padding: 0.55rem 1.8rem; font-size: 0.88rem; }
+      .harmony-cta-badge { font-size: 0.7rem; }
     }
     /* CTA2: ラベンダー系 */
     .harmony-cta[data-cta-key="cta2"] {
@@ -429,9 +438,12 @@ export function generateArticleHtml(
     .harmony-cta[data-cta-key="cta3"] .harmony-cta-btn {
       background: linear-gradient(135deg, #d4a574, #c4856e);
       color: #fff;
-      font-size: 0.95rem;
-      padding: 0.65rem 2rem;
+      font-size: 0.78rem;
+      padding: 0.4rem 1.4rem;
       box-shadow: 0 3px 12px rgba(212,165,116,0.4);
+    }
+    @media (min-width: 768px) {
+      .harmony-cta[data-cta-key="cta3"] .harmony-cta-btn { font-size: 0.95rem; padding: 0.65rem 2rem; }
     }
     .harmony-cta[data-cta-key="cta3"] .harmony-cta-btn:hover {
       box-shadow: 0 5px 16px rgba(212,165,116,0.5);

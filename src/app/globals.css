@@ -40,21 +40,26 @@ a {
 
 /* ─── CTA Styles (CSS-only, no banner images) ─── */
 .harmony-cta {
-  margin: 2rem 0;
-  border-radius: 12px;
-  padding: 1.2rem 1.5rem;
+  margin: 1.5rem 0;
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
   max-width: 100%;
   text-align: center;
+  max-height: 25vh;
+  overflow: hidden;
+}
+@media (min-width: 768px) {
+  .harmony-cta { padding: 1.2rem 1.5rem; max-height: none; margin: 2rem 0; }
 }
 .harmony-cta-inner {
-  max-width: 520px;
+  max-width: 480px;
   margin: 0 auto;
 }
 .harmony-cta-badge {
   display: inline-block;
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   border-radius: 20px;
   padding: 0.15rem 0.7rem;
   margin-bottom: 0.5rem;
