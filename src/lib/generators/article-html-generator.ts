@@ -777,8 +777,12 @@ function buildBodyWithCtas(article: Article, slug: string): string {
   // 2. TOC/CTA内の不要な<br>タグを除去（構造タグの直後/直前）
   bodyHtml = bodyHtml.replace(/<br\s*\/?>\s*(<\/?(?:nav|details|summary|ol|li|div|a|p)\b)/gi, '$1');
   bodyHtml = bodyHtml.replace(/(<\/?(?:nav|details|summary|ol|li|div|a|p)[^>]*>)\s*<br\s*\/?>/gi, '$1');
-  // 3. AI が勝手に挿入した壊れCTAを除去（正規のinsertCtasIntoHtmlで再挿入される）
+  // 3. AI が勝手に挿入したCTAを全パターン除去（正規のinsertCtasIntoHtmlで再挿入される）
   bodyHtml = bodyHtml.replace(/<div class="harmony-cta">\s*<p class="harmony-cta-catch">[\s\S]*?<\/a>\s*<\/div>/gi, '');
+  // 3b. AI生成の <a class="cta-button"> リンクブロック除去
+  bodyHtml = bodyHtml.replace(/<p>\s*<a[^>]*class="cta-button"[^>]*>[\s\S]*?<\/a>\s*<\/p>/gi, '');
+  // 3c. AI生成のCTA見出し+リンクパターン除去（h3 + p + a.cta-button の連続）
+  bodyHtml = bodyHtml.replace(/<h3[^>]*>[^<]*(?:予約|カウンセリング|セッション|お問い合わせ|こちら)[^<]*<\/h3>\s*<p>[^<]*<\/p>\s*<p>\s*<a[^>]*href="https:\/\/harmony-booking[^"]*"[^>]*>[^<]*<\/a>\s*<\/p>/gi, '');
   // 4. <p> 内のブロック要素を修復（<p><div...> → </p><div...>）
   bodyHtml = bodyHtml.replace(/<p>\s*(<div\s)/gi, '$1');
   bodyHtml = bodyHtml.replace(/(<\/div>)\s*<\/p>/gi, '$1');
