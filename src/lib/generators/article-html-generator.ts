@@ -348,13 +348,11 @@ export function generateArticleHtml(
   <style>
     /* ─── CTA Blocks ─── */
     .harmony-cta {
-      margin: 1.5rem 0;
-      border-radius: 10px;
-      padding: 0.8rem 1rem;
+      margin: 1.2rem 0;
+      border-radius: 8px;
+      padding: 0.6rem 0.8rem;
       max-width: 100%;
       text-align: center;
-      max-height: 25vh;
-      overflow: hidden;
     }
     .harmony-cta-inner {
       max-width: 480px;
@@ -396,7 +394,7 @@ export function generateArticleHtml(
       opacity: 0.9;
     }
     @media (min-width: 768px) {
-      .harmony-cta { padding: 1.2rem 1.5rem; max-height: none; margin: 2rem 0; }
+      .harmony-cta { padding: 1rem 1.5rem; margin: 1.5rem 0; }
       .harmony-cta-catch { font-size: 0.95rem; }
       .harmony-cta-sub { font-size: 0.82rem; }
       .harmony-cta-btn { padding: 0.55rem 1.8rem; font-size: 0.88rem; }
