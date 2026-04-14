@@ -603,25 +603,30 @@ export default function ArticlesPage() {
                       checked={Boolean(article.reviewed_at)}
                       title={article.reviewed_at ? `確認済み (${new Date(article.reviewed_at).toLocaleDateString('ja-JP')})` : '未確認 — クリックで確認'}
                       className="h-4 w-4 cursor-pointer accent-emerald-500"
-                      onClick={(e) => {
+                      onChange={async (e) => {
                         e.stopPropagation();
-                        const newVal = article.reviewed_at ? null : new Date().toISOString();
-                        fetch(`/api/articles/${article.id}`, {
+                        const wasReviewed = Boolean(article.reviewed_at);
+                        const newVal = wasReviewed ? null : new Date().toISOString();
+
+                        if (wasReviewed && !confirm(`「${article.title}」の確認を取り消しますか？\nハブページから非表示になります。`)) return;
+
+                        await fetch(`/api/articles/${article.id}`, {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
                             reviewed_at: newVal,
                             reviewed_by: newVal ? '小林由起子' : null,
                           }),
-                        }).then(() => {
-                          setArticles((prev) =>
-                            prev.map((a) =>
-                              a.id === article.id
-                                ? { ...a, reviewed_at: newVal }
-                                : a
-                            )
-                          );
                         });
+
+                        setArticles((prev) =>
+                          prev.map((a) =>
+                            a.id === article.id ? { ...a, reviewed_at: newVal } : a
+                          )
+                        );
+
+                        // ハブページを再生成（確認済み記事のみ表示を即時反映）
+                        fetch('/api/hub/deploy', { method: 'POST' }).catch(() => {});
                       }}
                     />
                   </td>
