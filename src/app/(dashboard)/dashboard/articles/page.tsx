@@ -510,6 +510,9 @@ export default function ArticlesPage() {
                 >
                   更新日{sortIndicator('updated_at')}
                 </th>
+                <th className="whitespace-nowrap px-4 py-3 font-medium text-brand-600 w-20 text-center">
+                  確認
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -541,6 +544,34 @@ export default function ArticlesPage() {
                   </td>
                   <td className="px-4 py-3 text-brand-500 tabular-nums">
                     {formatDate(article.updated_at)}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(article.reviewed_at)}
+                      title={article.reviewed_at ? `確認済み (${new Date(article.reviewed_at).toLocaleDateString('ja-JP')})` : '未確認 — クリックで確認'}
+                      className="h-4 w-4 cursor-pointer accent-emerald-500"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const newVal = article.reviewed_at ? null : new Date().toISOString();
+                        fetch(`/api/articles/${article.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            reviewed_at: newVal,
+                            reviewed_by: newVal ? '小林由起子' : null,
+                          }),
+                        }).then(() => {
+                          setArticles((prev) =>
+                            prev.map((a) =>
+                              a.id === article.id
+                                ? { ...a, reviewed_at: newVal }
+                                : a
+                            )
+                          );
+                        });
+                      }}
+                    />
                   </td>
                 </tr>
               ))}
