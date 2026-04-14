@@ -14,6 +14,7 @@ interface ArticleItem {
   keyword: string;
   status: string;
   updated_at: string;
+  reviewed_at: string | null;
 }
 
 interface ArticlesResponse {
@@ -93,6 +94,7 @@ export default function ArticlesPage() {
   // Filters
   const initialStatus = searchParams.get('status') ?? '';
   const [statusFilter, setStatusFilter] = useState(initialStatus);
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'reviewed' | 'unreviewed'>('all');
   const [keyword, setKeyword] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(1);
@@ -149,7 +151,15 @@ export default function ArticlesPage() {
   // ── Sort ────────────────────────────────────────────────────────────────
 
   const sortedArticles = useMemo(() => {
-    const sorted = [...articles];
+    // Apply review filter
+    let filtered = articles;
+    if (reviewFilter === 'reviewed') {
+      filtered = articles.filter((a) => a.reviewed_at != null);
+    } else if (reviewFilter === 'unreviewed') {
+      filtered = articles.filter((a) => a.reviewed_at == null);
+    }
+
+    const sorted = [...filtered];
     sorted.sort((a, b) => {
       if (sortKey === 'status') {
         const diff = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
@@ -160,7 +170,7 @@ export default function ArticlesPage() {
       return sortDir === 'asc' ? diff : -diff;
     });
     return sorted;
-  }, [articles, sortKey, sortDir]);
+  }, [articles, reviewFilter, sortKey, sortDir]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -181,6 +191,11 @@ export default function ArticlesPage() {
 
   const handleStatusFilter = (value: string) => {
     setStatusFilter(value);
+    setPage(1);
+  };
+
+  const handleReviewFilter = (value: 'all' | 'reviewed' | 'unreviewed') => {
+    setReviewFilter(value);
     setPage(1);
   };
 
@@ -364,6 +379,29 @@ export default function ArticlesPage() {
               {sf.label}
             </button>
           ))}
+
+          {/* Review filter separator */}
+          <span className="hidden sm:inline-flex items-center text-brand-300">|</span>
+
+          {/* Review filter buttons */}
+          {([
+            { value: 'all' as const, label: '確認: 全て' },
+            { value: 'reviewed' as const, label: '確認済み' },
+            { value: 'unreviewed' as const, label: '未確認' },
+          ]).map((rf) => (
+            <button
+              key={rf.value}
+              onClick={() => handleReviewFilter(rf.value)}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition
+                ${
+                  reviewFilter === rf.value
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-white text-brand-700 hover:bg-brand-100 border border-brand-200'
+                }`}
+            >
+              {rf.label}
+            </button>
+          ))}
         </div>
 
         {/* Search */}
@@ -432,11 +470,11 @@ export default function ArticlesPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
             </svg>
             <p className="text-sm text-brand-400">
-              {statusFilter || keyword
+              {statusFilter || keyword || reviewFilter !== 'all'
                 ? '検索条件に一致する記事が見つかりません'
                 : 'まだ記事がありません'}
             </p>
-            {!statusFilter && !keyword && (
+            {!statusFilter && !keyword && reviewFilter === 'all' && (
               <Link
                 href="/dashboard/planner"
                 className="mt-1 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600"
@@ -488,7 +526,7 @@ export default function ArticlesPage() {
                   <td className="px-4 py-3">
                     <div className="font-medium text-brand-800 truncate max-w-md flex items-center gap-1.5">
                       {article.title || '(タイトル未設定)'}
-                      {Boolean((article as unknown as Record<string, unknown>).reviewed_at) && (
+                      {Boolean(article.reviewed_at) && (
                         <span title="由起子さん確認済み" className="text-emerald-500 flex-shrink-0">✅</span>
                       )}
                     </div>
