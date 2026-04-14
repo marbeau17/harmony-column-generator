@@ -86,6 +86,8 @@ export const updateArticleSchema = z.object({
   related_articles: z.array(relatedArticleSchema).optional(),
   image_files: z.unknown().optional(),
   cta_texts: z.unknown().optional(),
+  reviewed_at: z.string().nullable().optional(),
+  reviewed_by: z.string().nullable().optional(),
 });
 
 export type UpdateArticleInput = z.infer<typeof updateArticleSchema>;

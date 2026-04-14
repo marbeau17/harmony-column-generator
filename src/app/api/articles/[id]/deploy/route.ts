@@ -37,6 +37,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const article = articleData as unknown as Article;
     const slug = article.slug ?? article.id;
 
+    // 由起子さん確認ゲート
+    if (!article.reviewed_at) {
+      return NextResponse.json({
+        error: '由起子さんの確認が完了していません。記事詳細ページで「由起子さん確認」を実行してからデプロイしてください。',
+      }, { status: 422 });
+    }
+
     // 2. Generate article HTML
     let html = generateArticleHtml(article, {
       heroImage: `images/hero.jpg`,
@@ -95,6 +102,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       .from('articles')
       .select('id, title, slug, meta_description, theme, published_at, image_files, stage2_body_html, stage3_final_html')
       .eq('status', 'published')
+      .not('reviewed_at', 'is', null)  // 由起子さん確認済みのみ表示
       .order('published_at', { ascending: false });
 
     // Build hub HTML (same as export)

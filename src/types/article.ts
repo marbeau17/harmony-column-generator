@@ -135,6 +135,8 @@ export interface Article {
 
   published_url: string | null;
   published_at: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
   created_at: string;
   updated_at: string;
 }

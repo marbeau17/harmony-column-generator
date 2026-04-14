@@ -34,6 +34,8 @@ function makeArticle(overrides: Partial<Article> = {}): Article {
     related_articles: null,
     published_url: null,
     published_at: null,
+    reviewed_at: null,
+    reviewed_by: null,
     created_at: '2025-01-01T00:00:00Z',
     updated_at: '2025-01-01T00:00:00Z',
     ...overrides,

@@ -53,9 +53,10 @@ export interface ArticleRow {
   published_url: string | null;
   published_at: string | null;
   ai_generation_log: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
   created_at: string;
   updated_at: string;
-  [key: string]: any;
 }
 
 export interface ListArticlesFilter {
@@ -76,7 +77,6 @@ export interface CreateArticleInput {
   theme?: string;
   persona?: string;
   target_word_count?: number;
-  [key: string]: any;
 }
 
 // ---------- CRUD ----------

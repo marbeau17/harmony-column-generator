@@ -428,6 +428,7 @@ export async function buildArticleCards(): Promise<HubArticleCard[]> {
     .from('articles')
     .select('id, title, slug, seo_filename, meta_description, stage2_body_html, stage3_final_html, theme, published_at, image_files')
     .eq('status', 'published')
+    .not('reviewed_at', 'is', null)
     .order('published_at', { ascending: false });
 
   if (error) {
