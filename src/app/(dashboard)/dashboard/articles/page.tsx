@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Plus, ChevronLeft, ChevronRight, ArrowUpDown, RefreshCw, Download } from 'lucide-react';
+import { Search, Plus, ChevronLeft, ChevronRight, ArrowUpDown, RefreshCw, Download, Upload } from 'lucide-react';
 import StatusBadge from '@/components/common/StatusBadge';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -90,6 +90,33 @@ export default function ArticlesPage() {
   // Bulk export all articles
   const [bulkExporting, setBulkExporting] = useState(false);
   const [bulkExportResult, setBulkExportResult] = useState<string | null>(null);
+
+  // Bulk deploy to server
+  const [bulkDeploying, setBulkDeploying] = useState(false);
+  const [bulkDeployResult, setBulkDeployResult] = useState<string | null>(null);
+
+  const handleBulkDeploy = async () => {
+    if (!confirm('確認済みの記事をサーバーにデプロイしますか？')) return;
+    setBulkDeploying(true);
+    setBulkDeployResult(null);
+    try {
+      const reviewed = articles.filter((a) => a.status === 'published' && a.reviewed_at);
+      let success = 0;
+      let failed = 0;
+      for (const article of reviewed) {
+        try {
+          const res = await fetch(`/api/articles/${article.id}/deploy`, { method: 'POST' });
+          if (res.ok) success++;
+          else failed++;
+        } catch { failed++; }
+      }
+      setBulkDeployResult(`${success} 件デプロイ成功${failed > 0 ? `、${failed} 件失敗` : ''}`);
+    } catch (err) {
+      setBulkDeployResult('デプロイに失敗しました');
+    } finally {
+      setBulkDeploying(false);
+    }
+  };
 
   // Filters
   const initialStatus = searchParams.get('status') ?? '';
@@ -323,6 +350,18 @@ export default function ArticlesPage() {
             {bulkUpdating ? '更新中...' : '関連記事を一括更新'}
           </button>
           <button
+            onClick={handleBulkDeploy}
+            disabled={bulkDeploying}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400
+              bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-700 transition
+              hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20
+              disabled:opacity-50 disabled:cursor-not-allowed
+              sm:w-auto sm:justify-start"
+          >
+            <Upload className={`h-4 w-4 ${bulkDeploying ? 'animate-bounce' : ''}`} />
+            {bulkDeploying ? 'デプロイ中...' : 'サーバーに更新'}
+          </button>
+          <button
             onClick={() => router.push('/dashboard/articles/new')}
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500
               px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-600
@@ -342,6 +381,19 @@ export default function ArticlesPage() {
           <button
             onClick={() => setBulkUpdateResult(null)}
             className="ml-4 text-brand-400 hover:text-brand-600 transition"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* Bulk deploy result */}
+      {bulkDeployResult && (
+        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <span>{bulkDeployResult}</span>
+          <button
+            onClick={() => setBulkDeployResult(null)}
+            className="ml-4 text-emerald-400 hover:text-emerald-600 transition"
           >
             &times;
           </button>
