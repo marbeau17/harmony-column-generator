@@ -77,6 +77,7 @@ async function getPublishedArticles(
         { count: 'exact' },
       )
       .eq('status', 'published')
+      .not('reviewed_at', 'is', null)  // 由起子さん確認済みのみ表示
       .order('published_at', { ascending: false });
 
     if (theme !== 'all') {

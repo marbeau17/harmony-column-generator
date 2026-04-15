@@ -28,6 +28,7 @@ async function getArticleBySlug(slug: string): Promise<Article | null> {
     .select('*')
     .eq('slug', slug)
     .eq('status', 'published')
+    .not('reviewed_at', 'is', null)  // 由起子さん確認済みのみ表示
     .maybeSingle();
 
   if (error || !data) return null;
