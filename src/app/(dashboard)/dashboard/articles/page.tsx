@@ -11,6 +11,7 @@ import StatusBadge from '@/components/common/StatusBadge';
 interface ArticleItem {
   id: string;
   title: string | null;
+  slug: string;
   keyword: string;
   status: string;
   updated_at: string;
@@ -100,18 +101,47 @@ export default function ArticlesPage() {
     setBulkDeploying(true);
     setBulkDeployResult(null);
     try {
-      const reviewed = articles.filter((a) => a.status === 'published' && a.reviewed_at);
+      // 最新の記事データをAPIから再取得（UIのキャッシュとDBの不一致を防ぐ）
+      const freshRes = await fetch('/api/articles?status=published&limit=200');
+      const freshData = await freshRes.json();
+      const freshArticles = (freshData.data || []) as ArticleItem[];
+      const reviewed = freshArticles.filter((a: ArticleItem) => a.reviewed_at);
+      const skipped = freshArticles.filter((a: ArticleItem) => !a.reviewed_at);
       let success = 0;
       let failed = 0;
+      const errors: string[] = [];
+
+      if (reviewed.length === 0) {
+        setBulkDeployResult(`デプロイ対象の確認済み記事がありません（未確認: ${skipped.length} 件）`);
+        setBulkDeploying(false);
+        return;
+      }
+
       for (const article of reviewed) {
         try {
           const res = await fetch(`/api/articles/${article.id}/deploy`, { method: 'POST' });
-          if (res.ok) success++;
-          else failed++;
-        } catch { failed++; }
+          if (res.ok) {
+            success++;
+          } else {
+            failed++;
+            const body = await res.json().catch(() => ({}));
+            errors.push(`${article.title}: ${body.error || res.status}`);
+            console.error(`[Deploy FAIL] ${article.slug}:`, body);
+          }
+        } catch (err) {
+          failed++;
+          errors.push(`${article.title}: ネットワークエラー`);
+          console.error(`[Deploy ERROR] ${article.slug}:`, err);
+        }
       }
-      setBulkDeployResult(`${success} 件デプロイ成功${failed > 0 ? `、${failed} 件失敗` : ''}`);
+
+      let msg = `${success} 件デプロイ成功`;
+      if (failed > 0) msg += `、${failed} 件失敗`;
+      if (skipped.length > 0) msg += `（未確認スキップ: ${skipped.length} 件）`;
+      if (errors.length > 0) msg += `\n失敗: ${errors.slice(0, 3).join(' / ')}`;
+      setBulkDeployResult(msg);
     } catch (err) {
+      console.error('[BulkDeploy ERROR]:', err);
       setBulkDeployResult('デプロイに失敗しました');
     } finally {
       setBulkDeploying(false);

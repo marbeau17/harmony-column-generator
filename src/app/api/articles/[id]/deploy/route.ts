@@ -39,8 +39,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     // 由起子さん確認ゲート
     if (!article.reviewed_at) {
+      logger.warn('api', 'deploy.reviewGate', { articleId, slug, reviewed_at: article.reviewed_at });
       return NextResponse.json({
-        error: '由起子さんの確認が完了していません。記事詳細ページで「由起子さん確認」を実行してからデプロイしてください。',
+        error: `由起子さんの確認が完了していません（${slug}）。記事詳細ページで「由起子さん確認」を実行してからデプロイしてください。`,
       }, { status: 422 });
     }
 
