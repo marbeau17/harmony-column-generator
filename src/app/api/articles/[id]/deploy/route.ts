@@ -8,6 +8,7 @@ import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 import { getFtpConfig, uploadToFtp } from '@/lib/deploy/ftp-uploader';
 import { logger } from '@/lib/logger';
 import { runDeployChecklist } from '@/lib/content/quality-checklist';
+import { runTemplateCheck } from '@/lib/content/html-template-validator';
 import type { Article } from '@/types/article';
 
 export const maxDuration = 120;
@@ -69,6 +70,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({
         error: 'デプロイ前品質チェックに失敗しました',
         failedChecks: failedItems.map(i => ({ id: i.id, label: i.label, detail: i.detail })),
+      }, { status: 422 });
+    }
+
+    // 2.6 Template format validation (final stage)
+    const templateCheck = runTemplateCheck(html);
+    if (!templateCheck.passed) {
+      logger.warn('api', 'deploy.templateCheck', { articleId, slug, failures: templateCheck.failures });
+      return NextResponse.json({
+        error: 'テンプレート整合性チェックに失敗しました',
+        failures: templateCheck.failures,
       }, { status: 422 });
     }
 

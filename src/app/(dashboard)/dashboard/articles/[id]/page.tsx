@@ -126,6 +126,14 @@ export default function ArticleDetailPage() {
   const [ftpResult, setFtpResult] = useState<string | null>(null);
   const [qualityCheck, setQualityCheck] = useState<Record<string, unknown> | null>(null);
   const [qualityLoading, setQualityLoading] = useState(false);
+  const [revisions, setRevisions] = useState<Array<{
+    id: string;
+    created_at: string;
+    change_type: string;
+    body_html?: string;
+  }>>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // ─── データ取得 ─────────────────────────────────────────────────────────
@@ -143,9 +151,40 @@ export default function ArticleDetailPage() {
     }
   }, [articleId]);
 
+  const fetchRevisions = useCallback(async () => {
+    setRevisionsLoading(true);
+    try {
+      const res = await fetch(`/api/articles/${articleId}/revisions`);
+      if (!res.ok) return;
+      const json = await res.json();
+      setRevisions((json.data ?? json.revisions ?? json) as typeof revisions);
+    } catch {
+      // リビジョン取得エラーは無視
+    } finally {
+      setRevisionsLoading(false);
+    }
+  }, [articleId]);
+
+  const handleRestore = async (revisionId: string) => {
+    if (!window.confirm('このバージョンに復元しますか？現在の内容は上書きされます。')) return;
+    setRestoreLoading(revisionId);
+    try {
+      const res = await fetch(`/api/articles/${articleId}/revisions/${revisionId}/restore`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error('復元に失敗しました');
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '復元エラー');
+    } finally {
+      setRestoreLoading(null);
+    }
+  };
+
   useEffect(() => {
     fetchArticle();
-  }, [fetchArticle]);
+    fetchRevisions();
+  }, [fetchArticle, fetchRevisions]);
 
   // ─── body_generating 時のポーリング ─────────────────────────────────────
 
@@ -586,6 +625,87 @@ export default function ArticleDetailPage() {
           </div>
         </section>
       )}
+
+      {/* ─ バージョン履歴 ─ */}
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
+          バージョン履歴（直近3件）
+        </h2>
+
+        {revisionsLoading ? (
+          <div className="flex items-center gap-2 py-4">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-brand-200 border-t-brand-500" />
+            <span className="text-xs text-slate-400">読み込み中...</span>
+          </div>
+        ) : revisions.length === 0 ? (
+          <p className="text-sm text-slate-400">バージョン履歴はまだありません。</p>
+        ) : (
+          <div className="divide-y divide-brand-100 rounded-lg border border-brand-100 overflow-hidden">
+            {revisions.slice(0, 3).map((rev, idx) => {
+              const revNumber = revisions.length - idx;
+              const dateStr = new Date(rev.created_at).toLocaleString('ja-JP', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              const changeTypeLabels: Record<string, string> = {
+                manual: '手動保存',
+                auto: '自動',
+                ai_generated: 'AI生成',
+                restore: '復元',
+                publish: '公開',
+              };
+              const changeLabel = changeTypeLabels[rev.change_type] ?? rev.change_type ?? '不明';
+              const changeBadgeColor: Record<string, string> = {
+                manual: 'bg-blue-100 text-blue-700',
+                auto: 'bg-slate-100 text-slate-600',
+                ai_generated: 'bg-purple-100 text-purple-700',
+                restore: 'bg-amber-100 text-amber-700',
+                publish: 'bg-green-100 text-green-700',
+              };
+              const badgeClass = changeBadgeColor[rev.change_type] ?? 'bg-slate-100 text-slate-600';
+
+              // Strip HTML tags for preview
+              const plainText = rev.body_html
+                ? rev.body_html.replace(/<[^>]*>/g, '').slice(0, 100)
+                : '';
+
+              return (
+                <div key={rev.id} className="px-4 py-3 hover:bg-brand-50/50 transition-colors">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-brand-700">#{revNumber}</span>
+                      <span className="text-xs text-slate-500">{dateStr}</span>
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${badgeClass}`}>
+                        {changeLabel}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleRestore(rev.id)}
+                      disabled={restoreLoading === rev.id}
+                      className="shrink-0 rounded-lg border border-brand-200 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {restoreLoading === rev.id ? (
+                        <span className="flex items-center gap-1">
+                          <span className="h-3 w-3 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600" />
+                          復元中...
+                        </span>
+                      ) : (
+                        '復元'
+                      )}
+                    </button>
+                  </div>
+                  {plainText && (
+                    <p className="mt-1 text-xs text-slate-400 line-clamp-1">{plainText}...</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* ─ 品質チェックリスト ─ */}
       {(article.stage2_body_html || article.published_html) && (

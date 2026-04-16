@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { saveRevision } from '@/lib/db/article-revisions';
 
 // ---------- 型定義 ----------
 
@@ -181,6 +182,36 @@ export async function updateArticle(
   fields: Partial<Omit<ArticleRow, 'id' | 'created_at' | 'status'>>,
 ): Promise<ArticleRow> {
   const supabase = await createServiceRoleClient();
+
+  // Save revision snapshot before content changes
+  const contentFields = ['stage2_body_html', 'stage3_final_html', 'title', 'meta_description'];
+  const hasContentChange = contentFields.some(f => f in fields);
+
+  if (hasContentChange) {
+    // Get current state before overwriting
+    const { data: current } = await supabase
+      .from('articles')
+      .select('title, stage2_body_html, stage3_final_html, meta_description')
+      .eq('id', id)
+      .single();
+
+    if (current && (current.stage3_final_html || current.stage2_body_html)) {
+      // Only snapshot if content actually changed (avoid noise from auto-save ticks)
+      const currentBody = current.stage3_final_html || current.stage2_body_html || '';
+      const incomingBody = fields.stage3_final_html ?? fields.stage2_body_html;
+      const bodyChanged = incomingBody !== undefined && incomingBody !== currentBody;
+      const titleChanged = fields.title !== undefined && fields.title !== current.title;
+      const metaChanged = fields.meta_description !== undefined && fields.meta_description !== current.meta_description;
+
+      if (bodyChanged || titleChanged || metaChanged) {
+        await saveRevision(id, {
+          title: current.title,
+          body_html: currentBody,
+          meta_description: current.meta_description,
+        }, 'auto_snapshot').catch(() => {}); // Don't fail the update if snapshot fails
+      }
+    }
+  }
 
   const { data, error } = await supabase
     .from('articles')
