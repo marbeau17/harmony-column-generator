@@ -127,7 +127,7 @@ export default function ArticlesPage() {
   const [page, setPage] = useState(1);
 
   // Sort
-  const [sortKey, setSortKey] = useState<SortKey>('updated_at');
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PER_PAGE));
@@ -186,6 +186,9 @@ export default function ArticlesPage() {
       filtered = articles.filter((a) => a.reviewed_at == null);
     }
 
+    // sortKey=null の場合はAPI返却順をそのまま維持（自動ソートしない）
+    if (!sortKey) return filtered;
+
     const sorted = [...filtered];
     sorted.sort((a, b) => {
       if (sortKey === 'status') {
@@ -200,6 +203,12 @@ export default function ArticlesPage() {
   }, [articles, reviewFilter, sortKey, sortDir]);
 
   const toggleSort = (key: SortKey) => {
+    if (sortKey === key && sortDir === 'asc') {
+      // 3rd click: reset to no sort
+      setSortKey(null);
+      setSortDir('desc');
+      return;
+    }
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -296,7 +305,7 @@ export default function ArticlesPage() {
   };
 
   const sortIndicator = (key: SortKey) => {
-    if (sortKey !== key) return null;
+    if (!sortKey || sortKey !== key) return null;
     return sortDir === 'asc' ? ' \u2191' : ' \u2193';
   };
 
@@ -597,7 +606,7 @@ export default function ArticlesPage() {
                   <td className="px-4 py-3 text-brand-500 tabular-nums">
                     {formatDate(article.updated_at)}
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={Boolean(article.reviewed_at)}
