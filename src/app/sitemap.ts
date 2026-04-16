@@ -34,6 +34,7 @@ export default async function sitemap(): Promise<SitemapEntry[]> {
       .select('slug, published_at, updated_at')
       .eq('status', 'published')
       .not('slug', 'is', null)
+      .not('reviewed_at', 'is', null)  // 由起子さん確認済みのみ
       .order('published_at', { ascending: false });
 
     if (error || !data) return [...staticPages, ...categoryPages];
