@@ -130,7 +130,7 @@ export default function ArticleDetailPage() {
     id: string;
     created_at: string;
     change_type: string;
-    body_html?: string;
+    html_snapshot?: string;
   }>>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState<string | null>(null);
@@ -668,8 +668,8 @@ export default function ArticleDetailPage() {
               const badgeClass = changeBadgeColor[rev.change_type] ?? 'bg-slate-100 text-slate-600';
 
               // Strip HTML tags for preview
-              const plainText = rev.body_html
-                ? rev.body_html.replace(/<[^>]*>/g, '').slice(0, 100)
+              const plainText = rev.html_snapshot
+                ? rev.html_snapshot.replace(/<[^>]*>/g, '').slice(0, 100)
                 : '';
 
               return (
