@@ -1,0 +1,43 @@
+name: no-article-writes
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'supabase/migrations/**'
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan diff for article-table writes without guard tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+
+          PATTERN='(\.from\(["'\'']articles["'\'']\)[[:space:]]*\.(update|delete|insert)|UPDATE[[:space:]]+articles|DELETE[[:space:]]+FROM[[:space:]]+articles)'
+          ALLOWLIST='(is_hub_visible|visibility_state|deployed_hash|visibility_updated_at|guard-approved)'
+
+          # Only added lines, src/scripts/supabase/migrations
+          git diff "$BASE".."$HEAD" -- 'src/**' 'scripts/**' 'supabase/migrations/**' \
+            | grep -E '^\+' \
+            | grep -Ev '^\+\+\+' \
+            | grep -E "$PATTERN" \
+            | grep -Ev "$ALLOWLIST" > /tmp/bad-writes || true
+
+          if [ -s /tmp/bad-writes ]; then
+            echo "::error::Article-table write detected without a guard-approved annotation:"
+            cat /tmp/bad-writes
+            echo ""
+            echo "Add '// guard-approved: <reason>' on the same line, or scope the write to the new publish-control columns."
+            exit 1
+          fi
+          echo "clean."

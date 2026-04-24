@@ -5,6 +5,12 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Plus, ChevronLeft, ChevronRight, ArrowUpDown, RefreshCw, Download, Upload } from 'lucide-react';
 import StatusBadge from '@/components/common/StatusBadge';
+import PublishButton, { type PublishButtonState } from '@/components/articles/PublishButton';
+import { rebuildHub, formatHubRebuildResult } from '@/lib/deploy/hub-rebuild-client';
+import { fetchPublishedArticles } from '@/lib/articles/fetch-published-articles';
+
+// publish-control-v2 flag (inlined at build time). Default OFF — existing UI unchanged.
+const PUBLISH_CONTROL_V2 = process.env.NEXT_PUBLIC_PUBLISH_CONTROL_V2 === 'on';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -101,21 +107,18 @@ export default function ArticlesPage() {
     setBulkDeploying(true);
     setBulkDeployResult(null);
     try {
-      // 最新の記事データをAPIから再取得（UIのキャッシュとDBの不一致を防ぐ）
-      const freshRes = await fetch('/api/articles?status=published&limit=200');
-      const freshData = await freshRes.json();
-      const freshArticles = (freshData.data || []) as ArticleItem[];
-      const reviewed = freshArticles.filter((a: ArticleItem) => a.reviewed_at);
-      const skipped = freshArticles.filter((a: ArticleItem) => !a.reviewed_at);
+      const fetchResult = await fetchPublishedArticles(200);
+      if (!fetchResult.ok) {
+        setBulkDeployResult(`記事一覧取得エラー: ${fetchResult.error}`);
+        return;
+      }
+      const freshArticles = fetchResult.articles as unknown as ArticleItem[];
+      const reviewed = freshArticles.filter((a) => a.reviewed_at);
+      const skipped = freshArticles.filter((a) => !a.reviewed_at);
+
       let success = 0;
       let failed = 0;
       const errors: string[] = [];
-
-      if (reviewed.length === 0) {
-        setBulkDeployResult(`デプロイ対象の確認済み記事がありません（未確認: ${skipped.length} 件）`);
-        setBulkDeploying(false);
-        return;
-      }
 
       for (const article of reviewed) {
         try {
@@ -135,9 +138,13 @@ export default function ArticlesPage() {
         }
       }
 
+      // ★ UNCONDITIONAL hub rebuild — even if reviewed.length === 0 and even if some per-article deploys failed.
+      const hubResult = await rebuildHub();
+
       let msg = `${success} 件デプロイ成功`;
       if (failed > 0) msg += `、${failed} 件失敗`;
       if (skipped.length > 0) msg += `（未確認スキップ: ${skipped.length} 件）`;
+      msg += ` ／ ${formatHubRebuildResult(hubResult)}`;
       if (errors.length > 0) msg += `\n失敗: ${errors.slice(0, 3).join(' / ')}`;
       setBulkDeployResult(msg);
     } catch (err) {
@@ -637,37 +644,56 @@ export default function ArticlesPage() {
                     {formatDate(article.updated_at)}
                   </td>
                   <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(article.reviewed_at)}
-                      title={article.reviewed_at ? `確認済み (${new Date(article.reviewed_at).toLocaleDateString('ja-JP')})` : '未確認 — クリックで確認'}
-                      className="h-4 w-4 cursor-pointer accent-emerald-500"
-                      onChange={async (e) => {
-                        e.stopPropagation();
-                        const wasReviewed = Boolean(article.reviewed_at);
-                        const newVal = wasReviewed ? null : new Date().toISOString();
+                    {PUBLISH_CONTROL_V2 ? (
+                      <PublishButton
+                        articleId={article.id}
+                        articleTitle={article.title ?? '(無題)'}
+                        initialState={(article.reviewed_at ? 'live' : 'hidden') as PublishButtonState}
+                        onChanged={(next) => {
+                          const reviewedAt =
+                            next === 'live' || next === 'hub_stale' ? new Date().toISOString() : null;
+                          setArticles((prev) =>
+                            prev.map((a) => (a.id === article.id ? { ...a, reviewed_at: reviewedAt } : a)),
+                          );
+                        }}
+                      />
+                    ) : (
+                      <input
+                        type="checkbox"
+                        checked={Boolean(article.reviewed_at)}
+                        title={article.reviewed_at ? `確認済み (${new Date(article.reviewed_at).toLocaleDateString('ja-JP')})` : '未確認 — クリックで確認'}
+                        className="h-4 w-4 cursor-pointer accent-emerald-500"
+                        onChange={async (e) => {
+                          e.stopPropagation();
+                          const wasReviewed = Boolean(article.reviewed_at);
+                          const newVal = wasReviewed ? null : new Date().toISOString();
 
-                        if (wasReviewed && !confirm(`「${article.title}」の確認を取り消しますか？\nハブページから非表示になります。`)) return;
+                          if (wasReviewed && !confirm(`「${article.title}」の確認を取り消しますか？\nハブページから非表示になります。`)) return;
 
-                        await fetch(`/api/articles/${article.id}`, {
-                          method: 'PUT',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            reviewed_at: newVal,
-                            reviewed_by: newVal ? '小林由起子' : null,
-                          }),
-                        });
+                          const putRes = await fetch(`/api/articles/${article.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              reviewed_at: newVal,
+                              reviewed_by: newVal ? '小林由起子' : null,
+                            }),
+                          });
 
-                        setArticles((prev) =>
-                          prev.map((a) =>
-                            a.id === article.id ? { ...a, reviewed_at: newVal } : a
-                          )
-                        );
+                          if (!putRes.ok) {
+                            setBulkDeployResult(`確認フラグ更新失敗 (HTTP ${putRes.status})`);
+                            return;
+                          }
 
-                        // ハブページを再生成（確認済み記事のみ表示を即時反映）
-                        fetch('/api/hub/deploy', { method: 'POST' }).catch(() => {});
-                      }}
-                    />
+                          setArticles((prev) =>
+                            prev.map((a) => (a.id === article.id ? { ...a, reviewed_at: newVal } : a))
+                          );
+
+                          setBulkDeployResult('ハブ再生成中…');
+                          const hubResult = await rebuildHub();
+                          setBulkDeployResult(formatHubRebuildResult(hubResult));
+                        }}
+                      />
+                    )}
                   </td>
                 </tr>
               ))}

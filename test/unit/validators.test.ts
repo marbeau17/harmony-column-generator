@@ -61,8 +61,13 @@ describe('listArticlesQuerySchema', () => {
     }
   });
 
-  it('limitが100を超える値を拒否する', () => {
-    const result = listArticlesQuerySchema.safeParse({ limit: 101 });
+  it('limitが500を超える値を拒否する', () => {
+    const result = listArticlesQuerySchema.safeParse({ limit: 501 });
     expect(result.success).toBe(false);
+  });
+
+  it('limit=500は許容される', () => {
+    const result = listArticlesQuerySchema.safeParse({ limit: 500 });
+    expect(result.success).toBe(true);
   });
 });

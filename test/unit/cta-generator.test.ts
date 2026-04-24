@@ -9,13 +9,10 @@ import {
 describe('selectCtaTexts', () => {
   const themes = Object.keys(CTA_TEMPLATES);
 
-  it.each(themes)('テーマ "%s" でcta1/cta2/cta3が返る', (theme) => {
+  it.each(themes)('テーマ "%s" でcta2/cta3が返る', (theme) => {
     const result = selectCtaTexts(theme, 'test-article-id');
-    expect(result).toHaveProperty('cta1');
     expect(result).toHaveProperty('cta2');
     expect(result).toHaveProperty('cta3');
-    expect(result.cta1.catch).toBeTruthy();
-    expect(result.cta1.sub).toBeTruthy();
     expect(result.cta2.catch).toBeTruthy();
     expect(result.cta2.sub).toBeTruthy();
     expect(result.cta3.catch).toBeTruthy();
@@ -24,13 +21,6 @@ describe('selectCtaTexts', () => {
 });
 
 describe('buildCtaHtml', () => {
-  it('CTA1はcounselingページのURLが含まれる', () => {
-    const html = buildCtaHtml('cta1', 'intro', 'キャッチコピー', 'サブテキスト', 'test-slug');
-    expect(html).toContain('harmony-mc.com/counseling/');
-    expect(html).toContain('utm_content=cta1_information');
-    expect(html).toContain('カウンセリングについて詳しく見る');
-  });
-
   it('CTA2はsystemページのURLが含まれる', () => {
     const html = buildCtaHtml('cta2', 'mid', 'キャッチコピー', 'サブテキスト', 'test-slug');
     expect(html).toContain('harmony-mc.com/system/');
@@ -46,34 +36,34 @@ describe('buildCtaHtml', () => {
   });
 
   it('UTMパラメータが含まれる', () => {
-    const html = buildCtaHtml('cta1', 'intro', 'キャッチコピー', 'サブテキスト', 'test-slug');
+    const html = buildCtaHtml('cta2', 'mid', 'キャッチコピー', 'サブテキスト', 'test-slug');
     expect(html).toContain('utm_source=column');
     expect(html).toContain('utm_medium=cta');
     expect(html).toContain('utm_campaign=test-slug');
   });
 
   it('バナー画像関連の要素が含まれない（CSS-onlyデザイン）', () => {
-    const html = buildCtaHtml('cta1', 'intro', 'キャッチ', 'サブ', 'test-slug');
+    const html = buildCtaHtml('cta2', 'mid', 'キャッチ', 'サブ', 'test-slug');
     expect(html).not.toContain('background-image');
     expect(html).not.toContain('harmony-cta-seo-img');
     expect(html).not.toContain('harmony-cta-overlay');
   });
 
   it('CTAバッジが含まれる', () => {
-    const html = buildCtaHtml('cta1', 'intro', 'キャッチ', 'サブ', 'test-slug');
+    const html = buildCtaHtml('cta2', 'mid', 'キャッチ', 'サブ', 'test-slug');
     expect(html).toContain('harmony-cta-badge');
-    expect(html).toContain('カウンセリングについて');
+    expect(html).toContain('ご予約の流れ');
   });
 
   it('data-cta-key属性とCSSクラスが含まれる', () => {
-    const html = buildCtaHtml('cta1', 'intro', 'キャッチ', 'サブ', 'test-slug');
-    expect(html).toContain('data-cta-key="cta1"');
-    expect(html).toContain('harmony-cta-1');
+    const html = buildCtaHtml('cta2', 'mid', 'キャッチ', 'サブ', 'test-slug');
+    expect(html).toContain('data-cta-key="cta2"');
+    expect(html).toContain('harmony-cta-2');
   });
 });
 
 describe('insertCtasIntoHtml', () => {
-  it('H2が3つあるHTMLに3つのCTAが挿入される', () => {
+  it('H2が3つあるHTMLに2つのCTAが挿入される', () => {
     const html = `
       <h2>セクション1</h2>
       <p>本文1</p>
@@ -83,14 +73,12 @@ describe('insertCtasIntoHtml', () => {
       <p>本文3</p>
     `;
     const ctaTexts = {
-      cta1: { catch: 'CTA1キャッチ', sub: 'CTA1サブ' },
       cta2: { catch: 'CTA2キャッチ', sub: 'CTA2サブ' },
       cta3: { catch: 'CTA3キャッチ', sub: 'CTA3サブ' },
     };
 
     const result = insertCtasIntoHtml(html, ctaTexts, 'test-slug');
 
-    expect(result).toContain('data-cta-position="intro"');
     expect(result).toContain('data-cta-position="mid"');
     expect(result).toContain('data-cta-position="end"');
   });

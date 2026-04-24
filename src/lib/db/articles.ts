@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { saveRevision } from '@/lib/db/article-revisions';
+import { assertArticleWriteAllowed, assertArticleDeleteAllowed } from '@/lib/publish-control/session-guard';
 
 // ---------- 型定義 ----------
 
@@ -142,6 +143,7 @@ export async function listArticles(
 export async function createArticle(
   input: CreateArticleInput,
 ): Promise<ArticleRow> {
+  assertArticleWriteAllowed(null, Object.keys(input));
   const supabase = await createServiceRoleClient();
 
   // ソース記事の重複使用を防止（1ソース→1記事の原則）
@@ -181,6 +183,7 @@ export async function updateArticle(
   id: string,
   fields: Partial<Omit<ArticleRow, 'id' | 'created_at' | 'status'>>,
 ): Promise<ArticleRow> {
+  assertArticleWriteAllowed(id, Object.keys(fields));
   const supabase = await createServiceRoleClient();
 
   // Save revision snapshot before content changes
@@ -239,6 +242,7 @@ export async function transitionArticleStatus(
   newStatus: ArticleStatus,
   extraFields?: Partial<Omit<ArticleRow, 'id' | 'created_at' | 'status'>>,
 ): Promise<ArticleRow> {
+  assertArticleWriteAllowed(id, ['status', ...Object.keys(extraFields ?? {})]);
   // 現在の記事を取得
   const current = await getArticleById(id);
   if (!current) {
@@ -286,6 +290,7 @@ export async function transitionArticleStatus(
  * 記事を削除する。
  */
 export async function deleteArticle(id: string): Promise<void> {
+  assertArticleDeleteAllowed(id);
   const supabase = await createServiceRoleClient();
 
   const { error } = await supabase

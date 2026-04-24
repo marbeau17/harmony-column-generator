@@ -158,7 +158,7 @@ export const listArticlesQuerySchema = z.object({
     .number()
     .int()
     .min(1, 'limitは1以上で指定してください')
-    .max(100, 'limitは100以下で指定してください')
+    .max(500, 'limitは500以下で指定してください')
     .default(20),
   offset: z
     .number()

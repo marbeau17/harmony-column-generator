@@ -144,6 +144,47 @@ export async function uploadFile(
   await client.uploadFrom(stream, fullPath);
 }
 
+// ─── モンキーテスト / DRY_RUN ガード ─────────────────────────────────────────
+// publish-control-v2 spec §6.3 — test runs must NEVER reach prod FTP.
+// Bypass is allowed only when FTP_DRY_RUN=true (writes to ./tmp/ftp-dry-run/).
+
+function assertSafeTarget(config: FtpConfig, files: UploadFile[]): void {
+  if (process.env.FTP_DRY_RUN === 'true') return;
+  if (process.env.NODE_ENV === 'test') {
+    throw new Error('FTP_DRY_RUN=true is required in tests (refusing to touch real FTP)');
+  }
+  if (process.env.MONKEY_TEST === 'true') {
+    const allMonkey = files.every((f) => f.remotePath.includes('monkey-'));
+    if (!allMonkey) {
+      throw new Error(
+        `MONKEY_TEST=true refuses non-monkey paths. offenders: ${files
+          .filter((f) => !f.remotePath.includes('monkey-'))
+          .map((f) => f.remotePath)
+          .join(', ')}`,
+      );
+    }
+  }
+}
+
+async function dryRunWrite(config: FtpConfig, files: UploadFile[]): Promise<UploadResult> {
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  const root = path.join(process.cwd(), 'tmp', 'ftp-dry-run');
+  let uploaded = 0;
+  const errors: string[] = [];
+  for (const f of files) {
+    try {
+      const full = path.join(root, config.remoteBasePath, f.remotePath);
+      await fs.mkdir(path.dirname(full), { recursive: true });
+      await fs.writeFile(full, f.content, 'utf8');
+      uploaded++;
+    } catch (err) {
+      errors.push(`${f.remotePath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { success: errors.length === 0, uploaded, errors };
+}
+
 // ─── 複数ファイル一括アップロード ────────────────────────────────────────────
 
 /**
@@ -154,6 +195,9 @@ export async function uploadToFtp(
   config: FtpConfig,
   files: UploadFile[],
 ): Promise<UploadResult> {
+  assertSafeTarget(config, files);
+  if (process.env.FTP_DRY_RUN === 'true') return dryRunWrite(config, files);
+
   const client = new Client();
   const errors: string[] = [];
   let uploaded = 0;
@@ -191,4 +235,16 @@ export async function uploadToFtp(
     uploaded,
     errors,
   };
+}
+
+/**
+ * publish-control-v2: ソフト撤回のための単一ファイル上書き。
+ * 物理削除はせず、与えられたコンテンツで上書きする。
+ */
+export async function softWithdrawFile(
+  config: FtpConfig,
+  remotePath: string,
+  content: string,
+): Promise<UploadResult> {
+  return uploadToFtp(config, [{ remotePath, content }]);
 }

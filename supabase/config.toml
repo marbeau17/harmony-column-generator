@@ -1,8 +1,8 @@
 # Harmony Column Generator - Supabase Configuration
 # See: https://supabase.com/docs/guides/cli/config
 
-[project]
-id = ""
+# [project] section disabled — unused (no linked project), and older CLI versions reject it.
+# project_id = ""
 
 [api]
 enabled = true
