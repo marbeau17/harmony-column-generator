@@ -14,6 +14,7 @@ import {
   BookOpen,
   Lightbulb,
   Settings,
+  Activity,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -28,6 +29,7 @@ const NAV = [
   { label: '記事作成',       href: '/dashboard/articles/new',    icon: Sparkles,        badgeKey: null },
   { label: '記事一覧',       href: '/dashboard/articles',        icon: FileText,        badgeKey: null },
   { label: '元記事管理',     href: '/dashboard/source-articles', icon: BookOpen,        badgeKey: null },
+  { label: 'イベント監視',   href: '/dashboard/publish-events',  icon: Activity,        badgeKey: null },
   { label: '設定',           href: '/dashboard/settings',        icon: Settings,        badgeKey: null },
 ] as const;
 

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ensureLoggedIn } from './helpers/auth';
+import { checkE2EEnv } from './helpers/env-check';
 
 /**
  * E2E Test: Batch Blog Generation Pipeline
@@ -14,7 +15,16 @@ import { ensureLoggedIn } from './helpers/auth';
  * 7. Verify images are embedded in body HTML
  */
 
+// 必須環境変数チェック（不足時は describe 単位でスキップ）
+const envCheck = checkE2EEnv([
+  'GEMINI_API_KEY',
+  'NEXT_PUBLIC_SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+]);
+
 test.describe('Batch Blog Generation', () => {
+  test.skip(!envCheck.ok, envCheck.reason ?? 'Missing required env vars');
+
   test.beforeEach(async ({ page }) => {
     await ensureLoggedIn(page);
   });

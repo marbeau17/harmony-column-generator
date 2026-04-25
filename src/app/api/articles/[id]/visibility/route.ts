@@ -15,6 +15,7 @@ import { assertTransition, isDanglingDeploying, type VisibilityState } from '@/l
 import { renderSoftWithdrawalHtml } from '@/lib/publish-control/soft-withdrawal';
 import { getFtpConfig, softWithdrawFile } from '@/lib/deploy/ftp-uploader';
 import { logger } from '@/lib/logger';
+import { sendSlackNotification } from '@/lib/notify/slack';
 
 export const maxDuration = 60;
 
@@ -215,6 +216,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         .update({ visibility_state: 'live_hub_stale' })
         .eq('id', articleId);
     }
+    if (hubWarning) await sendSlackNotification(`⚠️ live_hub_stale: article=${articleId} hub deploy failed (${hubWarning})`);
   }
 
   const status = hubWarning ? 207 : 200;

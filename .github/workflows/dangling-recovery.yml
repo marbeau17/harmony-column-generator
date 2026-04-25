@@ -1,0 +1,19 @@
+name: Dangling Recovery
+
+on:
+  schedule:
+    # 5 分間隔で /api/dangling-recovery を叩き、deploying 状態で 60 秒以上
+    # 放置された articles を failed に倒して publish_events に監査ログを残す。
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call dangling-recovery API
+        run: |
+          curl -X POST "${{ vars.DANGLING_RECOVERY_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.DANGLING_RECOVERY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{}' --fail-with-body

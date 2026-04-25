@@ -1,175 +1,142 @@
-# Optimized Spec — Publish Control V2 / P2: step8（RLS 切替マイグレーション）
+# Optimized Spec — P3: P1+P2 バックログ集中処理（新UI切替 + 運用基盤強化）
 
-**Author:** Planner（クローズドループ・パイプライン 第 3 サイクル）
+**Author:** Planner（クローズドループ・パイプライン 第 4 サイクル）
 **Date:** 2026-04-25
-**Scope:** SPEC §4 step8 — `articles` テーブルの RLS ポリシー `"Published articles are public"` の USING を `status='published'` から `is_hub_visible = true` に切り替える
-**前サイクル:** P1 step7 完了（commit f633404）。全公開経路（Visibility API / `transitionArticleStatus()` / キュー処理）で `is_hub_visible=true` / `visibility_state='live'` を同期書込済み
-**次サイクル候補:** 新 UI 切替 / 監査強化 / FTP non-delete confirm（step9 以降）
+**Scope:** P1 #5（新 UI 切替）+ P2 #7（dangling 自動回復）+ P2 #8（publish_events ダッシュボード）+ P2 #9（live_hub_stale 通知）+ P2 #10（batch E2E 失敗修正）
+**前サイクル:** P2 step8 完了（commit d923d98、本番 RLS 切替適用済）
 
 ---
 
 ## 1. 背景
 
-P0 で Publish Control V2 が本番ローンチされ、P1 step7 で全公開経路の新列同期書込が完了した。これにより step8 は安全に実施可能となった。
-
-step8 では「ハブ可視性の真実の源（source of truth）」を **`articles.status`** から **`articles.is_hub_visible`** に切り替える。具体的には RLS ポリシー `"Published articles are public"` の USING 句を更新するだけだが、**step7 完了前に実施すると新規記事がサイレント非公開化する**ため順序が重要。step7 完了済（commit f633404）であることを前提に進める。
+Publish Control V2 は step1〜step8 すべて本番稼働。残るバックログは「新 UI 段階展開」と「運用基盤の整備（観測・通知・自動回復）」。各項目は独立して並列実装可能で、互いにファイル衝突しない設計。
 
 ---
 
-## 2. 偵察結果（参考）
+## 2. スコープ別 概要
 
-| 観点 | 現状 | step8 影響 |
+### 2.1 #5 新 UI 切替（低リスク・即時実施可）
+- Vercel に `NEXT_PUBLIC_PUBLISH_CONTROL_V2=on` を追加 → 再デプロイ
+- これにより `/dashboard/articles` で PublishButton UI が有効化（legacy checkbox は非表示に）
+- ロールバック: env 削除のみ
+- コード変更: なし（user 操作のみ + smoke test ドキュメント）
+
+### 2.2 #7 dangling-deploying 自動回復
+- 新 API: `POST /api/dangling-recovery`（service role 経由、auth なし、トークンガード）
+  - `WHERE visibility_state='deploying' AND visibility_updated_at < now() - 60s` を `visibility_state='failed'` に遷移
+  - 同時に publish_events に `action='dangling-recovery'` で監査ログ INSERT
+- GitHub Actions: `.github/workflows/dangling-recovery.yml` — 5 分間隔で上記 API を curl
+- 認証: `DANGLING_RECOVERY_TOKEN` 環境変数（Vercel + GitHub Secrets 両方に設定）
+
+### 2.3 #8 publish_events 観察ダッシュボード
+- 新ページ: `/dashboard/publish-events`
+- 新 API: `GET /api/publish-events?range={24h|7d|30d}` で集計データ返却
+- 表示要素:
+  - 直近 24h / 7d / 30d のイベント数（action 別）
+  - hub_deploy_status 失敗率
+  - 失敗イベント直近 10 件
+- Sidebar.tsx に navigation 項目追加
+
+### 2.4 #9 live_hub_stale 検知通知
+- 新ライブラリ: `src/lib/notify/slack.ts`
+  - `sendSlackNotification(text: string)` シンプル webhook ラッパ
+  - `process.env.SLACK_WEBHOOK_URL` 未設定時は no-op（CI / dev で安全）
+- 既存 `src/app/api/articles/[id]/visibility/route.ts` で `live_hub_stale` 遷移時に通知
+- 既存 `/api/dangling-recovery`（#7）でも通知
+
+### 2.5 #10 batch-generation E2E 失敗修正
+- `test/e2e/batch-api.spec.ts` のハードコード SERVICE_KEY を env 参照に変更
+- E2E 環境変数バリデーション関数を `test/e2e/helpers/` に追加
+- GEMINI_API_KEY 未設定時はテストを skip（fail でなく）
+
+---
+
+## 3. 受け入れ基準（Evaluator が検証）
+
+### #5 新 UI 切替
+- **AC-P3-1**: Vercel に `NEXT_PUBLIC_PUBLISH_CONTROL_V2=on` 追加手順が `docs/progress.md` に明記
+- **AC-P3-2**: 切替後の本番 smoke test SQL（`is_hub_visible` 整合性）が `docs/progress.md` に記載
+- **AC-P3-3**: 切替後の API smoke test（`POST /api/articles/{test}/visibility`）手順記載
+
+### #7 dangling-recovery
+- **AC-P3-4**: `src/app/api/dangling-recovery/route.ts` 新規作成、service role 経由、`DANGLING_RECOVERY_TOKEN` でガード
+- **AC-P3-5**: `.github/workflows/dangling-recovery.yml` 新規作成、`*/5 * * * *` で API 呼び出し
+- **AC-P3-6**: 単体テストで dangling 検出ロジックを検証（mock supabase）
+- **AC-P3-7**: `publish_events` への `action='dangling-recovery'` INSERT を確認
+
+### #8 publish_events ダッシュボード
+- **AC-P3-8**: `src/app/(dashboard)/dashboard/publish-events/page.tsx` 新規作成
+- **AC-P3-9**: `src/app/api/publish-events/route.ts` 新規作成（GET）、auth ガード付き
+- **AC-P3-10**: `src/components/layout/Sidebar.tsx` の NAV に「イベント監視」追加
+- **AC-P3-11**: ページが 24h / 7d / 30d のレンジで集計を表示する
+
+### #9 live_hub_stale 通知
+- **AC-P3-12**: `src/lib/notify/slack.ts` 新規作成、`SLACK_WEBHOOK_URL` 未設定時 no-op
+- **AC-P3-13**: `src/app/api/articles/[id]/visibility/route.ts` の `live_hub_stale` 遷移箇所で通知呼び出し
+- **AC-P3-14**: 単体テストで notify が条件付きで呼ばれることを検証
+
+### #10 batch E2E
+- **AC-P3-15**: `test/e2e/batch-api.spec.ts` のハードコード SERVICE_KEY を env 参照化
+- **AC-P3-16**: GEMINI_API_KEY 不在時はテストを skip（test.skip）
+
+### 共通
+- **AC-P3-17**: 単体テスト全件 PASS（既存 75 + 新規追加分）
+- **AC-P3-18**: 型チェック exit 0 / ビルド PASS
+- **AC-P3-19**: 既存 E2E（monkey + hub-rebuild）10/10 PASS
+
+---
+
+## 4. 安全性ガード
+
+- 記事本文への write 禁止
+- 既存 publish-control コア（visibility/route.ts, articles.ts, hub-deploy/route.ts, publish-control/*）の**ロジック変更禁止**。新規追加のみ
+- step8 の RLS ポリシーに影響する変更禁止
+- 本番 DB への直接書込禁止（migration 追加なし）
+- `DANGLING_RECOVERY_TOKEN` `SLACK_WEBHOOK_URL` の値はコードに含めない（env のみ）
+
+---
+
+## 5. 実装手順（並列 Fixer 用）
+
+5 つの Fixer を並列起動可能。ファイル衝突なし。
+
+| Fixer | 担当 | 作成 / 修正ファイル |
 |---|---|---|
-| 既存 policy 定義 | `supabase/schema.sql:195` および `supabase/migrations/20260404000000_initial_schema.sql:194` で `USING (status = 'published')` | DROP / CREATE で更新 |
-| anon 経由 SELECT | 現在は `status='published'` の記事を見られる（idle 含む可能性あり） | `is_hub_visible=true` の記事のみに変わる |
-| back-fill 状態 | `20260419000000_publish_control_v2.sql` で `status='published' AND reviewed_at IS NOT NULL` の 15 件を `is_hub_visible=true` に back-fill 済 | 母集団が変わらない（live=15） |
-| `hub-generator.ts:430` | `status='published'` で SELECT（service role 経由） | service role は RLS bypass、影響なし |
-| step7 整合性 | Visibility API / `transitionArticleStatus()` / キュー処理が `is_hub_visible=true` を同期書込 | 新規 published 記事も自動的にポリシー対象になる |
+| F1 | #5 docs | `docs/progress.md` 追記 |
+| F2 | #7 dangling | 新規: `src/app/api/dangling-recovery/route.ts`, `.github/workflows/dangling-recovery.yml`, `test/unit/dangling-recovery.test.ts` |
+| F3 | #8 dashboard | 新規: `src/app/(dashboard)/dashboard/publish-events/page.tsx`, `src/app/api/publish-events/route.ts`. 修正: `src/components/layout/Sidebar.tsx` |
+| F4 | #9 notify | 新規: `src/lib/notify/slack.ts`, `test/unit/notify-slack.test.ts`. 修正: `src/app/api/articles/[id]/visibility/route.ts` (1 行追加) |
+| F5 | #10 batch test | 修正: `test/e2e/batch-api.spec.ts`, `test/e2e/batch-generation.spec.ts`（必要なら）, 新規: `test/e2e/helpers/env-check.ts` |
 
-改修対象は **新規マイグレーション 1 ファイルのみ**。アプリケーションコードの変更は **不要**。
-
----
-
-## 3. 設計
-
-### 3.1 新マイグレーションファイル
-
-**パス:** `supabase/migrations/20260425000000_publish_control_v2_rls_switch.sql`
-
-**処理:**
-1. 既存ポリシー `"Published articles are public"` を `DROP POLICY IF EXISTS` で削除
-2. 同名ポリシーを `CREATE POLICY` で再作成し、`USING (is_hub_visible = true)` に変更
-3. 適用検証用コメント（policy 名 / USING 内容）を SQL ファイル内に明記
-4. ロールバック手順を SQL ファイル末尾にコメントで記載（`DROP POLICY` → 旧 `CREATE POLICY` の逆順 SQL）
-
-**冪等性:** `DROP POLICY IF EXISTS` + `CREATE POLICY`（PostgreSQL は同名ポリシーの存在チェックがないため、必ず DROP を先行させる）。再実行時もエラーにならない。
-
-### 3.2 アプリケーションコード変更
-
-**なし。** step8 は DB スキーマ層の切替のみ。`hub-generator.ts:430` の `status='published'` 条件は service role 経由（RLS bypass）のため温存。
-
-### 3.3 副作用解析
-
-- **anon ロールから SELECT 可能な記事の母集団:**
-  - 切替前: `status='published'`（live 15 件＋ idle に転落した published 記事があれば 0〜数件）
-  - 切替後: `is_hub_visible=true`（15 件、back-fill 済）
-- **想定差分:** 0 件（back-fill が現状を正確に反映済）
-- **service role 経由のクエリ:** RLS bypass のため影響なし
-- **authenticated ロール:** `"Authenticated users have full access"` policy が別途存在し、status / is_hub_visible に依存しないため影響なし
+各 Fixer は単体テスト・型チェック・ビルドまで実施。E2E は Evaluator 2 が一括実行。
 
 ---
 
-## 4. 受け入れ基準（Evaluator が検証）
-
-### AC-P2-1: マイグレーション SQL の冪等性
-- **手順:** 新マイグレ SQL を grep で確認
-- **期待:** `DROP POLICY IF EXISTS "Published articles are public" ON articles;` および `CREATE POLICY "Published articles are public" ON articles FOR SELECT USING (is_hub_visible = true);` を含む
-
-### AC-P2-2: shadow DB での適用→ロールバック→再適用が成功
-- **手順:**
-  1. `npx supabase db reset --local` で shadow DB に全マイグレ適用
-  2. ロールバック SQL を psql で適用 → 旧ポリシーに戻ることを確認
-  3. 新マイグレ SQL を再適用 → 新ポリシーに戻ることを確認
-- **期待:** 各ステップでエラーなし
-
-### AC-P2-3: shadow DB で anon ロールが is_hub_visible=true の記事のみ SELECT 可能
-- **手順:** shadow DB に対し anon キーで `SELECT id, status, is_hub_visible FROM articles;` を実行
-- **期待:**
-  - 返却行はすべて `is_hub_visible=true`
-  - `is_hub_visible=false` の行（idle / draft / unpublished 含む）は 1 件も返らない
-
-### AC-P2-4: ポリシー定義の検証 SQL が期待通り
-- **手順:** `SELECT policyname, qual FROM pg_policies WHERE tablename='articles' AND policyname='Published articles are public';`
-- **期待:** `qual` カラムが `(is_hub_visible = true)` を含む
-
-### AC-P2-5: 既存単体テスト全件 PASS
-- **コマンド:** `npx vitest run`
-- **期待:** 既存 75/75（前サイクル基準）相当が PASS（step8 は SQL のみのため新規テスト追加不要）
-
-### AC-P2-6: 既存 E2E（Publish Control V2）が依然 PASS
-- **コマンド:** shadow Supabase + port 3100 dev server で `npx playwright test monkey-publish-control hub-rebuild`
-- **期待:** 10/10 PASS（前サイクルから不変）
-
-### AC-P2-7: live=15 / idle=44 構成が変わらない
-- **手順:** shadow DB で `SELECT visibility_state, COUNT(*) FROM articles GROUP BY visibility_state;` を実行
-- **期待:** `live=15`, `idle=44`（または前サイクルと完全一致の構成）
-
-### AC-P2-8: ロールバック手順が SQL ファイル内に明記されている
-- **手順:** マイグレ SQL の末尾コメントを確認
-- **期待:** `-- ROLLBACK:` 見出し配下に旧ポリシーへ戻すための DROP/CREATE 文が完全な形で記載されている
-
-### AC-P2-9: 型チェック / ビルドへのデグレなし
-- **コマンド:** `npx tsc --noEmit -p tsconfig.json` および `npm run build`
-- **期待:** 両者 exit 0（SQL 変更のみだが念のため確認）
-
----
-
-## 5. 安全性ガード（必須遵守）
-
-- **記事本文・タイトル・コンテキストへの write 禁止**（ユーザールール継続）
-- 本番 DB への適用は **ユーザ承認後** に行う。Fixer は **shadow DB での検証まで**
-- step7 完了済を Fixer に **再確認させる**。確認手段：以下 3 点を grep で検証
-  1. `src/app/api/articles/[id]/visibility/route.ts` で `is_hub_visible` 書込
-  2. `src/lib/db/articles.ts::transitionArticleStatus()` で `is_hub_visible: true` 書込
-  3. `src/app/api/queue/process/route.ts` で `is_hub_visible: true` 書込
-- 既存マイグレファイルの**書き換え禁止**。新規ファイルとして追加
-- アプリケーションコード（TypeScript）への変更**禁止**
-
----
-
-## 6. 実装手順（Fixer 向け）
-
-1. **step7 完了確認**: 上記 3 ファイルで `is_hub_visible` 書込が存在することを grep で確認（PASS しなければ即座に中断・ユーザ報告）
-2. **新マイグレ SQL 作成**: `supabase/migrations/20260425000000_publish_control_v2_rls_switch.sql`
-   - DROP POLICY IF EXISTS
-   - CREATE POLICY ... USING (is_hub_visible = true)
-   - 末尾に `-- ROLLBACK:` コメントブロックで逆操作 SQL を記載
-3. **shadow DB 適用**: `npx supabase db reset --local`
-4. **policy 検証**: `SELECT policyname, qual FROM pg_policies WHERE tablename='articles';` で USING 句を確認
-5. **anon SELECT 検証**: anon キーで `articles` を SELECT し、`is_hub_visible=true` の行のみ返ることを確認（AC-P2-3）
-6. **構成検証**: `visibility_state` 集計で live=15 / idle=44 を確認（AC-P2-7）
-7. **roll-back リハーサル**: ロールバック SQL を shadow に適用 → 旧ポリシーに戻ることを確認後、再度新マイグレを適用
-8. **既存テスト実行**: `npx vitest run` および E2E（必要に応じて Evaluator 2 が実行）
-9. **progress.md 追記**（Fixer 責務）
-
----
-
-## 7. クローズドループ判定
+## 6. クローズドループ判定
 
 | 条件 | アクション |
 |---|---|
-| AC-P2-1〜AC-P2-9 全件 PASS | 完了 → step8 達成、ユーザに「shadow PASS → 本番適用判断」を仰ぐ |
-| AC のいずれか FAIL | Generator/Fixer に差し戻し |
-| AC 自体が不整合 | Change Request で本仕様を更新 |
+| AC-P3-1〜AC-P3-19 全件 PASS | 完了 → 次サイクル候補（観察強化、step9 待機） |
+| 一部 FAIL | 該当 Fixer のみ差し戻し（他は確定） |
+| 仕様不備 | Change Request |
+
+---
+
+## 7. リスク評価
+
+| リスク | 緩和策 |
+|---|---|
+| #5 切替で UI が崩れる | env 削除で即時ロールバック可能 |
+| #7 cron が誤って大量データ更新 | `LIMIT 100` を SQL に追加、token 認証必須 |
+| #8 ダッシュボードに service role の機密情報露出 | API は authenticated user のみ、actor_email のみ表示（token 表示なし） |
+| #9 SLACK_WEBHOOK_URL 漏洩 | env のみ、コードに含めない |
+| #10 修正で他テストデグレ | 修正は test ファイルのみ、production code は触らない |
 
 ---
 
 ## 8. 完了定義
 
-- 全 AC が shadow DB で PASS
-- `/docs/feedback/eval_report.md` に第 3 サイクルの PASS 記録（追記）
-- `/docs/progress.md` に step8 完了記録（追記）
-- ユーザに「P2 step8 shadow 完了 → 本番マイグレ適用判断」を報告。**本番適用は別判断**
-
----
-
-## 9. リスク評価
-
-| リスク | 重大度 | 緩和策 |
-|---|---|---|
-| 適用順序ミスによる新規記事サイレント非公開化 | 高 | step7 完了済（commit f633404）。Fixer 実装手順 1 で再確認 |
-| `hub-generator.ts:430` の `status='published'` SELECT がポリシー変更で破綻 | 中 | service role 経由で RLS bypass のため影響なし。AC-P2-3〜AC-P2-7 で確認 |
-| ロールバック不可リスク | 中 | SQL ファイル末尾に完全な逆操作 SQL を記載（AC-P2-8）。shadow でリハーサル済（AC-P2-2） |
-| 本番適用後にエッジケースで非公開化が発覚 | 低 | back-fill により live=15 件は不変（AC-P2-7）。本番適用はユーザ承認後 |
-| 既存マイグレファイルとの整合性破綻 | 低 | 新規ファイル追加のみ。既存ファイルへの書き換えなし |
-
----
-
-## 10. 出荷判断（参考、本サイクル外）
-
-step8 のマイグレは shadow PASS 後、ユーザ承認のうえ以下の順で本番適用：
-1. 本番 Supabase へのマイグレ適用（`npx supabase db push` または管理 UI）
-2. 適用直後に live 件数 / hub 公開記事数の差分監視（48h）
-3. 異常時のロールバック判断（SQL は新マイグレ末尾コメントを使用）
-
-本判断は **本サイクルのスコープ外**。Planner / Evaluator / Fixer は shadow PASS で本サイクル完了とする。
+- 全 AC PASS
+- `/docs/feedback/eval_report.md` に第 4 サイクルの PASS 記録（追記）
+- `/docs/progress.md` に各 Fixer の完了記録（追記）
+- ユーザに「P3 完了。残り step9 自動 PR 待ちのみ」を報告

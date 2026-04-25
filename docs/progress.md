@@ -105,3 +105,53 @@
 ## 次のアクション
 - AC-P2-6 E2E（Publish Control V2 / Hub rebuild）は Evaluator 2 が実行
 - 本番適用は ユーザ承認後（spec §10 参照）。`npx supabase db push` または管理 UI で適用 → 48h 監視 → 異常時は新マイグレ末尾の ROLLBACK SQL を実行
+
+---
+
+# Progress — P3 #5 新 UI 切替（NEXT_PUBLIC_PUBLISH_CONTROL_V2=on）
+
+**Date:** 2026-04-25
+**Author:** Generator/Fixer F1
+**Loop Count: 0**
+
+## ユーザ実施手順
+
+### 1. Vercel 環境変数追加
+1. https://vercel.com → プロジェクト「blogauto」→ Settings → Environment Variables
+2. 以下を追加（Production チェック必須、Preview/Development は任意）:
+   - Key: `NEXT_PUBLIC_PUBLISH_CONTROL_V2`
+   - Value: `on`
+3. 保存
+
+### 2. 再デプロイ
+- Deployments → 最新のデプロイを選択 → Redeploy
+- または `git commit --allow-empty -m "chore: pickup NEXT_PUBLIC_PUBLISH_CONTROL_V2"` を push
+
+### 3. 切替前 smoke test SQL（Supabase ダッシュボード）
+
+```sql
+-- back-fill 整合性確認
+SELECT COUNT(*) AS reviewed_count FROM articles WHERE is_hub_visible = true;
+-- 期待: 15
+
+-- 状態整合性
+SELECT id, status, reviewed_at, is_hub_visible, visibility_state
+FROM articles
+WHERE status='published' AND reviewed_at IS NOT NULL AND is_hub_visible != true
+LIMIT 5;
+-- 期待: 0 行
+```
+
+### 4. 切替後 smoke test
+- ブラウザで /dashboard/articles を開く
+- 記事行に PublishButton が表示されることを確認
+- legacy checkbox UI が非表示であることを確認
+
+### 5. 確認項目
+- [ ] /dashboard/articles で PublishButton が記事行に表示される
+- [ ] legacy checkbox UI が非表示
+- [ ] PublishButton クリックで visibility 状態が変わる（テスト記事 1 件で）
+
+### 6. ロールバック手段
+- Vercel 環境変数から `NEXT_PUBLIC_PUBLISH_CONTROL_V2` を削除 → 再デプロイ
+- DB / API への影響なし

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { checkE2EEnv } from './helpers/env-check';
 
 /**
  * E2E API Test: Batch Blog Generation Pipeline
@@ -14,9 +15,16 @@ import { test, expect } from '@playwright/test';
  * 5. Image URLs properly embedded in body HTML
  */
 
+// 必須環境変数チェック（不足時は describe 単位でスキップ）
+const envCheck = checkE2EEnv([
+  'GEMINI_API_KEY',
+  'NEXT_PUBLIC_SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+]);
+
 const BASE_URL = 'http://localhost:3000';
-const SUPABASE_URL = 'https://khsorerqojgwbmtiqrac.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtoc29yZXJxb2pnd2JtdGlxcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTI0NjUxNSwiZXhwIjoyMDkwODIyNTE1fQ.san11urNK7w4GxqDWtJj4Ka3iPYmwxflPlzvsScW9ZY';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 
 const supabaseHeaders = {
   'apikey': SERVICE_KEY,
@@ -41,6 +49,7 @@ async function supabaseUpdate(table: string, filter: string, data: Record<string
 }
 
 test.describe('Batch Generation API Tests', () => {
+  test.skip(!envCheck.ok, envCheck.reason ?? 'Missing required env vars');
 
   test('1. DB State: Check articles in various states', async () => {
     const articles = await supabaseQuery(
