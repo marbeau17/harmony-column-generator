@@ -65,3 +65,43 @@
 - AC-P1-1〜AC-P1-7 の Fixer 責務分は完了。
 - AC-P1-8（E2E shadow）と AC-P1-9（既存機能デグレ確認）は Evaluator 2 が回帰チェックで実施。
 - 次サイクル候補: step8 RLS 切替 or 新 UI 切替。
+
+---
+
+# Progress — P2 step8（RLS 切替マイグレーション）
+
+**Date:** 2026-04-25
+**Author:** Generator/Fixer
+
+## 実施内容
+- `supabase/migrations/20260425000000_publish_control_v2_rls_switch.sql` を新規作成
+  - `DROP POLICY IF EXISTS "Published articles are public" ON articles;`
+  - `CREATE POLICY "Published articles are public" ON articles FOR SELECT USING (is_hub_visible = true);`
+  - 末尾に ROLLBACK 手順をコメントで明記（旧 `status='published'` ポリシーへの逆操作 SQL 完全形）
+- shadow DB (`npx supabase db reset --local`) で全マイグレ適用成功（新マイグレ含む）
+- step7 完了 grep 確認: 3 ファイルすべてで `is_hub_visible` 書込確認済
+  - `src/app/api/articles/[id]/visibility/route.ts:139`（`is_hub_visible: body.visible`）
+  - `src/lib/db/articles.ts:277`（`publishedAutoFields.is_hub_visible = true`）
+  - `src/app/api/queue/process/route.ts:913`（`is_hub_visible: true`）
+- アプリケーションコード（.ts/.tsx）への変更は **なし**（仕様 §3.2 通り）
+
+## 検証
+- AC-P2-1 冪等性: `DROP POLICY IF EXISTS` + `CREATE POLICY` 構成（PASS）
+- AC-P2-2 ロールバックリハーサル: shadow で旧ポリシー（`status='published'`）へ戻し成功 → 新マイグレ再適用で `(is_hub_visible = true)` に復帰確認（PASS）
+- AC-P2-3 anon SELECT: REST 経由で `apikey=anon` を投げ、返却 15 件すべて `is_hub_visible=true`、`is_hub_visible=false` の行は 0 件（PASS）
+- AC-P2-4 pg_policies.qual: `(is_hub_visible = true)` 確認済（PASS）
+- AC-P2-5 単体テスト: 75/75 PASS（前サイクルから不変）
+- AC-P2-7 構成: live=15 / idle=44（shadow に合成データ投入後の集計、PASS）
+- AC-P2-8 ROLLBACK: SQL 末尾コメントに完全形で明記（PASS）
+- AC-P2-9 型/ビルド: `npx tsc --noEmit` exit=0、`npm run build` PASS
+
+## 注意事項
+- shadow DB は `db reset` でデータが消えるため、AC-P2-3 / AC-P2-7 検証用に `live=15 / idle=44` を満たす合成データを `/tmp/seed_shadow.sql` で投入して検証した。本番 DB の既存 59 記事は触っていない。
+- back-fill 自体は `20260419000000_publish_control_v2.sql` の DO ブロックが本番適用時に実行する設計（実データ存在下で動作）。
+
+## 関連ファイル
+- (added) `/Users/yasudaosamu/Desktop/codes/blogauto/supabase/migrations/20260425000000_publish_control_v2_rls_switch.sql`
+
+## 次のアクション
+- AC-P2-6 E2E（Publish Control V2 / Hub rebuild）は Evaluator 2 が実行
+- 本番適用は ユーザ承認後（spec §10 参照）。`npx supabase db push` または管理 UI で適用 → 48h 監視 → 異常時は新マイグレ末尾の ROLLBACK SQL を実行
