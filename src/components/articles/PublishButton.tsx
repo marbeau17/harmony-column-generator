@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import toast from 'react-hot-toast';
 
 export type PublishButtonState = 'live' | 'hidden' | 'deploying' | 'hub_stale' | 'failed';
 
@@ -75,15 +76,20 @@ export default function PublishButton({ articleId, articleTitle, initialState, o
       const json = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
       if (!res.ok && res.status !== 207) {
         setState('failed');
-        alert(`失敗しました: ${json.error ?? res.status}`);
+        toast.error(`公開状態の更新に失敗しました: ${json.error ?? res.status}`);
         return;
       }
       const next: PublishButtonState = res.status === 207 ? 'hub_stale' : target ? 'live' : 'hidden';
       setState(next);
       onChanged?.(next);
+      if (next === 'hub_stale') {
+        toast(`公開状態は更新されましたがハブ再生成が遅延しています`, { icon: '⚠️' });
+      } else {
+        toast.success(target ? `${articleTitle} を公開しました` : `${articleTitle} を非表示にしました`);
+      }
     } catch (err) {
       setState('failed');
-      alert(`通信エラー: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`通信エラー: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }

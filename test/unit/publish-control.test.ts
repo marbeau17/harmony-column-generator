@@ -229,4 +229,31 @@ describe('session-guard', () => {
     writeGuard({ blockArticleWrites: false });
     expect(() => assertArticleDeleteAllowed('x')).not.toThrow();
   });
+
+  describe('MONKEY_TEST bypass — strengthened', () => {
+    const ORIG_MONKEY = process.env.MONKEY_TEST;
+    const ORIG_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    afterEach(() => {
+      process.env.MONKEY_TEST = ORIG_MONKEY;
+      process.env.NEXT_PUBLIC_SUPABASE_URL = ORIG_URL;
+      resetSessionGuardCacheForTests();
+    });
+
+    it('bypasses guard when MONKEY_TEST=true AND SUPABASE_URL is localhost', () => {
+      writeGuard({ blockArticleWrites: true, allowedIds: [] });
+      process.env.MONKEY_TEST = 'true';
+      process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost:54321';
+      resetSessionGuardCacheForTests();
+      expect(() => assertArticleWriteAllowed('any-id', ['title'])).not.toThrow();
+    });
+
+    it('does NOT bypass guard when MONKEY_TEST=true AND SUPABASE_URL is production', () => {
+      writeGuard({ blockArticleWrites: true, allowedIds: [] });
+      process.env.MONKEY_TEST = 'true';
+      process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://khsorerqojgwbmtiqrac.supabase.co';
+      resetSessionGuardCacheForTests();
+      expect(() => assertArticleWriteAllowed('any-id', ['title'])).toThrow(/session-guard/);
+    });
+  });
 });

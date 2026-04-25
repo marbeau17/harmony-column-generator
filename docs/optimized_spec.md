@@ -1,142 +1,227 @@
-# Optimized Spec — P3: P1+P2 バックログ集中処理（新UI切替 + 運用基盤強化）
+# Optimized Spec — P4: 残バックログ #11-#18 一斉整理
 
-**Author:** Planner（クローズドループ・パイプライン 第 4 サイクル）
+**Author:** Planner（クローズドループ・パイプライン 第 5 サイクル）
 **Date:** 2026-04-25
-**Scope:** P1 #5（新 UI 切替）+ P2 #7（dangling 自動回復）+ P2 #8（publish_events ダッシュボード）+ P2 #9（live_hub_stale 通知）+ P2 #10（batch E2E 失敗修正）
-**前サイクル:** P2 step8 完了（commit d923d98、本番 RLS 切替適用済）
+**Scope:** P3 で未着手の 8 項目を**逐次実行**（小→大 の順）
+**前サイクル:** P3 完了（commit 6a0cd54、運用基盤 5 項目本番展開済）
 
 ---
 
-## 1. 背景
+## 実行順序（小→大）
 
-Publish Control V2 は step1〜step8 すべて本番稼働。残るバックログは「新 UI 段階展開」と「運用基盤の整備（観測・通知・自動回復）」。各項目は独立して並列実装可能で、互いにファイル衝突しない設計。
+| # | バックログ ID | 項目 | サイクル ID | 推定工数 |
+|---|---|---|---|---|
+| 1 | #15 | `.env.local.example` テンプレ強化 | **P4-A** | 極小 |
+| 2 | #17 | Supabase CLI v2.20.12 → v2.90.0 | **P4-B** | 極小 |
+| 3 | #16 | README.md に V2 セクション追加 | **P4-C** | 小 |
+| 4 | #18 | `docs/source-mapping-*.md` / `supabase/Claude.md` 整理 | **P4-D** | 小 |
+| 5 | #13 | session-guard MONKEY_TEST bypass 強化 | **P4-E** | 小 |
+| 6 | #12 | PublishButton の toast 化（alert 置換） | **P4-F** | 小-中 |
+| 7 | #14 | CI で E2E 自動実行（GitHub Actions） | **P4-G** | 中 |
+| 8 | #11 | scripts/* 整理（記事改変系の隔離） | **P4-H** | 中（要慎重） |
 
----
-
-## 2. スコープ別 概要
-
-### 2.1 #5 新 UI 切替（低リスク・即時実施可）
-- Vercel に `NEXT_PUBLIC_PUBLISH_CONTROL_V2=on` を追加 → 再デプロイ
-- これにより `/dashboard/articles` で PublishButton UI が有効化（legacy checkbox は非表示に）
-- ロールバック: env 削除のみ
-- コード変更: なし（user 操作のみ + smoke test ドキュメント）
-
-### 2.2 #7 dangling-deploying 自動回復
-- 新 API: `POST /api/dangling-recovery`（service role 経由、auth なし、トークンガード）
-  - `WHERE visibility_state='deploying' AND visibility_updated_at < now() - 60s` を `visibility_state='failed'` に遷移
-  - 同時に publish_events に `action='dangling-recovery'` で監査ログ INSERT
-- GitHub Actions: `.github/workflows/dangling-recovery.yml` — 5 分間隔で上記 API を curl
-- 認証: `DANGLING_RECOVERY_TOKEN` 環境変数（Vercel + GitHub Secrets 両方に設定）
-
-### 2.3 #8 publish_events 観察ダッシュボード
-- 新ページ: `/dashboard/publish-events`
-- 新 API: `GET /api/publish-events?range={24h|7d|30d}` で集計データ返却
-- 表示要素:
-  - 直近 24h / 7d / 30d のイベント数（action 別）
-  - hub_deploy_status 失敗率
-  - 失敗イベント直近 10 件
-- Sidebar.tsx に navigation 項目追加
-
-### 2.4 #9 live_hub_stale 検知通知
-- 新ライブラリ: `src/lib/notify/slack.ts`
-  - `sendSlackNotification(text: string)` シンプル webhook ラッパ
-  - `process.env.SLACK_WEBHOOK_URL` 未設定時は no-op（CI / dev で安全）
-- 既存 `src/app/api/articles/[id]/visibility/route.ts` で `live_hub_stale` 遷移時に通知
-- 既存 `/api/dangling-recovery`（#7）でも通知
-
-### 2.5 #10 batch-generation E2E 失敗修正
-- `test/e2e/batch-api.spec.ts` のハードコード SERVICE_KEY を env 参照に変更
-- E2E 環境変数バリデーション関数を `test/e2e/helpers/` に追加
-- GEMINI_API_KEY 未設定時はテストを skip（fail でなく）
+各サブサイクル完了後にユーザに報告し、次サイクルに進む。
 
 ---
 
-## 3. 受け入れ基準（Evaluator が検証）
+## P4-A: `.env.local.example` 強化（#15）
 
-### #5 新 UI 切替
-- **AC-P3-1**: Vercel に `NEXT_PUBLIC_PUBLISH_CONTROL_V2=on` 追加手順が `docs/progress.md` に明記
-- **AC-P3-2**: 切替後の本番 smoke test SQL（`is_hub_visible` 整合性）が `docs/progress.md` に記載
-- **AC-P3-3**: 切替後の API smoke test（`POST /api/articles/{test}/visibility`）手順記載
+### 目的
+新規開発者が monkey E2E や FTP_DRY_RUN 等を簡単に再現できるよう、env テンプレを最新化。
 
-### #7 dangling-recovery
-- **AC-P3-4**: `src/app/api/dangling-recovery/route.ts` 新規作成、service role 経由、`DANGLING_RECOVERY_TOKEN` でガード
-- **AC-P3-5**: `.github/workflows/dangling-recovery.yml` 新規作成、`*/5 * * * *` で API 呼び出し
-- **AC-P3-6**: 単体テストで dangling 検出ロジックを検証（mock supabase）
-- **AC-P3-7**: `publish_events` への `action='dangling-recovery'` INSERT を確認
+### 変更
+`.env.local.example` に以下キーを追加（値はダミー）:
+- `MONKEY_SUPABASE_URL=http://127.0.0.1:54321`
+- `MONKEY_SUPABASE_SERVICE_ROLE=`
+- `MONKEY_BASE_URL=http://localhost:3000`
+- `MONKEY_TEST=false`
+- `FTP_DRY_RUN=false`
+- `PUBLISH_CONTROL_V2=on`
+- `PUBLISH_CONTROL_FTP=on`
+- `TEST_USER_PASSWORD=`
+- `DANGLING_RECOVERY_TOKEN=`
+- `SLACK_WEBHOOK_URL=`
+- `GEMINI_API_KEY=`（既存にあれば不要）
+- `NEXT_PUBLIC_PUBLISH_CONTROL_V2=` (Vercel only, ローカルは optional)
 
-### #8 publish_events ダッシュボード
-- **AC-P3-8**: `src/app/(dashboard)/dashboard/publish-events/page.tsx` 新規作成
-- **AC-P3-9**: `src/app/api/publish-events/route.ts` 新規作成（GET）、auth ガード付き
-- **AC-P3-10**: `src/components/layout/Sidebar.tsx` の NAV に「イベント監視」追加
-- **AC-P3-11**: ページが 24h / 7d / 30d のレンジで集計を表示する
-
-### #9 live_hub_stale 通知
-- **AC-P3-12**: `src/lib/notify/slack.ts` 新規作成、`SLACK_WEBHOOK_URL` 未設定時 no-op
-- **AC-P3-13**: `src/app/api/articles/[id]/visibility/route.ts` の `live_hub_stale` 遷移箇所で通知呼び出し
-- **AC-P3-14**: 単体テストで notify が条件付きで呼ばれることを検証
-
-### #10 batch E2E
-- **AC-P3-15**: `test/e2e/batch-api.spec.ts` のハードコード SERVICE_KEY を env 参照化
-- **AC-P3-16**: GEMINI_API_KEY 不在時はテストを skip（test.skip）
-
-### 共通
-- **AC-P3-17**: 単体テスト全件 PASS（既存 75 + 新規追加分）
-- **AC-P3-18**: 型チェック exit 0 / ビルド PASS
-- **AC-P3-19**: 既存 E2E（monkey + hub-rebuild）10/10 PASS
+### AC
+- AC-A-1: 上記キーがすべて `.env.local.example` に存在
+- AC-A-2: 各キーに 1 行コメントで用途記載
+- AC-A-3: 既存キーの値・コメントは変更しない
 
 ---
 
-## 4. 安全性ガード
+## P4-B: Supabase CLI アップデート（#17）
 
-- 記事本文への write 禁止
-- 既存 publish-control コア（visibility/route.ts, articles.ts, hub-deploy/route.ts, publish-control/*）の**ロジック変更禁止**。新規追加のみ
-- step8 の RLS ポリシーに影響する変更禁止
-- 本番 DB への直接書込禁止（migration 追加なし）
-- `DANGLING_RECOVERY_TOKEN` `SLACK_WEBHOOK_URL` の値はコードに含めない（env のみ）
+### 目的
+v2.20.12（2 年遅れ）→ v2.90.0 へ。新機能・バグ fix を取り込む。
 
----
+### 変更
+- `package.json` の devDependencies / dependencies に supabase が固定されていれば更新
+- なければ `npx supabase` 経由実行のため対応不要（最新版が pull される）
+- `supabase/config.toml` に新版で必須となる設定があれば追加
 
-## 5. 実装手順（並列 Fixer 用）
-
-5 つの Fixer を並列起動可能。ファイル衝突なし。
-
-| Fixer | 担当 | 作成 / 修正ファイル |
-|---|---|---|
-| F1 | #5 docs | `docs/progress.md` 追記 |
-| F2 | #7 dangling | 新規: `src/app/api/dangling-recovery/route.ts`, `.github/workflows/dangling-recovery.yml`, `test/unit/dangling-recovery.test.ts` |
-| F3 | #8 dashboard | 新規: `src/app/(dashboard)/dashboard/publish-events/page.tsx`, `src/app/api/publish-events/route.ts`. 修正: `src/components/layout/Sidebar.tsx` |
-| F4 | #9 notify | 新規: `src/lib/notify/slack.ts`, `test/unit/notify-slack.test.ts`. 修正: `src/app/api/articles/[id]/visibility/route.ts` (1 行追加) |
-| F5 | #10 batch test | 修正: `test/e2e/batch-api.spec.ts`, `test/e2e/batch-generation.spec.ts`（必要なら）, 新規: `test/e2e/helpers/env-check.ts` |
-
-各 Fixer は単体テスト・型チェック・ビルドまで実施。E2E は Evaluator 2 が一括実行。
+### AC
+- AC-B-1: `npx supabase --version` が v2.90.0 以上を表示
+- AC-B-2: `npx supabase status` がエラーなく動作（config.toml parse エラー再発しない）
+- AC-B-3: `package.json` 内に supabase が dep として含まれていれば更新済
 
 ---
 
-## 6. クローズドループ判定
+## P4-C: README.md に V2 セクション追加（#16）
 
-| 条件 | アクション |
+### 目的
+新規開発者・由起子さん（運用者）に Publish Control V2 の使い方を明記。
+
+### 変更
+README.md に以下セクション**追加**（既存の構成は壊さない）:
+- 「Publish Control V2 概要」
+- 「公開/非公開フロー」（PublishButton の使い方）
+- 「環境変数一覧」（必須・任意の表）
+- 「運用 SQL 集」（よく使う検証クエリ）
+- 「監視 URL」（/dashboard/publish-events）
+
+### AC
+- AC-C-1: README に上記セクションが追加されている
+- AC-C-2: 既存セクション（プロジェクト概要、技術スタック等）は無傷
+- AC-C-3: コードブロックや SQL の構文が正しい
+
+---
+
+## P4-D: docs 整理（#18）
+
+### 目的
+不要・重複・古いドキュメントを削除 or 整理。
+
+### 変更
+- `docs/source-mapping-20260407.md` の内容確認 → 古ければ削除 or `docs/archive/` に移動
+- `supabase/Claude.md` と `supabase/CLAUDE.md` が両方存在すれば統合（Mac の case-insensitive 対策）
+- 仕様書ディレクトリの構造を整理（必要なら `docs/specs/` 配下を再編）
+
+### AC
+- AC-D-1: 重複ファイルなし（同じ内容で 2 ファイルが存在しない）
+- AC-D-2: 削除/移動したファイルは README または docs/INDEX.md で言及
+- AC-D-3: 既存の参照（コード内の path 言及）が壊れない
+
+---
+
+## P4-E: session-guard MONKEY_TEST bypass 強化（#13）
+
+### 目的
+現状 `MONKEY_TEST=true` 単独で session-guard が完全 bypass される。本番で誤って `MONKEY_TEST=true` がセットされた場合の事故を防ぐ追加ガード。
+
+### 変更
+`src/lib/publish-control/session-guard.ts` の bypass 条件を強化:
+```typescript
+// 現状: process.env.MONKEY_TEST === 'true' のみ
+// 強化後: MONKEY_TEST=true AND (NEXT_PUBLIC_SUPABASE_URL が localhost or 127.0.0.1 を含む)
+```
+本番 Supabase URL は `khsorerqojgwbmtiqrac.supabase.co` のため、bypass されなくなる。
+
+### AC
+- AC-E-1: `MONKEY_TEST=true` + 本番 SUPABASE_URL の組み合わせで bypass されない
+- AC-E-2: `MONKEY_TEST=true` + localhost SUPABASE_URL の組み合わせで bypass される
+- AC-E-3: 単体テスト追加（2 ケース）、既存テストは PASS 維持
+
+---
+
+## P4-F: PublishButton toast 化（#12）
+
+### 目的
+`alert()` を react-hot-toast 等に置換して UX 改善。
+
+### 変更
+- `react-hot-toast` を package.json に追加
+- `src/app/layout.tsx` または専用 provider に `<Toaster />` を配置
+- `src/components/articles/PublishButton.tsx` の `alert()` 呼び出し箇所を `toast.success()` / `toast.error()` に置換
+
+### AC
+- AC-F-1: 依存追加完了、ビルド通過
+- AC-F-2: PublishButton 内で alert() が 0 件
+- AC-F-3: success / error 両方の toast が呼ばれる
+- AC-F-4: dark mode 対応（react-hot-toast の dark 設定）
+
+---
+
+## P4-G: CI E2E 自動化（#14）
+
+### 目的
+PR 毎に publish-control E2E（monkey + hub-rebuild）が自動実行されることで、リグレッションを早期検知。
+
+### 変更
+- `.github/workflows/e2e.yml` を新規作成
+- 必要な GitHub Secrets:
+  - `MONKEY_SUPABASE_SERVICE_ROLE_KEY`（**dev/staging プロジェクト**のキー、本番ではない）
+  - `MONKEY_SUPABASE_URL`
+  - `TEST_USER_PASSWORD`
+- ジョブステップ:
+  1. checkout
+  2. Node.js setup
+  3. npm ci
+  4. Playwright browsers install
+  5. Next.js dev server を background で起動（port 3100）
+  6. `npx playwright test monkey-publish-control hub-rebuild`
+  7. 失敗時はテスト結果を artifact として upload
+
+### AC
+- AC-G-1: `.github/workflows/e2e.yml` 新規作成
+- AC-G-2: workflow が `on: pull_request` で trigger される
+- AC-G-3: README または docs/CONTRIBUTING.md に必要な Secrets 一覧記載
+- AC-G-4: 実機で workflow が green になる（PR 作成時に確認）
+
+---
+
+## P4-H: scripts/ 整理（#11）
+
+### 目的
+`scripts/regenerate-*`, `scripts/fix-*`, `scripts/improve-*`, `scripts/recover-*` 等の**記事本文を変更する系統**を明確に隔離し、誤実行を防ぐ。
+
+### 変更
+- `scripts/dangerous/` ディレクトリ新規作成（gitignore は**しない**、リポジトリに残す）
+- 上記 prefix のスクリプトを `scripts/dangerous/` に移動
+- `scripts/dangerous/README.md` を作成し、各スクリプトの目的・実行条件・記事本文への影響を明記
+- 安全なユーティリティ（`scripts/check-*`, `scripts/dump-*`, `scripts/find-*`, `scripts/inspect-*`, `scripts/diff-*`, `scripts/test-*`, `scripts/verify-*`）はそのまま `scripts/` に残す
+- バッチデプロイ系（`scripts/ftp-deploy-*`, `scripts/redeploy-*`, `scripts/process-queue-direct.ts`）は `scripts/ops/` に移動（ops = 運用、ただし dangerous ではない）
+
+### AC
+- AC-H-1: 危険系（regenerate/fix/improve/recover）が `scripts/dangerous/` 配下に隔離
+- AC-H-2: `scripts/dangerous/README.md` で各スクリプトを文書化
+- AC-H-3: 運用系が `scripts/ops/` 配下に整理
+- AC-H-4: 既存の参照（CI、他スクリプト、docs）が壊れない（grep で確認）
+- AC-H-5: 移動したファイルは git mv で履歴保持
+
+---
+
+## 共通ルール（全サブサイクル）
+
+### 安全性ガード
+- 記事本文（articles.html_body / title / summary）への write 禁止
+- 既存 publish-control コア（src/lib/publish-control/, src/lib/db/articles.ts, src/app/api/articles/[id]/visibility/）変更禁止（P4-E のみ session-guard.ts の bypass 条件強化を例外的に許可）
+- 本番 DB への直接書込禁止
+- マイグレ追加禁止（P4 はコード/設定/docs のみ）
+
+### 検証
+- 各サブサイクル完了時に: `npx vitest run` 全件 PASS、`npx tsc --noEmit` exit=0、`npm run build` PASS
+- E2E は P4-G 完了後に CI で自動化されるため、それまでは shadow 手動
+
+### Loop Count
+- progress.md 先頭に `Loop Count: X` を維持
+- 差し戻し発生で +1、3 回到達で停止 → ユーザ介入
+
+---
+
+## クローズドループ判定
+
+| サイクル | 完了条件 |
 |---|---|
-| AC-P3-1〜AC-P3-19 全件 PASS | 完了 → 次サイクル候補（観察強化、step9 待機） |
-| 一部 FAIL | 該当 Fixer のみ差し戻し（他は確定） |
-| 仕様不備 | Change Request |
+| P4-A〜P4-H 各サブサイクル | 該当 AC 全件 PASS、`progress.md` 追記、Evaluator 2 確認 |
+| P4 全体 | 全 8 サブサイクル完了、eval_report.md に第 5 サイクル PASS 記録 |
 
 ---
 
-## 7. リスク評価
+## 完了定義
 
-| リスク | 緩和策 |
-|---|---|
-| #5 切替で UI が崩れる | env 削除で即時ロールバック可能 |
-| #7 cron が誤って大量データ更新 | `LIMIT 100` を SQL に追加、token 認証必須 |
-| #8 ダッシュボードに service role の機密情報露出 | API は authenticated user のみ、actor_email のみ表示（token 表示なし） |
-| #9 SLACK_WEBHOOK_URL 漏洩 | env のみ、コードに含めない |
-| #10 修正で他テストデグレ | 修正は test ファイルのみ、production code は触らない |
-
----
-
-## 8. 完了定義
-
-- 全 AC PASS
-- `/docs/feedback/eval_report.md` に第 4 サイクルの PASS 記録（追記）
-- `/docs/progress.md` に各 Fixer の完了記録（追記）
-- ユーザに「P3 完了。残り step9 自動 PR 待ちのみ」を報告
+- 全サブサイクル PASS
+- `docs/feedback/eval_report.md` に各サブサイクルの PASS 記録
+- `docs/progress.md` に各サブサイクルの完了記録
+- バックログ完全クローズ（残るは step9 自動 PR @ 2026-05-09 のみ）

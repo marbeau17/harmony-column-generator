@@ -155,3 +155,68 @@ LIMIT 5;
 ### 6. ロールバック手段
 - Vercel 環境変数から `NEXT_PUBLIC_PUBLISH_CONTROL_V2` を削除 → 再デプロイ
 - DB / API への影響なし
+
+---
+
+# Progress — P4 残バックログ集中処理（#11-#18）
+
+**Date:** 2026-04-25
+**Author:** Generator/Fixer (orchestrator-assisted, P4-A〜P4-H 逐次)
+**Loop Count: 0**
+
+## P4-A: `.env.local.example` 強化（#15）
+- Publish Control V2 / dangling / Slack / Monkey / E2E 用キーを追加
+- 各キーに 1 行コメント記載
+
+## P4-B: Supabase CLI v2.20.12 → v2.95.2（#17）
+- `package.json` devDependencies に `supabase: ^2.95.2` 追加
+- `npx supabase --version` で v2.95.2 確認、`npx supabase` が local devDep を解決
+
+## P4-C: README.md V2 セクション追加（#16）
+- Publish Control V2 概要 / 公開フロー / 環境変数表 / 運用 SQL / 監視 URL / ロールバック追記
+- 既存セクション温存（103 → 193 行）
+
+## P4-D: docs 整理（#18）
+- `docs/source-mapping-20260407.md` → `docs/archive/` に移動
+- `supabase/Claude.md` は git untracked のため未変更
+
+## P4-E: session-guard MONKEY_TEST bypass 強化（#13）
+- `MONKEY_TEST=true` 単独 bypass を廃止
+- `MONKEY_TEST=true AND SUPABASE_URL に localhost/127.0.0.1 を含む` 時のみ bypass
+- 単体テスト 2 件追加（30/30 PASS）
+
+## P4-F: PublishButton toast 化（#12）
+- `react-hot-toast` 導入
+- `src/app/layout.tsx` に `<Toaster />` 配置（dark: 対応）
+- PublishButton 内 alert() 2 件を toast.success / toast.error に置換、hub_stale 警告 toast 追加
+- alert() 件数: 0、87/87 PASS
+
+## P4-G: CI E2E 自動化（#14）
+- `.github/workflows/e2e.yml` 新規作成
+- pull_request + workflow_dispatch trigger
+- shadow Supabase 起動 → migration → test user seed → dev server 3100 → playwright
+- 失敗時に playwright-report / test-results / next-e2e.log を artifact upload
+- 必要 GitHub Secrets: `MONKEY_SUPABASE_SERVICE_ROLE_KEY`, `MONKEY_SUPABASE_ANON_KEY`, `TEST_USER_PASSWORD`
+
+## P4-H: scripts/ 整理（#11）
+- `scripts/dangerous/` 新設、記事本文書換系 10 件を移動（fix-/improve-/recover-/regenerate-/reassign-）
+- `scripts/ops/` 新設、デプロイ系 5 件を移動（ftp-deploy-/redeploy-/process-queue-）
+- 各ディレクトリに README.md を配置（実行ルール・廃止候補を明記）
+- 既存コード参照: docs/specs 配下に historical 言及あり、active code には参照なし
+
+## 検証
+- 単体テスト: **87/87 PASS**（前 75 + P4-E 新規 2 + 既存テスト変動 ＋10）
+- 型チェック: exit=0
+- ビルド: PASS
+
+## 関連ファイル
+- (modified) `.env.local.example`, `package.json`, `package-lock.json`, `README.md`
+- (modified) `src/app/layout.tsx`, `src/components/articles/PublishButton.tsx`
+- (modified) `src/lib/publish-control/session-guard.ts`, `test/unit/publish-control.test.ts`
+- (added) `.github/workflows/e2e.yml`
+- (added) `scripts/dangerous/README.md`, `scripts/ops/README.md`
+- (moved) `scripts/dangerous/*.ts` (10 ファイル), `scripts/ops/*.ts` (5 ファイル), `docs/archive/source-mapping-20260407.md`
+
+## 次のアクション
+- D: shadow Supabase 再起動 → AC-P3-19 / AC-P4 final E2E を確定 PASS に
+- 全変更を commit + push（main へ）

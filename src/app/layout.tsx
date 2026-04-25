@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Noto_Sans_JP } from 'next/font/google'
+import { Toaster } from 'react-hot-toast'
 import Analytics from '@/components/common/Analytics'
 import './globals.css'
 
@@ -30,6 +31,13 @@ export default function RootLayout({
     <html lang="ja" className={notoSansJP.variable}>
       <body className="font-sans overflow-x-hidden">
         <Analytics />
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            className: 'dark:bg-stone-800 dark:text-stone-100',
+            duration: 4000,
+          }}
+        />
         {children}
       </body>
     </html>

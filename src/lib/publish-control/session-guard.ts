@@ -11,7 +11,13 @@ let cached: GuardConfig | null | undefined;
 function load(): GuardConfig | null {
   if (cached !== undefined) return cached;
   // MONKEY_TEST bypass: shadow Supabase + FTP_DRY_RUN-gated context is already safe.
-  if (process.env.MONKEY_TEST === 'true') return (cached = null);
+  // 強化: MONKEY_TEST=true 単独では bypass せず、Supabase URL が localhost/127.0.0.1 を指す時のみ許可。
+  // 本番環境で誤って MONKEY_TEST=true がセットされた場合の事故を防ぐ。
+  if (process.env.MONKEY_TEST === 'true') {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+    const isLocal = url.includes('localhost') || url.includes('127.0.0.1');
+    if (isLocal) return (cached = null);
+  }
   const p = join(process.cwd(), '.claude', 'session-guard.json');
   if (!existsSync(p)) return (cached = null);
   try {
