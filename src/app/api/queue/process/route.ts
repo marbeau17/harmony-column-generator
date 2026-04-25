@@ -901,12 +901,18 @@ export async function POST(request: NextRequest) {
           }
 
           // ── 合格: published ──
+          // step7（Publish Control V2）: レガシー公開経路でも新列を同期書込し、
+          // step8 で RLS を `is_hub_visible=true` 基準に切り替えてもサイレント非公開化しない。
+          const publishedAtIso = new Date().toISOString();
           await serviceClient
             .from('articles')
             .update({
               status: 'published',
-              published_at: new Date().toISOString(),
+              published_at: publishedAtIso,
               published_html: publishedHtml,
+              is_hub_visible: true,
+              visibility_state: 'live',
+              visibility_updated_at: publishedAtIso,
               updated_at: new Date().toISOString(),
             })
             .eq('id', articleId);

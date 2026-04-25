@@ -57,6 +57,11 @@ export interface ArticleRow {
   ai_generation_log: string | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  // Publish Control V2（step7 で legacy 公開経路にも書込同期）
+  is_hub_visible?: boolean | null;
+  visibility_state?: string | null;
+  visibility_updated_at?: string | null;
+  deployed_hash?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -261,17 +266,24 @@ export async function transitionArticleStatus(
 
   const supabase = await createServiceRoleClient();
 
-  // published への遷移時は published_at を自動設定
-  const timestampFields: Record<string, string> = {};
+  // published への遷移時は published_at と新公開列（is_hub_visible / visibility_state /
+  // visibility_updated_at）を自動設定する。step7（Publish Control V2）でレガシー公開経路と
+  // 新 visibility API のスキーマ差を埋め、step8 の RLS 切替時のサイレント非公開化を防ぐ。
+  // ※ extraFields は後勝ちで上書き可能 → 呼び出し元が意図的に false を指定するケースを許容。
+  const publishedAutoFields: Record<string, unknown> = {};
   if (newStatus === 'published') {
-    timestampFields.published_at = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    publishedAutoFields.published_at = nowIso;
+    publishedAutoFields.is_hub_visible = true;
+    publishedAutoFields.visibility_state = 'live';
+    publishedAutoFields.visibility_updated_at = nowIso;
   }
 
   const { data, error } = await supabase
     .from('articles')
     .update({
+      ...publishedAutoFields,
       ...(extraFields ?? {}),
-      ...timestampFields,
       status: newStatus,
       updated_at: new Date().toISOString(),
     })
