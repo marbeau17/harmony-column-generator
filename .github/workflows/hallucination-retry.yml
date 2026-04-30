@@ -1,0 +1,15 @@
+name: Hallucination Retry
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # 6 時間ごと
+  workflow_dispatch:
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call hallucination-retry API
+        run: |
+          curl -X POST "${{ vars.HALLUCINATION_RETRY_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.HALLUCINATION_RETRY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --fail-with-body

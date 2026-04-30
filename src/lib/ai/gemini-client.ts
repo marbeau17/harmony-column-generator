@@ -553,6 +553,266 @@ export function estimateTokens(text: string): number {
   return Math.ceil(japaneseChars * 1.5 + otherChars / 4);
 }
 
+// ─── Context Cache（spec §5.4 Gemini Prompt Caching） ─────────────────────
+//
+// system prompt が長く同一内容で繰り返し送られる場合、`cachedContents` API
+// を使って Gemini 側に保存し、後続呼び出しで `cached_content` 参照だけ送る
+// ことで入力トークン課金を大幅削減できる（参考: 75% コストカット）。
+// 既存メソッドには手を入れず、追加 API として提供する（Generator H10）。
+// ─────────────────────────────────────────────────────────────────────────
+
+const CACHE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+
+/** API キーをログに出さないように URL を整形するための内部ヘルパー */
+function redactKeyUrl(url: string): string {
+  return url.replace(/key=[^&]+/, 'key=***');
+}
+
+export interface PromptCacheCreateResult {
+  /** Gemini が返す resource ID（例: `cachedContents/abc123`） */
+  cacheName: string;
+  /** TTL から計算したクライアント側の期限（参考値） */
+  expiresAt: Date;
+}
+
+export interface PromptCacheInfo {
+  expiresAt: Date;
+  tokenCount: number;
+}
+
+/**
+ * system prompt を Context Cache として登録する。
+ * REST: POST `${BASE}/cachedContents`
+ * 戻り値の `cacheName` は後続 `generateJsonWithCache` に渡す。
+ */
+export async function createPromptCache(
+  systemPrompt: string,
+  ttlSeconds = 3600,
+  options?: { model?: string; apiKey?: string; timeoutMs?: number },
+): Promise<PromptCacheCreateResult> {
+  if (!systemPrompt || systemPrompt.trim().length === 0) {
+    throw new Error('createPromptCache: systemPrompt must be non-empty');
+  }
+
+  const model = options?.model || GEMINI_MODEL();
+  const apiKey = options?.apiKey || GEMINI_API_KEY();
+  const timeoutMs = options?.timeoutMs ?? 60_000;
+  const url = `${CACHE_BASE_URL}/cachedContents?key=${apiKey}`;
+
+  const requestBody = {
+    model: `models/${model}`,
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    ttl: `${ttlSeconds}s`,
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => 'unknown');
+      throw new Error(
+        `Gemini cache create error ${response.status}: ${errorBody.substring(0, 500)}`,
+      );
+    }
+
+    const data = await response.json();
+    const cacheName: string | undefined = data?.name;
+    if (!cacheName) {
+      throw new Error(
+        `Gemini cache create returned no name: ${JSON.stringify(data).substring(0, 300)}`,
+      );
+    }
+
+    // expireTime が返ればそれを使う、無ければ ttlSeconds で計算
+    const expiresAt = data?.expireTime
+      ? new Date(data.expireTime)
+      : new Date(Date.now() + ttlSeconds * 1000);
+
+    console.info('[gemini.cache.created]', {
+      url: redactKeyUrl(url),
+      cacheName,
+      ttlSeconds,
+      expiresAt: expiresAt.toISOString(),
+      systemPromptLength: systemPrompt.length,
+    });
+
+    return { cacheName, expiresAt };
+  } catch (error) {
+    clearTimeout(timer);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Gemini cache create timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * 登録済みの cachedContents を参照して JSON 出力を得る。
+ * `cached_content` フィールドに cacheName を渡す（system_instruction は再送しない）。
+ */
+export async function generateJsonWithCache<T>(
+  cacheName: string,
+  userPrompt: string,
+  options?: Partial<GeminiRequestConfig>,
+): Promise<{ data: T; response: GeminiResponse }> {
+  if (!cacheName) {
+    throw new Error('generateJsonWithCache: cacheName must be non-empty');
+  }
+  if (!userPrompt) {
+    throw new Error('generateJsonWithCache: userPrompt must be non-empty');
+  }
+
+  const model = options?.model || GEMINI_MODEL();
+  const apiKey = options?.apiKey || GEMINI_API_KEY();
+  const timeoutMs = options?.timeoutMs ?? DEFAULTS.timeoutMs;
+  const url = `${BASE_URL}/${model}:generateContent?key=${apiKey}`;
+
+  const requestBody: Record<string, unknown> = {
+    cachedContent: cacheName,
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    generationConfig: {
+      temperature: options?.temperature ?? DEFAULTS.temperature,
+      topP: options?.topP ?? DEFAULTS.topP,
+      topK: options?.topK ?? DEFAULTS.topK,
+      maxOutputTokens: options?.maxOutputTokens ?? DEFAULTS.maxOutputTokens,
+      responseMimeType: 'application/json',
+    },
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const startTime = Date.now();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => 'unknown');
+      throw new Error(
+        `Gemini cached generate error ${response.status}: ${errorBody.substring(0, 500)}`,
+      );
+    }
+
+    const data = await response.json();
+    const durationMs = Date.now() - startTime;
+
+    const candidate = data.candidates?.[0];
+    if (!candidate) {
+      throw new Error(
+        `Gemini cached generate returned no candidates: ${JSON.stringify(data).substring(0, 300)}`,
+      );
+    }
+    const text =
+      candidate.content?.parts
+        ?.map((p: { text?: string }) => p.text || '')
+        .join('') || '';
+    const finishReason = candidate.finishReason || 'UNKNOWN';
+
+    const usage = data.usageMetadata || {};
+    const tokenUsage = {
+      promptTokens: usage.promptTokenCount || 0,
+      completionTokens: usage.candidatesTokenCount || 0,
+      totalTokens: usage.totalTokenCount || 0,
+    };
+
+    console.info('[gemini.cache.success]', {
+      url: redactKeyUrl(url),
+      cacheName,
+      model,
+      durationMs,
+      finishReason,
+      cachedContentTokens: usage.cachedContentTokenCount || 0,
+      promptTokens: tokenUsage.promptTokens,
+      completionTokens: tokenUsage.completionTokens,
+    });
+
+    const cleanText = text
+      .replace(/^```json\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+
+    const parsed = JSON.parse(cleanText) as T;
+    return {
+      data: parsed,
+      response: { text, finishReason, tokenUsage, rawResponse: data },
+    };
+  } catch (error) {
+    clearTimeout(timer);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Gemini cached generate timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * cachedContents の状態（期限・トークン数）を取得する。
+ * REST: GET `${BASE}/{cacheName}`
+ */
+export async function getCacheInfo(
+  cacheName: string,
+  options?: { apiKey?: string; timeoutMs?: number },
+): Promise<PromptCacheInfo> {
+  if (!cacheName) {
+    throw new Error('getCacheInfo: cacheName must be non-empty');
+  }
+
+  const apiKey = options?.apiKey || GEMINI_API_KEY();
+  const timeoutMs = options?.timeoutMs ?? 30_000;
+  const url = `${CACHE_BASE_URL}/${cacheName}?key=${apiKey}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => 'unknown');
+      throw new Error(
+        `Gemini cache info error ${response.status}: ${errorBody.substring(0, 500)}`,
+      );
+    }
+
+    const data = await response.json();
+
+    // expireTime はサーバ ISO 文字列。usageMetadata.totalTokenCount が cache の token 数
+    const expiresAt = data?.expireTime
+      ? new Date(data.expireTime)
+      : new Date(0);
+    const tokenCount: number =
+      data?.usageMetadata?.totalTokenCount ?? data?.tokenCount ?? 0;
+
+    return { expiresAt, tokenCount };
+  } catch (error) {
+    clearTimeout(timer);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Gemini cache info timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+}
+
 // ─── Embedding 生成（text-embedding-004） ───────────────────────────────────
 
 /** Gemini text-embedding-004 の task_type */

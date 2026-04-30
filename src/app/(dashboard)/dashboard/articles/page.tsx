@@ -22,6 +22,9 @@ interface ArticleItem {
   status: string;
   updated_at: string;
   reviewed_at: string | null;
+  hallucination_score?: number | null;
+  yukiko_tone_score?: number | null;
+  generation_mode?: string | null;
 }
 
 interface ArticlesResponse {
@@ -31,7 +34,12 @@ interface ArticlesResponse {
   count?: number;
 }
 
-type SortKey = 'updated_at' | 'status';
+type SortKey =
+  | 'updated_at'
+  | 'status'
+  | 'hallucination_score'
+  | 'yukiko_tone_score'
+  | 'generation_mode';
 type SortDir = 'asc' | 'desc';
 
 // ─── Filter config ──────────────────────────────────────────────────────────
@@ -232,6 +240,24 @@ export default function ArticlesPage() {
         const diff = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
         return sortDir === 'asc' ? diff : -diff;
       }
+      if (sortKey === 'hallucination_score' || sortKey === 'yukiko_tone_score') {
+        // null は最後に寄せる
+        const av = a[sortKey];
+        const bv = b[sortKey];
+        const aNull = av == null;
+        const bNull = bv == null;
+        if (aNull && bNull) return 0;
+        if (aNull) return 1;
+        if (bNull) return -1;
+        const diff = (av as number) - (bv as number);
+        return sortDir === 'asc' ? diff : -diff;
+      }
+      if (sortKey === 'generation_mode') {
+        const av = a.generation_mode ?? '';
+        const bv = b.generation_mode ?? '';
+        const diff = av.localeCompare(bv);
+        return sortDir === 'asc' ? diff : -diff;
+      }
       // updated_at
       const diff = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
       return sortDir === 'asc' ? diff : -diff;
@@ -250,7 +276,12 @@ export default function ArticlesPage() {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      setSortDir(key === 'updated_at' ? 'desc' : 'asc');
+      // 数値スコア / 日付は降順から、文字列キーは昇順から
+      const startDesc =
+        key === 'updated_at' ||
+        key === 'hallucination_score' ||
+        key === 'yukiko_tone_score';
+      setSortDir(startDesc ? 'desc' : 'asc');
     }
   };
 
@@ -344,6 +375,44 @@ export default function ArticlesPage() {
   const sortIndicator = (key: SortKey) => {
     if (!sortKey || sortKey !== key) return null;
     return sortDir === 'asc' ? ' \u2191' : ' \u2193';
+  };
+
+  // \u30cf\u30eb\u30b7\u30cd\u30fc\u30b7\u30e7\u30f3\u30b9\u30b3\u30a2\u8868\u793a\uff08\u4f4e\u3044\u307b\u3069\u826f\u3044\uff09
+  const renderHallucinationScore = (score: number | null | undefined) => {
+    if (score == null || isNaN(score)) {
+      return <span className="text-brand-300 dark:text-brand-500">\u2014</span>;
+    }
+    let cls = 'text-emerald-600 dark:text-emerald-400';
+    if (score >= 0.35) cls = 'text-red-600 dark:text-red-400 font-semibold';
+    else if (score >= 0.15) cls = 'text-amber-600 dark:text-amber-400';
+    return <span className={`tabular-nums ${cls}`}>{score.toFixed(2)}</span>;
+  };
+
+  // \u7531\u8d77\u5b50\u30c8\u30fc\u30f3\u30b9\u30b3\u30a2\u8868\u793a\uff08\u9ad8\u3044\u307b\u3069\u826f\u3044\uff09
+  const renderToneScore = (score: number | null | undefined) => {
+    if (score == null || isNaN(score)) {
+      return <span className="text-brand-300 dark:text-brand-500">\u2014</span>;
+    }
+    let cls = 'text-red-600 dark:text-red-400 font-semibold';
+    if (score >= 0.85) cls = 'text-emerald-600 dark:text-emerald-400';
+    else if (score >= 0.7) cls = 'text-amber-600 dark:text-amber-400';
+    return <span className={`tabular-nums ${cls}`}>{score.toFixed(2)}</span>;
+  };
+
+  // \u751f\u6210\u30e2\u30fc\u30c9\u8868\u793a
+  const renderGenerationMode = (mode: string | null | undefined) => {
+    if (!mode) {
+      return <span className="text-brand-300 dark:text-brand-500">\u2014</span>;
+    }
+    const isZero = mode === 'zero';
+    const cls = isZero
+      ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+      : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300';
+    return (
+      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
+        {mode}
+      </span>
+    );
   };
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -608,6 +677,27 @@ export default function ArticlesPage() {
                 >
                   更新日{sortIndicator('updated_at')}
                 </th>
+                <th
+                  title="ハルシネーションスコア（低いほど良い）"
+                  className="whitespace-nowrap px-3 py-3 font-medium text-brand-600 w-20 cursor-pointer select-none hover:text-brand-800 text-center"
+                  onClick={() => toggleSort('hallucination_score')}
+                >
+                  ハルシネ{sortIndicator('hallucination_score')}
+                </th>
+                <th
+                  title="由起子トーンスコア（高いほど良い）"
+                  className="whitespace-nowrap px-3 py-3 font-medium text-brand-600 w-20 cursor-pointer select-none hover:text-brand-800 text-center"
+                  onClick={() => toggleSort('yukiko_tone_score')}
+                >
+                  トーン{sortIndicator('yukiko_tone_score')}
+                </th>
+                <th
+                  title="生成モード（zero / source）"
+                  className="whitespace-nowrap px-3 py-3 font-medium text-brand-600 w-20 cursor-pointer select-none hover:text-brand-800 text-center"
+                  onClick={() => toggleSort('generation_mode')}
+                >
+                  モード{sortIndicator('generation_mode')}
+                </th>
                 <th className="whitespace-nowrap px-4 py-3 font-medium text-brand-600 w-20 text-center">
                   確認
                 </th>
@@ -642,6 +732,15 @@ export default function ArticlesPage() {
                   </td>
                   <td className="px-4 py-3 text-brand-500 tabular-nums">
                     {formatDate(article.updated_at)}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    {renderHallucinationScore(article.hallucination_score)}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    {renderToneScore(article.yukiko_tone_score)}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    {renderGenerationMode(article.generation_mode)}
                   </td>
                   <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                     {PUBLISH_CONTROL_V2 ? (

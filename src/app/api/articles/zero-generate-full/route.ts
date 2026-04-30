@@ -9,26 +9,24 @@
 //   2. body 検証 (zeroGenerateRequestSchema)
 //   3. theme + persona を DB から取得
 //   4. Stage1 outline 生成 (buildZeroOutlinePrompt + Gemini)
-//   5. RAG retrieve (G2 retrieveChunks。未着地なら空)
-//   6. Stage2 writing (G2 buildZeroWritingPrompt。未着地なら stage2-writing 流用)
+//   5. RAG retrieve (G2 retrieveChunks。warning なら空配列)
+//   6. Stage2 writing 生成 (G2 buildZeroWritingPrompt + Gemini) → htmlBody
 //   7. 並列検証 (Promise.all):
-//        - claim 抽出 (extractClaims)
-//        - hallucination 4 検証 (G3 runHallucinationChecks)
+//        - claim 抽出 + 4 検証 (G3 runHallucinationChecks 内で完結)
 //        - tone 検証 (G4 runToneChecks)
-//      いずれも try/catch で他 Fixer 未着地時もフロー継続。
-//   8. 画像プロンプト生成 (G5 buildZeroImagePrompts)
+//   8. 画像プロンプト生成 (G5 buildZeroImagePrompts) — 実画像生成は本タスク外
 //   9. CTA variants 生成 (G9 generateCtaVariants)
-//   10. articles INSERT (新規のみ。既存記事 UPDATE 禁止)
-//   11. article_claims / cta_variants INSERT (G3 persistClaims, G9 persistCtaVariants)
-//   12. レスポンス: 全状態を含む JSON
+//   10. articles INSERT (status='draft', generation_mode='zero', stage1_outline,
+//       stage2_body_html, lead_summary, narrative_arc, citation_highlights,
+//       intent, hallucination_score, yukiko_tone_score)
+//   11. persistClaims / persistCtaVariants / persistToneScore
+//   12. article_revisions に履歴 INSERT (HTML 履歴ルール / 'auto_snapshot')
+//   13. レスポンス: 全状態を含む JSON
 //        - 全成功      → 201
-//        - 一部失敗    → 207 (partial)
+//        - 一部失敗    → 207 (partial_success=true)
 //
 // 既存 publish-control コア / articles.ts / 既存 zero-generate route は変更しない。
 // マイグレ追加なし。記事本文 (html_body 等) の UPDATE は一切行わない（INSERT のみ）。
-//
-// 動的 import: 並列 Fixer (G2/G3/G4/G5/G9) の遅延着地に対応するため、
-// 該当モジュールは try { await import(...) } catch {} でフォールバック処理を行う。
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -47,6 +45,20 @@ import {
   type ZeroOutlineInput,
   type ZeroOutlineOutput,
 } from '@/lib/ai/prompts/stage1-zero-outline';
+import {
+  buildZeroWritingPrompt,
+  ZERO_WRITING_TEMPERATURE,
+  type ZeroWritingInput,
+  type RetrievedChunk as ZeroWritingRetrievedChunk,
+} from '@/lib/ai/prompts/stage2-zero-writing';
+import { retrieveChunks } from '@/lib/rag/retrieve-chunks';
+import { runHallucinationChecks } from '@/lib/hallucination/run-checks';
+import { persistClaims } from '@/lib/hallucination/persist-claims';
+import { runToneChecks } from '@/lib/tone/run-tone-checks';
+import { persistToneScore } from '@/lib/tone/persist-tone';
+import { buildZeroImagePrompts } from '@/lib/ai/prompts/zero-image-prompt';
+import { generateCtaVariants } from '@/lib/content/cta-variants-generator';
+import { persistCtaVariants } from '@/lib/content/persist-cta-variants';
 import { logger } from '@/lib/logger';
 
 // ─── 型定義 ────────────────────────────────────────────────────────────────
@@ -66,18 +78,10 @@ interface PersonaRow {
   image_style?: unknown;
 }
 
-interface RetrievedChunkLite {
-  id?: string;
-  source_article_id?: string;
-  chunk_text?: string;
-  similarity?: number;
-}
-
 interface PipelineStageStatus {
   outline: 'ok' | 'failed';
   rag: 'ok' | 'skipped' | 'failed';
-  writing: 'ok' | 'fallback' | 'failed';
-  claims: 'ok' | 'skipped' | 'failed';
+  writing: 'ok' | 'failed';
   hallucination: 'ok' | 'skipped' | 'failed';
   tone: 'ok' | 'skipped' | 'failed';
   images: 'ok' | 'skipped' | 'failed';
@@ -85,6 +89,8 @@ interface PipelineStageStatus {
   insert_article: 'ok' | 'failed';
   insert_claims: 'ok' | 'skipped' | 'failed';
   insert_cta_variants: 'ok' | 'skipped' | 'failed';
+  insert_tone: 'ok' | 'skipped' | 'failed';
+  insert_revision: 'ok' | 'skipped' | 'failed';
 }
 
 // ─── theme + persona 取得 ──────────────────────────────────────────────────
@@ -146,24 +152,34 @@ async function generateStage1Outline(
   return outline;
 }
 
-// ─── RAG retrieve (G2 未着地時は空配列) ─────────────────────────────────────
+// ─── RAG retrieve ───────────────────────────────────────────────────────────
 
 async function retrieveRagChunks(input: {
   theme: string;
   persona_pain: string;
   keywords: string[];
-}): Promise<{ chunks: RetrievedChunkLite[]; status: 'ok' | 'skipped' | 'failed' }> {
+}): Promise<{
+  chunks: ZeroWritingRetrievedChunk[];
+  status: 'ok' | 'skipped' | 'failed';
+}> {
   try {
-    const ragModule = await import('@/lib/rag/retrieve-chunks').catch(() => null);
-    if (!ragModule || typeof ragModule.retrieveChunks !== 'function') {
-      return { chunks: [], status: 'skipped' };
-    }
     const supabase = await createServiceRoleClient();
-    const result = await ragModule.retrieveChunks(supabase, input);
-    return {
-      chunks: (result?.chunks ?? []) as RetrievedChunkLite[],
-      status: 'ok',
-    };
+    const result = await retrieveChunks(supabase, {
+      theme: input.theme,
+      persona_pain: input.persona_pain,
+      keywords: input.keywords,
+      similarityThreshold: 0.75,
+    });
+    // warning='insufficient_grounding' なら status='skipped' で空チャンクのまま継続
+    if (!result.chunks || result.chunks.length === 0) {
+      return { chunks: [], status: result.warning ? 'skipped' : 'ok' };
+    }
+    // ZeroWritingRetrievedChunk 形式 (text/similarity) に整形
+    const chunks: ZeroWritingRetrievedChunk[] = result.chunks.map((c) => ({
+      text: c.chunk_text,
+      similarity: c.similarity,
+    }));
+    return { chunks, status: 'ok' };
   } catch (err) {
     logger.warn('api', 'zero-generate-full.rag_failed', {
       error: err instanceof Error ? err.message : String(err),
@@ -172,280 +188,40 @@ async function retrieveRagChunks(input: {
   }
 }
 
-// ─── Stage2 writing (G2 未着地時は stage2-writing 流用) ─────────────────────
+// ─── Stage2 writing 生成 ────────────────────────────────────────────────────
 
 async function generateStage2Body(args: {
   outline: ZeroOutlineOutput;
   theme: ThemeRow;
   persona: PersonaRow;
-  keywords: string[];
-  intent: ZeroGenerateRequest['intent'];
-  target_length: number;
-  ragChunks: RetrievedChunkLite[];
-}): Promise<{ html: string; status: 'ok' | 'fallback' | 'failed' }> {
-  // G2 buildZeroWritingPrompt が着地していれば優先
-  let zeroBuilder:
-    | ((input: unknown) => { system: string; user: string })
-    | null = null;
-  try {
-    const zeroWritingModule = (await import(
-      /* webpackIgnore: true */ '@/lib/ai/prompts/stage2-zero-writing'
-    )) as { buildZeroWritingPrompt?: unknown };
-    const candidate = zeroWritingModule?.buildZeroWritingPrompt;
-    if (typeof candidate === 'function') {
-      zeroBuilder = candidate as (input: unknown) => {
-        system: string;
-        user: string;
-      };
-    }
-  } catch {
-    zeroBuilder = null;
-  }
-  if (zeroBuilder) {
-    try {
-      const prompt = zeroBuilder({
-        outline: args.outline,
-        theme: args.theme,
-        persona: args.persona,
-        keywords: args.keywords,
-        intent: args.intent,
-        target_length: args.target_length,
-        rag_chunks: args.ragChunks,
-      });
-      const { data } = await generateJson<{ html: string } | string>(
-        prompt.system,
-        prompt.user,
-        { temperature: 0.7, topP: 0.9 },
-      );
-      const html =
-        typeof data === 'string'
-          ? data
-          : (data as { html?: string })?.html ?? '';
-      return { html, status: 'ok' };
-    } catch (err) {
-      logger.warn('api', 'zero-generate-full.zero_writing_failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  retrievedChunks: ZeroWritingRetrievedChunk[];
+}): Promise<string> {
+  const writingInput: ZeroWritingInput = {
+    outline: args.outline,
+    persona: {
+      id: args.persona.id,
+      name: args.persona.name,
+      age_range: args.persona.age_range ?? undefined,
+      tone_guide: args.persona.tone_guide ?? undefined,
+    },
+    theme: {
+      id: args.theme.id,
+      name: args.theme.name,
+      category: args.theme.category ?? undefined,
+    },
+    retrievedChunks: args.retrievedChunks,
+  };
 
-  // フォールバック: 既存 stage2-writing を流用（input shape を組み立てる）
-  try {
-    const fallback = await import('@/lib/ai/prompts/stage2-writing');
-    const stage2Input = {
-      keyword: args.keywords[0] ?? '',
-      theme: args.theme.name,
-      targetPersona: args.persona.name,
-      perspectiveType: args.intent,
-      targetWordCount: args.target_length,
-      outline: {
-        title_proposal:
-          args.outline.h2_chapters?.[0]?.title ?? args.keywords[0] ?? '',
-        headings: (args.outline.h2_chapters ?? []).map((c) => ({
-          level: 'h2',
-          text: c.title,
-          estimated_words: c.target_chars,
-        })),
-        faq: (args.outline.faq_items ?? []).map((f) => ({
-          question: f.q,
-          answer: f.a,
-        })),
-        cta_texts: [],
-        cta_positions: [],
-        image_prompts: (args.outline.image_prompts ?? []).map((p) => ({
-          section_id: p.slot,
-          suggested_filename: `${p.slot}.png`,
-          prompt: p.prompt,
-        })),
-      },
-    } as unknown as Parameters<typeof fallback.buildWritingPrompt>[0];
+  const { system, user: userPrompt } = buildZeroWritingPrompt(writingInput);
 
-    const prompt = fallback.buildWritingPrompt(stage2Input);
-    const { data } = await generateJson<{ html: string } | string>(
-      prompt.system,
-      prompt.user,
-      { temperature: 0.7, topP: 0.9 },
-    );
-    const html =
-      typeof data === 'string'
-        ? data
-        : (data as { html?: string })?.html ?? '';
-    return { html, status: 'fallback' };
-  } catch (err) {
-    logger.error(
-      'api',
-      'zero-generate-full.stage2_fallback_failed',
-      undefined,
-      err,
-    );
-    return { html: '', status: 'failed' };
-  }
-}
+  const { data } = await generateJson<{ html: string } | string>(
+    system,
+    userPrompt,
+    { temperature: ZERO_WRITING_TEMPERATURE, topP: 0.9 },
+  );
 
-// ─── claim 抽出 ────────────────────────────────────────────────────────────
-
-async function runClaimExtraction(htmlBody: string) {
-  try {
-    const mod = await import('@/lib/hallucination/claim-extractor').catch(
-      () => null,
-    );
-    if (!mod || typeof mod.extractClaims !== 'function') {
-      return { claims: [] as unknown[], status: 'skipped' as const };
-    }
-    const claims = await mod.extractClaims(htmlBody);
-    return { claims: claims as unknown[], status: 'ok' as const };
-  } catch (err) {
-    logger.warn('api', 'zero-generate-full.claims_failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { claims: [] as unknown[], status: 'failed' as const };
-  }
-}
-
-// ─── hallucination 4 検証 (G3) ─────────────────────────────────────────────
-
-interface HallucinationResultLite {
-  hallucination_score?: number;
-  criticals?: number;
-  results?: unknown[];
-  summary?: unknown;
-}
-
-async function runHallucination(htmlBody: string): Promise<{
-  result: HallucinationResultLite;
-  status: 'ok' | 'skipped' | 'failed';
-}> {
-  try {
-    const mod = await import('@/lib/hallucination/run-checks').catch(
-      () => null,
-    );
-    if (!mod || typeof mod.runHallucinationChecks !== 'function') {
-      return { result: {}, status: 'skipped' };
-    }
-    const result = (await mod.runHallucinationChecks(
-      htmlBody,
-    )) as HallucinationResultLite;
-    return { result, status: 'ok' };
-  } catch (err) {
-    logger.warn('api', 'zero-generate-full.hallucination_failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { result: {}, status: 'failed' };
-  }
-}
-
-// ─── tone 検証 (G4) ────────────────────────────────────────────────────────
-
-interface ToneResultLite {
-  tone?: { total?: number; passed?: boolean };
-  centroidSimilarity?: number;
-  passed?: boolean;
-}
-
-async function runTone(htmlBody: string): Promise<{
-  result: ToneResultLite;
-  status: 'ok' | 'skipped' | 'failed';
-}> {
-  try {
-    const mod = await import('@/lib/tone/run-tone-checks').catch(() => null);
-    if (!mod || typeof mod.runToneChecks !== 'function') {
-      return { result: {}, status: 'skipped' };
-    }
-    const result = (await mod.runToneChecks(htmlBody)) as ToneResultLite;
-    return { result, status: 'ok' };
-  } catch (err) {
-    logger.warn('api', 'zero-generate-full.tone_failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { result: {}, status: 'failed' };
-  }
-}
-
-// ─── 画像プロンプト生成 (G5) ───────────────────────────────────────────────
-
-interface ImagePromptsResult {
-  hero?: string;
-  body?: string;
-  summary?: string;
-}
-
-async function runImagePrompts(args: {
-  outline: ZeroOutlineOutput;
-  theme: ThemeRow;
-  persona: PersonaRow;
-}): Promise<{ result: ImagePromptsResult; status: 'ok' | 'skipped' | 'failed' }> {
-  try {
-    const mod = await import('@/lib/ai/prompts/zero-image-prompt').catch(
-      () => null,
-    );
-    if (!mod || typeof mod.buildZeroImagePrompts !== 'function') {
-      return { result: {}, status: 'skipped' };
-    }
-    const result = mod.buildZeroImagePrompts({
-      outline: args.outline,
-      persona: { image_style: args.persona.image_style as never },
-      theme: { visual_mood: args.theme.visual_mood as never, name: args.theme.name },
-    }) as ImagePromptsResult;
-    return { result, status: 'ok' };
-  } catch (err) {
-    logger.warn('api', 'zero-generate-full.image_prompts_failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { result: {}, status: 'failed' };
-  }
-}
-
-// ─── CTA variants 生成 (G9) ────────────────────────────────────────────────
-
-interface CtaVariantsResult {
-  variants?: unknown[];
-}
-
-async function runCtaVariants(args: {
-  outline: ZeroOutlineOutput;
-  theme: ThemeRow;
-  persona: PersonaRow;
-  intent: ZeroGenerateRequest['intent'];
-}): Promise<{ result: CtaVariantsResult; status: 'ok' | 'skipped' | 'failed' }> {
-  // 既知候補パスをいくつか試す（G9 が確定パスを最終決めしたら更新）
-  const candidatePaths = [
-    '@/lib/cta/generate-variants',
-    '@/lib/cta-variants/generate',
-    '@/lib/content/cta-variants',
-  ];
-  for (const p of candidatePaths) {
-    let fn: ((input: unknown) => Promise<CtaVariantsResult>) | null = null;
-    try {
-      const mod = (await import(/* webpackIgnore: true */ p)) as {
-        generateCtaVariants?: unknown;
-      };
-      // 一部のテスト/auto-mock 系では未定義エクスポートへのアクセス時に
-      // 例外を投げる実装があるため、プロパティ取得自体も try で覆う
-      const candidate = mod?.generateCtaVariants;
-      if (typeof candidate === 'function') {
-        fn = candidate as (input: unknown) => Promise<CtaVariantsResult>;
-      }
-    } catch {
-      continue; // モジュール未着地 / プロパティ未定義 → 次候補
-    }
-    if (!fn) continue;
-    try {
-      const result = await fn({
-        outline: args.outline,
-        theme: args.theme,
-        persona: args.persona,
-        intent: args.intent,
-      });
-      return { result: result ?? { variants: [] }, status: 'ok' };
-    } catch (err) {
-      logger.warn('api', 'zero-generate-full.cta_path_failed', {
-        path: p,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return { result: { variants: [] }, status: 'failed' };
-    }
-  }
-  return { result: { variants: [] }, status: 'skipped' };
+  if (typeof data === 'string') return data;
+  return (data as { html?: string })?.html ?? '';
 }
 
 // ─── articles INSERT ──────────────────────────────────────────────────────
@@ -498,88 +274,44 @@ async function insertZeroArticle(args: {
   return { id: (data as { id: string }).id };
 }
 
-// ─── article_claims persist (G3) ───────────────────────────────────────────
-
-type PersistClaimsFn = (
+// ─── article_revisions INSERT (HTML 履歴ルール) ───────────────────────────
+//
+// 新規生成直後の auto_snapshot として、生成された HTML を履歴に積む。
+// 既存 saveRevision ヘルパは複数テーブル（articles 等）を参照するため、
+// ここでは article_revisions のみへ最小 INSERT を行う独自実装。
+// 失敗しても本フローは partial_success で継続させる。
+async function insertAutoSnapshot(
   articleId: string,
-  claims: unknown[],
-  results?: unknown[],
-) => Promise<unknown>;
-
-async function persistClaimsIfPossible(
-  articleId: string,
-  claims: unknown[],
-  hallucinationResults: unknown[],
-): Promise<'ok' | 'skipped' | 'failed'> {
-  if (!Array.isArray(claims) || claims.length === 0) return 'skipped';
-  // モジュール自体が未着地 → skipped、着地済みで実行が失敗 → failed
-  let fn: PersistClaimsFn | null = null;
-  try {
-    const mod = (await import(
-      /* webpackIgnore: true */ '@/lib/hallucination/persist-claims'
-    )) as { persistClaims?: unknown };
-    const candidate = mod?.persistClaims;
-    if (typeof candidate === 'function') {
-      fn = candidate as PersistClaimsFn;
-    }
-  } catch {
-    return 'skipped';
-  }
-  if (!fn) return 'skipped';
-  try {
-    await fn(articleId, claims, hallucinationResults);
-    return 'ok';
-  } catch (err) {
-    logger.warn('api', 'zero-generate-full.persist_claims_failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return 'failed';
+  bodyHtml: string,
+  title: string,
+  userId: string | null,
+): Promise<void> {
+  const supabase = await createServiceRoleClient();
+  const { error } = await supabase.from('article_revisions').insert({
+    article_id: articleId,
+    revision_number: 1,
+    html_snapshot: bodyHtml,
+    change_type: 'auto_snapshot',
+    changed_by: userId,
+    comment: JSON.stringify({ title, source: 'zero-generate-full' }),
+  });
+  if (error) {
+    throw new Error(
+      `article_revisions INSERT 失敗: ${error.message}`,
+    );
   }
 }
 
-// ─── cta_variants persist (G9) ─────────────────────────────────────────────
+// ─── slug 生成（CTA UTM 用） ──────────────────────────────────────────────
 
-type PersistCtaFn = (
-  articleId: string,
-  variants: unknown[],
-) => Promise<unknown>;
-
-async function persistCtaVariantsIfPossible(
-  articleId: string,
-  variants: unknown[],
-): Promise<'ok' | 'skipped' | 'failed'> {
-  if (!Array.isArray(variants) || variants.length === 0) return 'skipped';
-  const candidatePaths = [
-    '@/lib/cta/persist-variants',
-    '@/lib/cta-variants/persist',
-    '@/lib/content/cta-variants-persist',
-  ];
-  for (const p of candidatePaths) {
-    let fn: PersistCtaFn | null = null;
-    try {
-      const mod = (await import(/* webpackIgnore: true */ p)) as {
-        persistCtaVariants?: unknown;
-      };
-      const candidate = mod?.persistCtaVariants;
-      if (typeof candidate === 'function') {
-        fn = candidate as PersistCtaFn;
-      }
-    } catch {
-      continue; // モジュール未着地 / プロパティ未定義 → 次候補
-    }
-    if (!fn) continue;
-    try {
-      await fn(articleId, variants);
-      return 'ok';
-    } catch (err) {
-      logger.warn('api', 'zero-generate-full.persist_cta_failed', {
-        path: p,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return 'failed';
-    }
-  }
-  return 'skipped';
+function buildArticleSlug(articleId: string, title: string): string {
+  // CTA は articleSlug 必須。タイトルが空の場合は articleId を使うフォールバック。
+  const safeTitle = title
+    .toLowerCase()
+    .replace(/[\s　]+/g, '-')
+    .replace(/[^a-z0-9\-_]/gu, '')
+    .slice(0, 32);
+  return safeTitle || `article-${articleId.slice(0, 8)}`;
 }
 
 // ─── POST ハンドラ ─────────────────────────────────────────────────────────
@@ -590,7 +322,6 @@ export async function POST(request: NextRequest) {
     outline: 'failed',
     rag: 'skipped',
     writing: 'failed',
-    claims: 'skipped',
     hallucination: 'skipped',
     tone: 'skipped',
     images: 'skipped',
@@ -598,6 +329,8 @@ export async function POST(request: NextRequest) {
     insert_article: 'failed',
     insert_claims: 'skipped',
     insert_cta_variants: 'skipped',
+    insert_tone: 'skipped',
+    insert_revision: 'skipped',
   };
 
   try {
@@ -670,49 +403,96 @@ export async function POST(request: NextRequest) {
     stages.rag = rag.status;
 
     // 6. Stage2 writing
-    const stage2 = await generateStage2Body({
-      outline,
-      theme,
-      persona,
-      keywords: body.keywords,
-      intent: body.intent,
-      target_length: body.target_length,
-      ragChunks: rag.chunks,
-    });
-    stages.writing = stage2.status;
-    const bodyHtml = stage2.html;
+    let bodyHtml = '';
+    try {
+      bodyHtml = await generateStage2Body({
+        outline,
+        theme,
+        persona,
+        retrievedChunks: rag.chunks,
+      });
+      stages.writing = 'ok';
+    } catch (err) {
+      logger.error(
+        'api',
+        'zero-generate-full.writing_failed',
+        undefined,
+        err,
+      );
+      stages.writing = 'failed';
+      // writing 失敗時は記事 INSERT に進めないので 500 で返す
+      throw err;
+    }
 
-    // 7. 並列検証 (claim / hallucination / tone)
-    const [claimsResult, halluResult, toneResult] = await Promise.all([
-      runClaimExtraction(bodyHtml),
-      runHallucination(bodyHtml),
-      runTone(bodyHtml),
+    // 7. 並列検証 (claim 抽出 + 4 検証 + tone)
+    const [halluSettled, toneSettled] = await Promise.all([
+      runHallucinationChecks(bodyHtml).then(
+        (result) => ({ ok: true as const, result }),
+        (err: unknown) => ({ ok: false as const, err }),
+      ),
+      runToneChecks(bodyHtml).then(
+        (result) => ({ ok: true as const, result }),
+        (err: unknown) => ({ ok: false as const, err }),
+      ),
     ]);
-    stages.claims = claimsResult.status;
-    stages.hallucination = halluResult.status;
-    stages.tone = toneResult.status;
+
+    const halluResult = halluSettled.ok ? halluSettled.result : null;
+    if (halluSettled.ok) {
+      stages.hallucination = 'ok';
+    } else {
+      stages.hallucination = 'failed';
+      logger.warn('api', 'zero-generate-full.hallucination_failed', {
+        error:
+          halluSettled.err instanceof Error
+            ? halluSettled.err.message
+            : String(halluSettled.err),
+      });
+    }
+
+    const toneResult = toneSettled.ok ? toneSettled.result : null;
+    if (toneSettled.ok) {
+      stages.tone = 'ok';
+    } else {
+      stages.tone = 'failed';
+      logger.warn('api', 'zero-generate-full.tone_failed', {
+        error:
+          toneSettled.err instanceof Error
+            ? toneSettled.err.message
+            : String(toneSettled.err),
+      });
+    }
 
     // 8. 画像プロンプト
-    const images = await runImagePrompts({ outline, theme, persona });
-    stages.images = images.status;
+    let imagePrompts: { hero: string; body: string; summary: string } = {
+      hero: '',
+      body: '',
+      summary: '',
+    };
+    try {
+      imagePrompts = buildZeroImagePrompts({
+        outline,
+        persona: { image_style: persona.image_style as never },
+        theme: {
+          visual_mood: theme.visual_mood as never,
+          name: theme.name,
+        },
+      });
+      stages.images = 'ok';
+    } catch (err) {
+      logger.warn('api', 'zero-generate-full.image_prompts_failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      stages.images = 'failed';
+    }
 
-    // 9. CTA variants
-    const ctaVariants = await runCtaVariants({
-      outline,
-      theme,
-      persona,
-      intent: body.intent,
-    });
-    stages.cta_variants = ctaVariants.status;
-
-    // 10. articles INSERT
+    // 10. articles INSERT（11 → 9 の順を保つため、CTA 生成は INSERT 後 articleId が必要なら後段）
     const hallucinationScore =
-      typeof halluResult.result.hallucination_score === 'number'
-        ? halluResult.result.hallucination_score
+      halluResult && typeof halluResult.hallucination_score === 'number'
+        ? halluResult.hallucination_score
         : null;
     const yukikoToneScore =
-      typeof toneResult.result.tone?.total === 'number'
-        ? toneResult.result.tone.total
+      toneResult && typeof toneResult.tone?.total === 'number'
+        ? toneResult.tone.total
         : null;
 
     const { id: articleId } = await insertZeroArticle({
@@ -728,28 +508,96 @@ export async function POST(request: NextRequest) {
     });
     stages.insert_article = 'ok';
 
-    // 11. article_claims / cta_variants INSERT
-    stages.insert_claims = await persistClaimsIfPossible(
-      articleId,
-      claimsResult.claims,
-      halluResult.result.results ?? [],
-    );
-    stages.insert_cta_variants = await persistCtaVariantsIfPossible(
-      articleId,
-      ctaVariants.result.variants ?? [],
-    );
+    const articleTitle =
+      outline.h2_chapters?.[0]?.title ?? body.keywords[0] ?? 'untitled';
+    const articleSlug = buildArticleSlug(articleId, articleTitle);
 
-    // 12. レスポンス
+    // 9. CTA variants 生成
+    let ctaVariants: Awaited<ReturnType<typeof generateCtaVariants>> = [];
+    try {
+      ctaVariants = generateCtaVariants({
+        articleSlug,
+        persona: {
+          id: persona.id,
+          name: persona.name,
+          age_range: persona.age_range,
+        },
+        intent: body.intent,
+      });
+      stages.cta_variants = ctaVariants.length > 0 ? 'ok' : 'skipped';
+    } catch (err) {
+      logger.warn('api', 'zero-generate-full.cta_variants_failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      stages.cta_variants = 'failed';
+    }
+
+    // 11. persistClaims / persistCtaVariants / persistToneScore
+    if (halluResult && Array.isArray(halluResult.claims) && halluResult.claims.length > 0) {
+      try {
+        await persistClaims(articleId, halluResult.claims);
+        stages.insert_claims = 'ok';
+      } catch (err) {
+        logger.warn('api', 'zero-generate-full.persist_claims_failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        stages.insert_claims = 'failed';
+      }
+    } else {
+      stages.insert_claims = 'skipped';
+    }
+
+    if (Array.isArray(ctaVariants) && ctaVariants.length > 0) {
+      try {
+        await persistCtaVariants(articleId, ctaVariants);
+        stages.insert_cta_variants = 'ok';
+      } catch (err) {
+        logger.warn('api', 'zero-generate-full.persist_cta_failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        stages.insert_cta_variants = 'failed';
+      }
+    } else {
+      stages.insert_cta_variants = 'skipped';
+    }
+
+    if (toneResult) {
+      try {
+        await persistToneScore(articleId, toneResult);
+        stages.insert_tone = 'ok';
+      } catch (err) {
+        logger.warn('api', 'zero-generate-full.persist_tone_failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        stages.insert_tone = 'failed';
+      }
+    } else {
+      stages.insert_tone = 'skipped';
+    }
+
+    // 12. article_revisions に履歴 INSERT (HTML 履歴ルール)
+    try {
+      await insertAutoSnapshot(articleId, bodyHtml, articleTitle, user.id);
+      stages.insert_revision = 'ok';
+    } catch (err) {
+      logger.warn('api', 'zero-generate-full.insert_revision_failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      stages.insert_revision = 'failed';
+    }
+
+    // 13. レスポンス
+    // writing は失敗時に throw して 500 へ抜けるため、ここでは ok 固定。
     const partial =
       stages.rag === 'failed' ||
-      stages.writing === 'failed' ||
-      stages.claims === 'failed' ||
       stages.hallucination === 'failed' ||
       stages.tone === 'failed' ||
       stages.images === 'failed' ||
       stages.cta_variants === 'failed' ||
       stages.insert_claims === 'failed' ||
-      stages.insert_cta_variants === 'failed';
+      stages.insert_cta_variants === 'failed' ||
+      stages.insert_tone === 'failed' ||
+      stages.insert_revision === 'failed';
 
     const responseBody = {
       article_id: articleId,
@@ -762,21 +610,20 @@ export async function POST(request: NextRequest) {
       scores: {
         hallucination: hallucinationScore,
         yukiko_tone: yukikoToneScore,
-        centroid_similarity: toneResult.result.centroidSimilarity ?? null,
+        centroid_similarity: toneResult?.centroidSimilarity ?? null,
       },
-      claims_count: Array.isArray(claimsResult.claims)
-        ? claimsResult.claims.length
-        : 0,
-      criticals: halluResult.result.criticals ?? 0,
-      tone_passed: toneResult.result.passed ?? null,
+      claims_count:
+        halluResult && Array.isArray(halluResult.claims)
+          ? halluResult.claims.length
+          : 0,
+      criticals: halluResult?.criticals ?? 0,
+      tone_passed: toneResult?.passed ?? null,
       rag: {
         chunks_count: rag.chunks.length,
         status: rag.status,
       },
-      image_prompts: images.result,
-      cta_variants_count: Array.isArray(ctaVariants.result.variants)
-        ? ctaVariants.result.variants.length
-        : 0,
+      image_prompts: imagePrompts,
+      cta_variants_count: Array.isArray(ctaVariants) ? ctaVariants.length : 0,
       duration_ms: Date.now() - startedAt,
     };
 

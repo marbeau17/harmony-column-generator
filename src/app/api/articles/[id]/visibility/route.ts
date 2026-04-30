@@ -87,6 +87,22 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: guard.message, code: guard.code }, { status: 422 });
   }
 
+  // 第4ゲート: hallucination critical = 0（公開試行時のみ）
+  if (body.visible) {
+    const { count: criticalCount } = await service
+      .from('article_claims')
+      .select('id', { count: 'exact', head: true })
+      .eq('article_id', articleId)
+      .eq('risk', 'critical');
+    if (criticalCount && criticalCount > 0) {
+      return NextResponse.json({
+        error: 'hallucination critical not zero',
+        code: 'HALLUCINATION_CRITICAL',
+        criticalCount,
+      }, { status: 422 });
+    }
+  }
+
   // Dangling-deploying recovery.
   const currentState = (article.visibility_state ?? 'idle') as VisibilityState;
   if (currentState === 'deploying') {

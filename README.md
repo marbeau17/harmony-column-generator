@@ -191,3 +191,68 @@ CREATE POLICY "Published articles are public" ON articles
 - 最新サイクルの作業仕様: `docs/optimized_spec.md`
 - 実装進捗: `docs/progress.md`
 - 評価レポート: `docs/feedback/eval_report.md`
+
+---
+
+## Zero-Generation V1（テーマ/ペルソナベース記事ゼロ生成）
+
+### 概要
+ソース記事に依存せず、テーマ + ペルソナ + キーワード + intent から記事を AI で生成。
+**ハルシネーション 4 検証**（factual / attribution / spiritual / logical）と
+**由起子トーン scoring**（14 項目 + 文体 centroid）が公開ゲートに連動。
+
+### 生成方式の選択
+- `/dashboard/articles/new-choice` — 既存ソース vs ゼロ生成 の 2 カードから選択
+- 既存ソースから: `/dashboard/articles/new`
+- ゼロ生成: `/dashboard/articles/new-from-scratch`
+
+### パイプライン（8 LLM 呼出、並列化で実時間 ~35s）
+1. Stage1 outline (テーマ/ペルソナ/intent → JSON)
+2. RAG retrieve (1499 source 記事から top-5 grounding)
+3. Stage2 writing (文体 DNA + grounding → HTML)
+4. 並列検証:
+   - claim 抽出 → 4 タイプハルシネーション検証
+   - 由起子トーン scoring + centroid 類似度
+5. 画像プロンプト生成 (3 枚、ペルソナ別ビジュアル)
+6. CTA Variants 生成 (3 バリアント、utm_content)
+7. articles INSERT + claims/cta_variants/article_revisions
+
+### 公開ゲート（4 段階）
+1. template_valid
+2. quality_check.passed
+3. reviewed_at IS NOT NULL
+4. **hallucination critical = 0**（新追加）
+
+### API
+- `POST /api/articles/zero-generate-full` — 完全パイプライン実行
+- `POST /api/articles/[id]/hallucination-check` — 再検証
+- `POST /api/articles/[id]/regenerate-segment` — 文/章/全体の再生成
+
+### 環境変数（追加分）
+| Key | 必須 | 用途 |
+|---|---|---|
+| `GEMINI_API_KEY` | ✅ | embedding (text-embedding-004) + 生成 |
+| `GEMINI_VISION_MODEL` | 任意 | 画像 Vision 検査（default: gemini-2.5-flash） |
+
+### 運用 SQL（追加）
+```sql
+-- 1. ゼロ生成記事数
+SELECT count(*) FROM articles WHERE generation_mode='zero';
+
+-- 2. ハルシネーション critical 残存記事
+SELECT a.id, a.title, count(c.id) AS criticals
+FROM articles a
+LEFT JOIN article_claims c ON c.article_id=a.id AND c.risk='critical'
+GROUP BY a.id, a.title HAVING count(c.id) > 0;
+
+-- 3. トーン低い記事
+SELECT id, title, yukiko_tone_score FROM articles
+WHERE yukiko_tone_score < 0.80 ORDER BY yukiko_tone_score ASC LIMIT 10;
+```
+
+### 監視 URL
+- `/dashboard/publish-events` — ハルシネ/トーン概況含む
+- `/dashboard/articles` — 一覧にスコア列
+
+### 仕様書
+`docs/optimized_spec.md`（20 名専門家 spec、701 行）

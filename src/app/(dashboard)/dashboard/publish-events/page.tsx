@@ -4,7 +4,9 @@
 // 仕様: docs/optimized_spec.md §2.3 #8 / AC-P3-8〜P3-11
 // ----------------------------------------------------------------------------
 // - レンジ選択 (24h / 7d / 30d) → /api/publish-events?range=... から集計取得
-// - カード 3 枚: 集計 / ハブデプロイ状況 / 失敗イベント直近 10 件
+// - カード: 集計 / ハブデプロイ状況 / 失敗イベント直近 10 件
+// - 追加カード（include=hallucination,tone）:
+//     ハルシネーション概況 / 由起子トーン概況
 // - 読み取りのみ。既存 publish-control コアは触らない。
 // - TailwindCSS の `dark:` を併記（グローバル CLAUDE.md ルール）
 // ============================================================================
@@ -25,12 +27,38 @@ interface FailedEvent {
   created_at: string;
 }
 
+interface HallucinationArticle {
+  id: string;
+  title: string | null;
+  hallucination_score: number | null;
+}
+
+interface ToneArticle {
+  id: string;
+  title: string | null;
+  yukiko_tone_score: number | null;
+}
+
+interface HallucinationSummary {
+  avgScore: number | null;
+  criticalCount: number;
+  criticalArticles: HallucinationArticle[];
+}
+
+interface ToneSummary {
+  avgScore: number | null;
+  lowCount: number;
+  lowArticles: ToneArticle[];
+}
+
 interface SummaryResponse {
   range: RangeKey;
   totalEvents: number;
   byAction: Record<string, number>;
   byHubStatus: Record<string, number>;
   failedRecent: FailedEvent[];
+  hallucination?: HallucinationSummary;
+  tone?: ToneSummary;
 }
 
 const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
@@ -38,6 +66,8 @@ const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: '7d', label: '直近 7 日' },
   { key: '30d', label: '直近 30 日' },
 ];
+
+const TONE_LOW_THRESHOLD = 0.8;
 
 // ─── ユーティリティ ─────────────────────────────────────────────────────────
 
@@ -63,6 +93,11 @@ function sortedEntries(
   return Object.entries(record).sort((a, b) => b[1] - a[1]);
 }
 
+function formatScore(v: number | null | undefined, digits = 3): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return '—';
+  return v.toFixed(digits);
+}
+
 // ─── ページコンポーネント ────────────────────────────────────────────────────
 
 export default function PublishEventsPage() {
@@ -75,7 +110,9 @@ export default function PublishEventsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/publish-events?range=${target}`);
+      const res = await fetch(
+        `/api/publish-events?range=${target}&include=hallucination,tone`,
+      );
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `HTTP ${res.status}`);
@@ -327,6 +364,164 @@ export default function PublishEventsPage() {
               </div>
             )}
           </section>
+
+          {/* ── カード 4: ハルシネーション概況（全幅） ───────────── */}
+          {data.hallucination && (
+            <section className={`${cardClass} lg:col-span-2`}>
+              <h2 className={cardTitleClass}>ハルシネーション概況</h2>
+
+              <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    全記事 hallucination_score 平均
+                  </div>
+                  <div className="text-3xl font-bold text-brand-600 dark:text-brand-300">
+                    {formatScore(data.hallucination.avgScore)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    critical claim 残存記事数（block 候補）
+                  </div>
+                  <div
+                    className={`text-3xl font-bold ${
+                      data.hallucination.criticalCount === 0
+                        ? 'text-emerald-600 dark:text-emerald-300'
+                        : 'text-red-600 dark:text-red-300'
+                    }`}
+                  >
+                    {data.hallucination.criticalCount.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                critical 残存記事（hallucination_score 降順、最大 10 件）
+              </h3>
+              {data.hallucination.criticalArticles.length === 0 ? (
+                <p className="text-sm text-gray-400 dark:text-gray-500">
+                  critical claim を持つ記事はありません
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[600px]">
+                    <thead>
+                      <tr>
+                        <th className={thClass}>article_id</th>
+                        <th className={thClass}>title</th>
+                        <th className={`${thClass} text-right`}>
+                          hallucination_score
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.hallucination.criticalArticles.map((a) => (
+                        <tr key={a.id}>
+                          <td
+                            className={`${tdClass} font-mono text-xs`}
+                            title={a.id}
+                          >
+                            {a.id.slice(0, 8)}...
+                          </td>
+                          <td className={`${tdClass} max-w-md truncate`} title={a.title ?? ''}>
+                            {a.title ?? '(無題)'}
+                          </td>
+                          <td
+                            className={`${tdClass} text-right font-mono text-sm font-semibold text-red-600 dark:text-red-300`}
+                          >
+                            {formatScore(a.hallucination_score)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ── カード 5: 由起子トーン概況（全幅） ───────────── */}
+          {data.tone && (
+            <section className={`${cardClass} lg:col-span-2`}>
+              <h2 className={cardTitleClass}>由起子トーン概況</h2>
+
+              <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    全記事 yukiko_tone_score 平均
+                  </div>
+                  <div
+                    className={`text-3xl font-bold ${
+                      data.tone.avgScore === null
+                        ? 'text-gray-400 dark:text-gray-500'
+                        : data.tone.avgScore >= TONE_LOW_THRESHOLD
+                          ? 'text-emerald-600 dark:text-emerald-300'
+                          : 'text-amber-600 dark:text-amber-300'
+                    }`}
+                  >
+                    {formatScore(data.tone.avgScore)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    tone &lt; {TONE_LOW_THRESHOLD.toFixed(2)} 記事数
+                  </div>
+                  <div
+                    className={`text-3xl font-bold ${
+                      data.tone.lowCount === 0
+                        ? 'text-emerald-600 dark:text-emerald-300'
+                        : 'text-amber-600 dark:text-amber-300'
+                    }`}
+                  >
+                    {data.tone.lowCount.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                低トーン記事（yukiko_tone_score 昇順、最大 10 件）
+              </h3>
+              {data.tone.lowArticles.length === 0 ? (
+                <p className="text-sm text-gray-400 dark:text-gray-500">
+                  tone &lt; {TONE_LOW_THRESHOLD.toFixed(2)} の記事はありません
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[600px]">
+                    <thead>
+                      <tr>
+                        <th className={thClass}>article_id</th>
+                        <th className={thClass}>title</th>
+                        <th className={`${thClass} text-right`}>
+                          yukiko_tone_score
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.tone.lowArticles.map((a) => (
+                        <tr key={a.id}>
+                          <td
+                            className={`${tdClass} font-mono text-xs`}
+                            title={a.id}
+                          >
+                            {a.id.slice(0, 8)}...
+                          </td>
+                          <td className={`${tdClass} max-w-md truncate`} title={a.title ?? ''}>
+                            {a.title ?? '(無題)'}
+                          </td>
+                          <td
+                            className={`${tdClass} text-right font-mono text-sm font-semibold text-amber-600 dark:text-amber-300`}
+                          >
+                            {formatScore(a.yukiko_tone_score)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
         </div>
       )}
     </div>

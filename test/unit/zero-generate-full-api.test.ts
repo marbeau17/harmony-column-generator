@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   themeMaybeSingleMock: vi.fn(),
   personaMaybeSingleMock: vi.fn(),
   articlesInsertSingleMock: vi.fn(),
+  revisionsInsertMock: vi.fn(async () => ({ data: null, error: null })),
   generateJsonMock: vi.fn(),
   retrieveChunksMock: vi.fn(),
   runHallucinationChecksMock: vi.fn(),
@@ -43,6 +44,10 @@ const mocks = vi.hoisted(() => ({
   buildZeroImagePromptsMock: vi.fn(),
   extractClaimsMock: vi.fn(),
   buildZeroWritingPromptMock: vi.fn(),
+  generateCtaVariantsMock: vi.fn(),
+  persistCtaVariantsMock: vi.fn(),
+  persistClaimsMock: vi.fn(),
+  persistToneScoreMock: vi.fn(),
   articlesInsertCapture: { payload: null as Record<string, unknown> | null },
 }));
 
@@ -75,6 +80,11 @@ vi.mock('@/lib/supabase/server', () => ({
               select: () => ({ single: mocks.articlesInsertSingleMock }),
             };
           },
+        };
+      }
+      if (table === 'article_revisions') {
+        return {
+          insert: mocks.revisionsInsertMock,
         };
       }
       throw new Error(`unexpected table: ${table}`);
@@ -121,17 +131,24 @@ vi.mock('@/lib/publish-control/session-guard', () => ({
   assertArticleDeleteAllowed: vi.fn(),
 }));
 
-// G3 persistClaims / G9 cta-variants 系は本テストでは未着地扱い
-// （vitest の auto-mock factory 例外を回避するため空モジュールを供給）
-vi.mock('@/lib/hallucination/persist-claims', () => ({}));
-vi.mock('@/lib/cta/generate-variants', () => ({}));
-vi.mock('@/lib/cta-variants/generate', () => ({}));
-vi.mock('@/lib/content/cta-variants', () => ({}));
-vi.mock('@/lib/cta/persist-variants', () => ({}));
-vi.mock('@/lib/cta-variants/persist', () => ({}));
-vi.mock('@/lib/content/cta-variants-persist', () => ({}));
+// G3 persistClaims / G9 cta-variants 系（直接 import 化に追従して全てモック）
+vi.mock('@/lib/hallucination/persist-claims', () => ({
+  persistClaims: mocks.persistClaimsMock,
+  defaultSupabaseFactory: vi.fn(),
+}));
+vi.mock('@/lib/content/cta-variants-generator', () => ({
+  generateCtaVariants: mocks.generateCtaVariantsMock,
+  MICRO_COPY_POOL: [],
+}));
+vi.mock('@/lib/content/persist-cta-variants', () => ({
+  persistCtaVariants: mocks.persistCtaVariantsMock,
+}));
+vi.mock('@/lib/tone/persist-tone', () => ({
+  persistToneScore: mocks.persistToneScoreMock,
+}));
 vi.mock('@/lib/ai/prompts/stage2-zero-writing', () => ({
   buildZeroWritingPrompt: mocks.buildZeroWritingPromptMock,
+  ZERO_WRITING_TEMPERATURE: 0.7,
 }));
 
 // ─── alias for readability ─────────────────────────────────────────────────
@@ -147,6 +164,10 @@ const runToneChecksMock = mocks.runToneChecksMock;
 const buildZeroImagePromptsMock = mocks.buildZeroImagePromptsMock;
 const extractClaimsMock = mocks.extractClaimsMock;
 const buildZeroWritingPromptMock = mocks.buildZeroWritingPromptMock;
+const generateCtaVariantsMock = mocks.generateCtaVariantsMock;
+const persistCtaVariantsMock = mocks.persistCtaVariantsMock;
+const persistClaimsMock = mocks.persistClaimsMock;
+const persistToneScoreMock = mocks.persistToneScoreMock;
 const articlesInsertCapture = mocks.articlesInsertCapture;
 
 // ─── route import ──────────────────────────────────────────────────────────
@@ -300,6 +321,42 @@ function setupHappyPath() {
     system: 'sys-zero-writing',
     user: 'user-zero-writing',
   });
+
+  // CTA variants（happy path: 3 件返す）
+  generateCtaVariantsMock.mockReturnValue([
+    {
+      position: 1,
+      persona_id: VALID_BODY.persona_id,
+      stage: 'empathy',
+      copy_text: 'copy1',
+      micro_copy: 'micro1',
+      variant_label: 'A',
+      utm_content: 'pos1-30s_housewife-A',
+    },
+    {
+      position: 2,
+      persona_id: VALID_BODY.persona_id,
+      stage: 'transition',
+      copy_text: 'copy2',
+      micro_copy: 'micro2',
+      variant_label: 'B',
+      utm_content: 'pos2-30s_housewife-B',
+    },
+    {
+      position: 3,
+      persona_id: VALID_BODY.persona_id,
+      stage: 'action',
+      copy_text: 'copy3',
+      micro_copy: 'micro3',
+      variant_label: 'C',
+      utm_content: 'pos3-30s_housewife-C',
+    },
+  ]);
+
+  // persist 系は副作用のみ
+  persistClaimsMock.mockResolvedValue(undefined);
+  persistCtaVariantsMock.mockResolvedValue(undefined);
+  persistToneScoreMock.mockResolvedValue(undefined);
 }
 
 // ─── tests ─────────────────────────────────────────────────────────────────
@@ -387,8 +444,9 @@ describe('POST /api/articles/zero-generate-full (spec §3 + §12)', () => {
     // generateJson は outline + writing で 2 回呼ばれる
     expect(generateJsonMock).toHaveBeenCalledTimes(2);
     // 各検証モジュールが呼ばれている
+    // 注: claim 抽出は runHallucinationChecks の内部で完結するため、
+    //      extractClaims を route が直接呼ぶ必要はない
     expect(retrieveChunksMock).toHaveBeenCalledTimes(1);
-    expect(extractClaimsMock).toHaveBeenCalledTimes(1);
     expect(runHallucinationChecksMock).toHaveBeenCalledTimes(1);
     expect(runToneChecksMock).toHaveBeenCalledTimes(1);
     expect(buildZeroImagePromptsMock).toHaveBeenCalledTimes(1);

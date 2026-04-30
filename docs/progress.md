@@ -220,3 +220,268 @@ LIMIT 5;
 ## 次のアクション
 - D: shadow Supabase 再起動 → AC-P3-19 / AC-P4 final E2E を確定 PASS に
 - 全変更を commit + push（main へ）
+
+---
+
+# Progress — P5-1〜P5-7 Zero-Generation V1 実装
+
+**Date:** 2026-04-30
+**Author:** Generator/Fixer (orchestrator-assisted, 31 名並列実装)
+**Loop Count: 0**
+
+## 完了サブサイクル
+
+### P5-1 基盤（10 並列、commit 5e91797）
+- マイグレ: `20260501000000_zero_generation_v1.sql`（pgvector + 4 新規テーブル + articles 9 列）
+- F1: マイグレ DDL 作成
+- F2: RAG embed/retrieve パイプ + Gemini text-embedding-004 統合
+- F3: Claim Extractor lib（recall ≥ 0.9）
+- F4: Hallucination 4 検証器（factual/attribution/spiritual/logical）
+- F5: Yukiko トーン scoring（14 項目）
+- F6: 文体 centroid（compute + similarity）
+- F7: Zero-outline prompt
+- F8: zero-generate API（outline 生成）
+- F9: UI new-from-scratch（Stepper + IntentRadioCard）
+- F10: E2E ZG 雛形（5 ケース collect）
+
+### P5-2/P5-3 統合 + UI（11 並列、commit d77c8dd）
+- G1: shadow 検証（9 マイグレ全 PASS、ivfflat smoke OK）
+- G2: Stage2 Zero Writing prompt
+- G3: ハルシネ・パイプライン統合
+- G4: トーン・パイプライン統合
+- G5: Zero 画像プロンプト（ペルソナ別ビジュアル）
+- G6: 画像 Vision 検査（Gemini Vision）
+- G7: UI HallucinationResultPane + ClaimCard
+- G8: UI RegenerationControls + DiffViewer
+- G9: CTA Variants Generator
+- G10: 統合 API zero-generate-full（動的 import）
+- G11: 生成方式選択 UI（new-choice）
+
+### P5-4/P5-5/P5-6/P5-7（20 並列、本コミット）
+- H1: match_source_chunks RPC マイグレ（20260502000000）
+- H2: zero-generate-full 静的 import + article_revisions 履歴
+- H3: regenerate-segment route
+- H4: hallucination-check route
+- H5: visibility/route.ts に hallucination critical=0 ゲート
+- H6: new-from-scratch UI に G7/G8 統合
+- H7: dashboard articles にスコア列
+- H8: publish-events ダッシュボード拡張
+- H9: README V2 セクション追加（193→258 行）
+- H10: prompt cache 実装（Gemini Context Cache）
+- H11: embed スクリプト強化（resumable, chunked, cost-aware）
+- H12: 統合パイプ integration test（8/8 PASS）
+- H13: SSE 進捗ストリーム + job store
+- H14: E2E ZG-1〜5 unskip
+- H15: スモーク seed 拡張（123→271 行）
+- H16: shadow E2E 実機検証
+- H17: hallucination retry GitHub Actions cron
+
+## 検証
+- 単体テスト: 385+/385+ PASS
+- 型チェック: exit=0
+- ビルド: PASS（新ルート 5 つ追加）
+
+## 関連ファイル一覧
+- supabase/migrations/20260501000000_zero_generation_v1.sql
+- supabase/migrations/20260502000000_zero_generation_rpc.sql
+- src/lib/ai/{embedding-client.ts, prompt-cache-manager.ts}
+- src/lib/ai/prompts/{stage1-zero-outline,stage2-zero-writing,zero-image-prompt}.ts
+- src/lib/rag/{embed-source-chunks,retrieve-chunks}.ts
+- src/lib/hallucination/{claim-extractor,run-checks,persist-claims,index,validators/*}.ts
+- src/lib/tone/{yukiko-scoring,compute-centroid,centroid-similarity,run-tone-checks,persist-tone}.ts
+- src/lib/image/vision-check.ts
+- src/lib/content/{cta-variants-generator,persist-cta-variants}.ts
+- src/lib/jobs/zero-gen-job-store.ts
+- src/app/api/articles/zero-generate-full/route.ts
+- src/app/api/articles/[id]/{regenerate-segment,hallucination-check}/route.ts
+- src/app/api/articles/zero-generate/[job_id]/progress/route.ts
+- src/app/api/hallucination-retry/route.ts
+- src/app/(dashboard)/dashboard/articles/{new-choice,new-from-scratch}/page.tsx
+- src/components/articles/{HallucinationResultPane,ClaimCard,RegenerationControls,DiffViewer}.tsx
+- .github/workflows/hallucination-retry.yml
+
+## 残タスク（次サイクル）
+- 本番マイグレ適用（20260501 + 20260502）— ユーザ承認後
+- 1499 source 記事の本物 embedding 投入（GEMINI_API_KEY + コスト試算後）
+- Vercel 環境変数追加: HALLUCINATION_RETRY_TOKEN
+- GitHub Secrets / Variables: HALLUCINATION_RETRY_URL / HALLUCINATION_RETRY_TOKEN
+- 本番デプロイ + スモーク（P5-8）
+
+## 次のアクション
+1. ユーザに本番投入手順を提示
+2. GEMINI_API_KEY のコスト試算
+3. shadow → staging → 本番 の段階展開判断
+
+---
+
+# P5-8 本番投入手順（ユーザ実行）
+
+## ステップ 1: 本番マイグレ適用（順序厳守）
+
+### 1-1. 事前確認
+```sql
+-- 本番 Supabase SQL Editor で実行
+SELECT version();  -- PostgreSQL 17 想定
+SELECT * FROM pg_extension WHERE extname='vector';  -- pgvector 既存確認
+```
+
+### 1-2. マイグレ適用
+```bash
+# ローカルから本番に push
+npx supabase migration up --linked
+# 期待:
+# - 20260501000000_zero_generation_v1.sql 適用（pgvector + 4テーブル + articles 9列）
+# - 20260502000000_zero_generation_rpc.sql 適用（match_source_chunks 関数）
+```
+
+### 1-3. 適用後検証
+```sql
+-- 全 4 新規テーブル存在確認
+SELECT count(*) FROM source_chunks;        -- 0
+SELECT count(*) FROM article_claims;        -- 0
+SELECT count(*) FROM yukiko_style_centroid; -- 0
+SELECT count(*) FROM cta_variants;          -- 0
+
+-- articles 新列確認
+SELECT column_name FROM information_schema.columns
+WHERE table_name='articles' AND column_name IN
+  ('generation_mode','intent','lead_summary','citation_highlights',
+   'narrative_arc','emotion_curve','hallucination_score',
+   'yukiko_tone_score','readability_score');
+-- 期待: 9 行
+
+-- RPC 関数確認
+SELECT proname FROM pg_proc WHERE proname='match_source_chunks';
+-- 期待: 1 行
+```
+
+## ステップ 2: 1499 記事 embedding 投入
+
+### 2-1. コスト試算（dry-run）
+```bash
+GEMINI_API_KEY=<key> tsx scripts/embed-all-source-chunks.ts --dry-run
+# 想定: 1499 記事 × ~3 chunks = ~4500 chunks
+# text-embedding-004 単価: $0.025/1M tokens
+# 想定: ~$0.05〜$0.50（無視できる）
+```
+
+### 2-2. 段階投入
+```bash
+# まず 50 件で smoke test
+GEMINI_API_KEY=<key> tsx scripts/embed-all-source-chunks.ts --limit=50 --batch-size=10 --confirm
+
+# 問題なければ全件投入（resume 対応）
+GEMINI_API_KEY=<key> tsx scripts/embed-all-source-chunks.ts --batch-size=20 --resume --confirm
+```
+
+### 2-3. 投入後検証
+```sql
+SELECT count(*) FROM source_chunks;
+-- 期待: ~4500（chunk 数次第）
+
+SELECT count(DISTINCT source_article_id) FROM source_chunks;
+-- 期待: 1499
+
+-- ivfflat インデックスを再構築（little data 警告対策）
+REINDEX INDEX idx_source_chunks_embedding;
+```
+
+## ステップ 3: 由起子文体 centroid 計算
+
+```bash
+# 既存 reviewed 記事から centroid を計算 → DB へ
+GEMINI_API_KEY=<key> tsx scripts/recompute-yukiko-centroid.ts
+```
+
+検証:
+```sql
+SELECT version, sample_size, computed_at FROM yukiko_style_centroid WHERE is_active=true;
+-- 期待: 1 行
+```
+
+## ステップ 4: Vercel 環境変数追加
+
+| Key | Value | 用途 |
+|---|---|---|
+| `GEMINI_API_KEY` | (既存) | embedding + 生成 |
+| `GEMINI_VISION_MODEL` | `gemini-2.5-flash` | 画像 Vision 検査（任意） |
+| `HALLUCINATION_RETRY_TOKEN` | `openssl rand -hex 32` で生成 | retry cron 認証 |
+
+## ステップ 5: GitHub Variables/Secrets 追加
+
+| 種別 | Name | Value |
+|---|---|---|
+| Variable | `HALLUCINATION_RETRY_URL` | `https://blogauto-pi.vercel.app/api/hallucination-retry` |
+| Secret | `HALLUCINATION_RETRY_TOKEN` | Vercel と同じ |
+
+## ステップ 6: Vercel 再デプロイ
+
+`git commit --allow-empty -m "chore: pickup hallucination env" && git push origin main`
+
+## ステップ 7: 本番スモークテスト
+
+```bash
+# A. visibility API 認証ガード（既存）
+curl -s -o /dev/null -w "%{http_code}" -X POST \
+  https://blogauto-pi.vercel.app/api/articles/00000000-0000-0000-0000-000000000000/visibility \
+  -H "Content-Type: application/json" \
+  -d '{"visible":true,"requestId":"01ARZ3NDEKTSV4RRFFQ69G5FAV"}'
+# 期待: 401
+
+# B. zero-generate-full 認証ガード
+curl -s -o /dev/null -w "%{http_code}" -X POST \
+  https://blogauto-pi.vercel.app/api/articles/zero-generate-full \
+  -H "Content-Type: application/json" -d '{}'
+# 期待: 401
+
+# C. hallucination-retry 認証ガード
+curl -s -X POST \
+  https://blogauto-pi.vercel.app/api/hallucination-retry \
+  -H "Authorization: Bearer wrong_token" -H "Content-Type: application/json"
+# 期待: 401 + "unauthorized"
+
+# D. dashboard /dashboard/articles/new-choice にログインしてアクセス、2 カード表示確認
+```
+
+## ステップ 8: 段階展開（推奨）
+
+| 段階 | 内容 | 確認 |
+|---|---|---|
+| 1 | テスト記事 1 件をゼロ生成 | hallucination_score / yukiko_tone_score 適切 |
+| 2 | 観察期間 7 日 | publish_events / hallucination critical 集計監視 |
+| 3 | 本格運用開始 | /dashboard/publish-events で監視 |
+
+## ステップ 9: ロールバック手順（万一）
+
+### マイグレロールバック
+```sql
+-- 20260502 RPC 削除
+DROP FUNCTION IF EXISTS match_source_chunks(vector, int, text[]);
+
+-- 20260501 全削除（テーブル削除）
+DROP TABLE IF EXISTS cta_variants CASCADE;
+DROP TABLE IF EXISTS yukiko_style_centroid CASCADE;
+DROP TABLE IF EXISTS article_claims CASCADE;
+DROP TABLE IF EXISTS source_chunks CASCADE;
+ALTER TABLE articles
+  DROP COLUMN IF EXISTS generation_mode,
+  DROP COLUMN IF EXISTS intent,
+  DROP COLUMN IF EXISTS lead_summary,
+  DROP COLUMN IF EXISTS citation_highlights,
+  DROP COLUMN IF EXISTS narrative_arc,
+  DROP COLUMN IF EXISTS emotion_curve,
+  DROP COLUMN IF EXISTS hallucination_score,
+  DROP COLUMN IF EXISTS yukiko_tone_score,
+  DROP COLUMN IF EXISTS readability_score;
+DROP EXTENSION IF EXISTS vector;
+```
+
+詳細は各マイグレファイルの末尾 ROLLBACK コメントを参照。
+
+### Code ロールバック
+- Vercel 環境変数から `NEXT_PUBLIC_PUBLISH_CONTROL_V2` を削除すれば new-from-scratch 等は disabled に
+- 完全ロールバックは git revert （commit 5e91797 / d77c8dd / 本コミット を順次 revert）
+
+---
+
+**P5 完了**：全実装完遂、本番投入はユーザ承認後
