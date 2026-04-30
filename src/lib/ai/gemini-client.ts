@@ -552,3 +552,137 @@ export function estimateTokens(text: string): number {
   const otherChars = text.length - japaneseChars;
   return Math.ceil(japaneseChars * 1.5 + otherChars / 4);
 }
+
+// ─── Embedding 生成（text-embedding-004） ───────────────────────────────────
+
+/** Gemini text-embedding-004 の task_type */
+export type EmbeddingTaskType =
+  | 'RETRIEVAL_DOCUMENT'
+  | 'RETRIEVAL_QUERY'
+  | 'SEMANTIC_SIMILARITY'
+  | 'CLASSIFICATION'
+  | 'CLUSTERING'
+  | 'QUESTION_ANSWERING'
+  | 'FACT_VERIFICATION';
+
+export interface GenerateEmbeddingOptions {
+  model?: string;
+  timeoutMs?: number;
+  apiKey?: string;
+  maxRetries?: number;
+  title?: string;
+}
+
+const EMBEDDING_MODEL_DEFAULT = 'text-embedding-004';
+const EMBEDDING_DIMENSIONS = 768;
+
+/**
+ * Gemini text-embedding-004 で embedding ベクトル（768 次元）を取得する。
+ * spec §6 RAG 連携 / §7.2 文体 centroid で利用。
+ */
+export async function generateEmbedding(
+  text: string,
+  taskType: EmbeddingTaskType,
+  options: GenerateEmbeddingOptions = {},
+): Promise<number[]> {
+  if (!text || text.trim().length === 0) {
+    throw new Error('generateEmbedding: text must be non-empty');
+  }
+
+  const model = options.model || EMBEDDING_MODEL_DEFAULT;
+  const apiKey = options.apiKey || GEMINI_API_KEY();
+  const timeoutMs = options.timeoutMs ?? 60_000;
+  const maxRetries = options.maxRetries ?? DEFAULTS.maxRetries;
+
+  const url = `${BASE_URL}/${model}:embedContent?key=${apiKey}`;
+
+  const requestBody: Record<string, unknown> = {
+    model: `models/${model}`,
+    content: { parts: [{ text }] },
+    taskType,
+  };
+  if (options.title && taskType === 'RETRIEVAL_DOCUMENT') {
+    requestBody.title = options.title;
+  }
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = DEFAULTS.retryBaseDelayMs * Math.pow(2, attempt - 1);
+      console.warn('[gemini.embed.retry]', { attempt, delayMs: delay, model });
+      await sleep(delay);
+    }
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const startTime = Date.now();
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'unknown');
+        if (isRetryableError(response.status) && attempt < maxRetries) {
+          lastError = new Error(
+            `Gemini Embedding API error ${response.status}: ${errorBody.substring(0, 200)}`,
+          );
+          continue;
+        }
+        throw new Error(
+          `Gemini Embedding API error ${response.status}: ${errorBody.substring(0, 500)}`,
+        );
+      }
+
+      const data = await response.json();
+      const durationMs = Date.now() - startTime;
+
+      const values: number[] | undefined = data?.embedding?.values;
+      if (!values || !Array.isArray(values)) {
+        throw new Error(
+          `Gemini Embedding returned no values: ${JSON.stringify(data).substring(0, 300)}`,
+        );
+      }
+      if (values.length !== EMBEDDING_DIMENSIONS) {
+        console.warn('[gemini.embed.unexpected_dims]', {
+          expected: EMBEDDING_DIMENSIONS,
+          got: values.length,
+        });
+      }
+
+      console.info('[gemini.embed.success]', {
+        model,
+        durationMs,
+        dim: values.length,
+        textLength: text.length,
+        taskType,
+        attempt,
+      });
+
+      return values;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        lastError = new Error(
+          `Gemini Embedding API timeout after ${timeoutMs}ms (attempt ${attempt + 1})`,
+        );
+        console.error('[gemini.embed.timeout]', { timeoutMs, attempt, model });
+        if (attempt < maxRetries) continue;
+        throw lastError;
+      }
+      if (attempt >= maxRetries) {
+        console.error('[gemini.embed.final_failure]', { attempt, model, error });
+        throw error;
+      }
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  throw lastError || new Error('Gemini Embedding API call failed after retries');
+}

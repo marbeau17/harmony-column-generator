@@ -27,6 +27,7 @@ const NAV = [
   { label: 'ダッシュボード', href: '/dashboard',                 icon: LayoutDashboard, badgeKey: null },
   { label: 'AIプランナー',   href: '/dashboard/planner',         icon: Lightbulb,       badgeKey: 'queue' as const },
   { label: '記事作成',       href: '/dashboard/articles/new',    icon: Sparkles,        badgeKey: null },
+  { label: 'AI ゼロ生成',    href: '/dashboard/articles/new-from-scratch', icon: Sparkles, badgeKey: null },
   { label: '記事一覧',       href: '/dashboard/articles',        icon: FileText,        badgeKey: null },
   { label: '元記事管理',     href: '/dashboard/source-articles', icon: BookOpen,        badgeKey: null },
   { label: 'イベント監視',   href: '/dashboard/publish-events',  icon: Activity,        badgeKey: null },
@@ -86,8 +87,23 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === href;
-    // /dashboard/articles/new は /dashboard/articles より先にチェック
+    // /dashboard/articles/new と /dashboard/articles/new-from-scratch は
+    // /dashboard/articles より先に厳密一致でチェックする
     if (href === '/dashboard/articles/new') return pathname === href;
+    if (href === '/dashboard/articles/new-from-scratch') {
+      return pathname === href || pathname.startsWith(`${href}/`);
+    }
+    if (href === '/dashboard/articles') {
+      // 記事一覧は new / new-from-scratch を含めない
+      if (pathname === '/dashboard/articles/new') return false;
+      if (
+        pathname === '/dashboard/articles/new-from-scratch' ||
+        pathname.startsWith('/dashboard/articles/new-from-scratch/')
+      ) {
+        return false;
+      }
+      return pathname.startsWith(href);
+    }
     return pathname.startsWith(href);
   };
 
