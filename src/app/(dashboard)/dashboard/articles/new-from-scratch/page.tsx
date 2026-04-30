@@ -35,27 +35,21 @@ import type {
   RiskLevel,
 } from '@/types/hallucination';
 
-// ─── Option definitions（記事作成ページと同じ枠を踏襲） ────────────────────
+// ─── Option types（API から取得した themes / personas を保持） ─────────────
 
-const THEME_CATEGORIES = [
-  { value: 'soul_mission',    label: '魂と使命' },
-  { value: 'relationships',   label: '人間関係' },
-  { value: 'grief_care',      label: 'グリーフケア' },
-  { value: 'self_growth',     label: '自己成長' },
-  { value: 'healing',         label: '癒しと浄化' },
-  { value: 'daily_awareness', label: '日常の気づき' },
-  { value: 'spiritual_intro', label: 'スピリチュアル入門' },
-] as const;
+/** /api/themes のレスポンス要素（必要部分のみ）。 */
+interface ThemeOption {
+  id: string;
+  name: string;
+  category: string | null;
+}
 
-const PERSONA_TYPES = [
-  { value: 'spiritual_beginner',      label: 'スピリチュアル初心者' },
-  { value: 'self_growth_seeker',      label: '自己成長を求める人' },
-  { value: 'grief_sufferer',          label: '喪失体験に苦しむ人' },
-  { value: 'meditation_practitioner', label: '瞑想実践者' },
-  { value: 'energy_worker',           label: 'エネルギーワーカー' },
-  { value: 'life_purpose_seeker',     label: '人生の目的を探す人' },
-  { value: 'holistic_health_seeker',  label: 'ホリスティック健康志向の人' },
-] as const;
+/** /api/personas のレスポンス要素（必要部分のみ）。 */
+interface PersonaOption {
+  id: string;
+  name: string;
+  age_range: string | null;
+}
 
 const MAX_KEYWORDS = 8;
 const MIN_LENGTH = 800;
@@ -100,6 +94,85 @@ interface HallucinationCheckApiResponse {
   criticals?: number;
   claims_count?: number;
   claims?: Claim[];
+}
+
+// ─── バリデーションエラー（zod flatten 形式） ─────────────────────────────
+
+/**
+ * zod の `flatten()` 形式エラー詳細。
+ * `fieldErrors` は各フィールド名 → メッセージ配列、
+ * `formErrors` はフォーム全体に対するメッセージ配列。
+ */
+interface ZodFlattenedError {
+  fieldErrors?: Record<string, string[] | undefined>;
+  formErrors?: string[];
+}
+
+/**
+ * 400 レスポンス body の想定形。
+ * 例:
+ *   { error: "バリデーションエラー",
+ *     details: { fieldErrors: { theme_id: ["..."] }, formErrors: [] } }
+ */
+interface ValidationErrorBody {
+  error?: string;
+  details?: ZodFlattenedError;
+}
+
+/** API のフィールド名 → ユーザー向け日本語ラベル。 */
+const FIELD_LABEL: Record<string, string> = {
+  theme_id:      'テーマ',
+  persona_id:    'ペルソナ',
+  keywords:      'キーワード',
+  intent:        '意図',
+  target_length: '目標文字数',
+};
+
+/** body が zod flatten 形式の `details` を持っているかを判定。 */
+function hasZodDetails(body: unknown): body is ValidationErrorBody & {
+  details: ZodFlattenedError;
+} {
+  if (!body || typeof body !== 'object') return false;
+  const details = (body as { details?: unknown }).details;
+  if (!details || typeof details !== 'object') return false;
+  const fe = (details as { fieldErrors?: unknown }).fieldErrors;
+  const ff = (details as { formErrors?: unknown }).formErrors;
+  return (
+    (fe !== undefined && typeof fe === 'object') ||
+    (ff !== undefined && Array.isArray(ff))
+  );
+}
+
+/**
+ * zod flatten 形式のエラーを toast でフィールド別に表示する。
+ * - fieldErrors: 「<日本語ラベル>: <メッセージ>」形式で各メッセージを個別表示
+ * - formErrors:  そのまま個別表示
+ * 表示できるメッセージが 1 件もなければ false を返し、汎用エラー表示にフォールバック。
+ */
+function showZodFieldErrors(details: ZodFlattenedError): boolean {
+  let shown = 0;
+
+  const fe = details.fieldErrors ?? {};
+  for (const [field, messages] of Object.entries(fe)) {
+    if (!Array.isArray(messages)) continue;
+    const label = FIELD_LABEL[field] ?? field;
+    for (const msg of messages) {
+      if (typeof msg !== 'string' || !msg.trim()) continue;
+      toast.error(`${label}: ${msg}`);
+      shown += 1;
+    }
+  }
+
+  const ff = details.formErrors ?? [];
+  if (Array.isArray(ff)) {
+    for (const msg of ff) {
+      if (typeof msg !== 'string' || !msg.trim()) continue;
+      toast.error(msg);
+      shown += 1;
+    }
+  }
+
+  return shown > 0;
 }
 
 // ─── スコア → 色マッピング ─────────────────────────────────────────────────
@@ -212,12 +285,19 @@ function buildHallucinationResultForPane(args: {
 
 export default function NewFromScratchPage() {
   // ── Form state ────────────────────────────────────────────────────────────
-  const [theme, setTheme] = useState<string>('');
-  const [persona, setPersona] = useState<string>('');
+  // theme_id / persona_id は API が要求する UUID。空文字 = 未選択。
+  const [themeId, setThemeId] = useState<string>('');
+  const [personaId, setPersonaId] = useState<string>('');
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordDraft, setKeywordDraft] = useState<string>('');
   const [intent, setIntent] = useState<IntentType | ''>('');
   const [targetLength, setTargetLength] = useState<number>(2000);
+
+  // ── Master data (themes / personas) — mount 時に API から取得 ─────────────
+  const [themes, setThemes] = useState<ThemeOption[]>([]);
+  const [personas, setPersonas] = useState<PersonaOption[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState<boolean>(true);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
 
   // ── Generation state ──────────────────────────────────────────────────────
   const [stage, setStage] = useState<GenerationStage>('idle');
@@ -252,6 +332,52 @@ export default function NewFromScratchPage() {
     return () => {
       stageTimers.current.forEach((id) => window.clearTimeout(id));
       stageTimers.current = [];
+    };
+  }, []);
+
+  // ── themes / personas を mount 時に並列 fetch ────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setOptionsLoading(true);
+      setOptionsError(null);
+      try {
+        const [themesRes, personasRes] = await Promise.all([
+          fetch('/api/themes', { method: 'GET' }),
+          fetch('/api/personas', { method: 'GET' }),
+        ]);
+
+        if (!themesRes.ok) {
+          throw new Error(`テーマ一覧の取得に失敗しました (HTTP ${themesRes.status})`);
+        }
+        if (!personasRes.ok) {
+          throw new Error(`ペルソナ一覧の取得に失敗しました (HTTP ${personasRes.status})`);
+        }
+
+        const themesJson = (await themesRes.json()) as { themes?: ThemeOption[] };
+        const personasJson = (await personasRes.json()) as {
+          personas?: PersonaOption[];
+        };
+
+        if (cancelled) return;
+        setThemes(Array.isArray(themesJson.themes) ? themesJson.themes : []);
+        setPersonas(
+          Array.isArray(personasJson.personas) ? personasJson.personas : [],
+        );
+      } catch (err) {
+        if (cancelled) return;
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'マスタデータの取得に失敗しました';
+        setOptionsError(message);
+        toast.error(message);
+      } finally {
+        if (!cancelled) setOptionsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -293,8 +419,8 @@ export default function NewFromScratchPage() {
 
   // ── プレビュー生成（フォーム値をライブ反映） ─────────────────────────────
   const previewMeta = useMemo(() => {
-    const themeLabel = THEME_CATEGORIES.find((t) => t.value === theme)?.label ?? '未選択';
-    const personaLabel = PERSONA_TYPES.find((p) => p.value === persona)?.label ?? '未選択';
+    const themeLabel = themes.find((t) => t.id === themeId)?.name ?? '未選択';
+    const personaLabel = personas.find((p) => p.id === personaId)?.name ?? '未選択';
     const intentLabel = (() => {
       switch (intent) {
         case 'info': return '情報提供';
@@ -305,7 +431,7 @@ export default function NewFromScratchPage() {
       }
     })();
     return { themeLabel, personaLabel, intentLabel };
-  }, [theme, persona, intent]);
+  }, [themeId, personaId, intent, themes, personas]);
 
   // ── 生成完了後: 記事詳細 + claims を取得 ─────────────────────────────────
   const enrichResult = useCallback(async (articleId: string) => {
@@ -355,8 +481,8 @@ export default function NewFromScratchPage() {
     if (generating) return;
 
     // 簡易バリデーション
-    if (!theme) { toast.error('テーマを選択してください'); return; }
-    if (!persona) { toast.error('ペルソナを選択してください'); return; }
+    if (!themeId) { toast.error('テーマを選択してください'); return; }
+    if (!personaId) { toast.error('ペルソナを選択してください'); return; }
     if (keywords.length === 0) { toast.error('キーワードを 1 つ以上追加してください'); return; }
     if (!intent) { toast.error('意図タイプを選択してください'); return; }
     if (!Number.isFinite(targetLength) || targetLength < MIN_LENGTH || targetLength > MAX_LENGTH) {
@@ -387,11 +513,9 @@ export default function NewFromScratchPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // 新 API は theme_id / persona_id (UUID) を要求するため、
-          // フォームが UUID を保持していない現状はサーバ側でバリデーションエラーになる
-          // 可能性があるが、UI 結合上はキー名を新 API に合わせる。
-          theme_id: theme,
-          persona_id: persona,
+          // /api/themes と /api/personas から取得した UUID をそのまま送信。
+          theme_id: themeId,
+          persona_id: personaId,
           keywords,
           intent,
           target_length: targetLength,
@@ -399,9 +523,32 @@ export default function NewFromScratchPage() {
       });
 
       if (!res.ok && res.status !== 207) {
-        const body = await res.json().catch(() => ({}));
+        const body = (await res.json().catch(() => ({}))) as
+          | ValidationErrorBody
+          | Record<string, unknown>;
+
+        // 400 かつ zod flatten 形式の details が含まれる場合は、
+        // フィールド別に個別 toast を表示しユーザーフレンドリーに通知する。
+        if (res.status === 400 && hasZodDetails(body)) {
+          const shown = showZodFieldErrors(body.details);
+          const headline =
+            (typeof body.error === 'string' && body.error) ||
+            '入力内容に誤りがあります';
+          // フィールドメッセージが 1 件も無ければ headline をそのまま表示し、
+          // 1 件以上あれば既に個別表示済みなのでスローのみ（catch 側の toast は抑止）。
+          if (!shown) {
+            toast.error(headline);
+          }
+          // catch 側で再度 toast を出さないよう、特別な Error を投げる。
+          const err = new Error(headline) as Error & { __validationHandled?: boolean };
+          err.__validationHandled = true;
+          throw err;
+        }
+
         throw new Error(
-          (body && typeof body.error === 'string' && body.error) ||
+          (body && typeof (body as { error?: unknown }).error === 'string'
+            ? ((body as { error: string }).error)
+            : '') ||
             `生成に失敗しました (HTTP ${res.status})`,
         );
       }
@@ -427,7 +574,13 @@ export default function NewFromScratchPage() {
       const message = err instanceof Error ? err.message : '生成に失敗しました';
       setStageError(message);
       setStage('error');
-      toast.error(message);
+      // バリデーションエラー時は既に個別 toast を表示済みのため重複表示を回避。
+      const alreadyHandled =
+        err instanceof Error &&
+        (err as Error & { __validationHandled?: boolean }).__validationHandled === true;
+      if (!alreadyHandled) {
+        toast.error(message);
+      }
     }
   };
 
@@ -494,6 +647,17 @@ export default function NewFromScratchPage() {
               className="space-y-5 rounded-xl border border-gray-200 bg-white p-4 shadow-sm
                 dark:border-gray-700 dark:bg-gray-900 sm:p-6"
             >
+              {/* マスタデータ取得エラー時の通知バナー */}
+              {optionsError && (
+                <div
+                  className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800
+                    dark:border-red-700 dark:bg-red-950/40 dark:text-red-100"
+                  role="alert"
+                >
+                  マスタデータの取得に失敗しました: {optionsError}
+                </div>
+              )}
+
               {/* テーマ */}
               <div>
                 <label
@@ -501,20 +665,31 @@ export default function NewFromScratchPage() {
                   className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-100"
                 >
                   テーマ <span className="text-red-500">*</span>
+                  {optionsLoading && (
+                    <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
+                      読み込み中…
+                    </span>
+                  )}
                 </label>
                 <select
                   id="theme"
-                  value={theme}
-                  onChange={(e) => setTheme(e.target.value)}
-                  disabled={generating}
+                  value={themeId}
+                  onChange={(e) => setThemeId(e.target.value)}
+                  disabled={generating || optionsLoading || themes.length === 0}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm
                     text-gray-900 transition focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20
                     disabled:cursor-not-allowed disabled:opacity-50
                     dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                 >
-                  <option value="">選択してください</option>
-                  {THEME_CATEGORIES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
+                  <option value="">
+                    {optionsLoading
+                      ? '読み込み中…'
+                      : themes.length === 0
+                      ? '利用可能なテーマがありません'
+                      : '選択してください'}
+                  </option>
+                  {themes.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
               </div>
@@ -526,20 +701,31 @@ export default function NewFromScratchPage() {
                   className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-100"
                 >
                   ペルソナ <span className="text-red-500">*</span>
+                  {optionsLoading && (
+                    <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
+                      読み込み中…
+                    </span>
+                  )}
                 </label>
                 <select
                   id="persona"
-                  value={persona}
-                  onChange={(e) => setPersona(e.target.value)}
-                  disabled={generating}
+                  value={personaId}
+                  onChange={(e) => setPersonaId(e.target.value)}
+                  disabled={generating || optionsLoading || personas.length === 0}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm
                     text-gray-900 transition focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20
                     disabled:cursor-not-allowed disabled:opacity-50
                     dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                 >
-                  <option value="">選択してください</option>
-                  {PERSONA_TYPES.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
+                  <option value="">
+                    {optionsLoading
+                      ? '読み込み中…'
+                      : personas.length === 0
+                      ? '利用可能なペルソナがありません'
+                      : '選択してください'}
+                  </option>
+                  {personas.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </div>
@@ -667,7 +853,7 @@ export default function NewFromScratchPage() {
                 )}
                 <button
                   type="submit"
-                  disabled={generating}
+                  disabled={generating || optionsLoading}
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5
                     text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 active:bg-brand-700
                     focus:outline-none focus:ring-2 focus:ring-brand-500/40

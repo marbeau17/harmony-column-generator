@@ -485,3 +485,153 @@ DROP EXTENSION IF EXISTS vector;
 ---
 
 **P5 完了**：全実装完遂、本番投入はユーザ承認後
+
+---
+
+# Progress — P5-9: 既存 source 記事の Web からの一括非表示（Batch Hide）
+
+**Date:** 2026-04-30
+**Author:** Generator/Fixer J13
+
+## 経緯
+ユーザ要件:「既存コラムから生成されたブログを Web から隠したい」
+→ 全 15 件の `is_hub_visible=true` 記事（全て `generation_mode='source' or NULL`）を一括ソフト撤回。
+
+## 実装
+- API: `POST /api/articles/batch-hide-source`（J1 実装）
+- UI: 記事一覧上部 BatchHideButton（J5 実装）
+
+## 本番実行手順
+
+### Step 1: 事前確認（dry-run）
+1. 本番ダッシュボード `https://blogauto-pi.vercel.app/dashboard/articles` を開く
+2. ツールバーの「既存記事を一括非表示」ボタンをクリック
+3. モーダルで `HIDE_ALL_SOURCE` と入力
+4. 「dry-run で確認」をクリック
+5. 結果に表示される `candidates: 15` を確認（対象件数の事前確認）
+
+### Step 2: 実行
+1. 同モーダル「実行」ボタンをクリック
+2. 結果ペインで `hidden: 15` `hub_rebuild_status: ok` を確認
+3. ハブページ `https://harmony-mc.com/column/` を再読込し、記事が空になっていることを確認
+4. 個別 URL `https://harmony-mc.com/column/{slug}/` のいくつかにアクセス → `<meta name="robots" content="noindex,...">` が出力されていることを確認
+
+### Step 3: DB 検証（Supabase SQL Editor）
+
+```sql
+-- 1. is_hub_visible=true 件数（0 を期待）
+SELECT count(*) FROM articles WHERE is_hub_visible = true;
+
+-- 2. visibility_state 分布
+SELECT visibility_state, count(*) FROM articles GROUP BY visibility_state;
+-- 期待: unpublished=15, idle=44
+
+-- 3. publish_events に履歴
+SELECT count(*) FROM publish_events
+WHERE action='unpublish' AND reason='batch-hide-source'
+  AND created_at > now() - interval '1 hour';
+-- 期待: 15
+```
+
+## ロールバック手順（再公開）
+
+万一、誤って一括非表示にした場合の復旧:
+
+### Option A: ダッシュボードで個別に PublishButton 経由
+1. `/dashboard/articles` で各記事の PublishButton をクリック → 再公開
+2. 推奨: 慎重に 1 記事ずつ確認しながら
+
+### Option B: SQL で一括戻し（推奨しない）
+```sql
+-- バックアップから戻す場合のみ
+UPDATE articles
+SET is_hub_visible = true,
+    visibility_state = 'live',
+    visibility_updated_at = now()
+WHERE id IN (
+  -- batch-hide 直前の is_hub_visible=true だった id を publish_events から逆引き
+  SELECT article_id FROM publish_events
+  WHERE action='unpublish' AND reason='batch-hide-source'
+    AND created_at > now() - interval '24 hours'
+);
+```
+**注意**: SQL 一括戻しは FTP の noindex HTML を上書きしないため、個別 URL は noindex のまま残る。Option A 推奨。
+
+### Option C: FTP の noindex HTML を強制再上書き
+個別記事ページを再公開する場合は visibility API 経由で `visible:true` にすると、既存 deploy ロジックで FTP の本物 HTML に戻る。
+
+## 注意事項
+- 本機能は **ソフト撤回のみ**（FTP delete なし、CLAUDE.md FTP 非削除原則遵守）
+- 全 publish_events に履歴が残るため後追い分析・復元の根拠になる
+- 一括非表示で hub は空になるため、新しい zero-generation 記事を順次投入して埋めていく想定
+
+---
+
+# P5-9 全完了サマリ — Bug Fix + Batch Hide + 検証層
+
+**Date:** 2026-04-30
+**Author:** Generator/Fixer (orchestrator-assisted, 20 並列実装)
+**Loop Count: 0**
+
+## 経緯
+1. ユーザ要件: 「既存ソース記事を Web から一括非表示にしたい」
+2. ユーザ報告 Bug: `/api/articles/zero-generate-full` が **400 Validation Error**
+   原因: フォームが theme/persona をラベル文字列で送信、API は UUID を要求
+
+## 対応 (4 Wave × 5 並列 = 20 J-Fixer)
+
+### Wave 1: API + UI 基盤
+- J1 batch-hide-source API + lib/articles/batch-hide.ts
+- J2 GET /api/themes（UUID 含む themes 一覧）
+- J3 GET /api/personas（UUID 含む personas 一覧）
+- J4 new-from-scratch ページで themes/personas を fetch + UUID bind（**バグ解消**）
+- J5 BatchHideButton UI + 記事一覧ツールバー統合
+
+### Wave 2: テスト
+- J6 batch-hide-source-api.test (8件 PASS、UPDATE payload 検査で本文列不在確認)
+- J7 themes-api.test (8件 PASS)
+- J8 personas-api.test (7件 PASS)
+- J9 new-from-scratch-form-uuid.test (4件 PASS、@testing-library/react 導入)
+- J10 batch-hide-button.test (11件 PASS)
+
+### Wave 3: 品質 + ドキュメント
+- J11 バリデーションエラー詳細表示（フィールド別日本語 toast）
+- J12 shadow seed UUID 安定化（themes 8 + personas 5 固定 UUID）
+- J13 batch-hide 本番実行手順 + ロールバック docs（progress.md +79行）
+- J14 zero-generate-full エラーログ強化（12 stage 構造化、request_id trace）
+- J15 hallucination-retry health check endpoint + lib
+
+### Wave 4: 検証 + ドキュメント
+- J16 E2E real-form ZG (zero-generation-form.spec.ts)
+- J17 E2E batch-hide (batch-hide-source.spec.ts)
+- J18 shadow E2E 実機検証（既存 monkey + hub-rebuild 回帰確認）
+- J19 progress.md 更新 (本セクション)
+- J20 eval_report 第7サイクル PASS 記録
+
+## 検証
+- 単体テスト追加: 約 40 件
+- 型チェック: exit=0
+- ビルド: PASS（新ルート 4 つ追加: /api/articles/batch-hide-source, /api/themes, /api/personas, /api/hallucination-retry/health）
+- 既存 publish-control / hub-rebuild: 回帰なし
+
+## 関連ファイル
+- (added) src/app/api/articles/batch-hide-source/route.ts
+- (added) src/app/api/themes/route.ts
+- (added) src/app/api/personas/route.ts
+- (added) src/app/api/hallucination-retry/health/route.ts
+- (added) src/lib/articles/batch-hide.ts
+- (added) src/lib/hallucination-retry/health.ts
+- (added) src/components/articles/BatchHideButton.tsx
+- (modified) src/app/(dashboard)/dashboard/articles/page.tsx
+- (modified) src/app/(dashboard)/dashboard/articles/new-from-scratch/page.tsx
+- (modified) src/app/api/articles/zero-generate-full/route.ts
+- (added) test/unit/{batch-hide-source-api,themes-api,personas-api,batch-hide-button,new-from-scratch-form-uuid,hallucination-retry-health-api}.test.{ts,tsx}
+- (added) test/e2e/{zero-generation-form,batch-hide-source}.spec.ts
+- (modified) test/e2e/fixtures/zero-generation-seed.sql
+
+## 残タスク（次サイクル）
+- 本番マイグレ適用 (20260501 + 20260502)
+- 1499 記事本物 embedding 投入
+- Vercel/GitHub 環境変数追加 (HALLUCINATION_RETRY_TOKEN 等)
+- 段階展開 → 本番 batch-hide 実行（ユーザ承認後）
+- publish_events.action CHECK 制約に 'hallucination-retry' 'batch-hide-source' 追加マイグレ（J15 が言及）

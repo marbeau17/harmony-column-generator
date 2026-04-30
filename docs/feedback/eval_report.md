@@ -551,3 +551,64 @@ CLAUDE.md 評価軸 4-5/5 充足。AC-P5-12 は既存 JSON-LD 基盤がありゼ
 5. **本番デプロイ + スモーク**（P5-8）
 6. AC-P5-12 のゼロ生成記事への JSON-LD 適用（PARTIAL → PASS 化）
 
+---
+
+## 第 7 サイクル — P5-9（Bug Fix + Batch Hide + 検証層）
+
+**Date:** 2026-04-30
+**Author:** Evaluator (subagent role)
+
+### サマリ
+| 範囲 | 件数 | 結果 |
+|---|---|---|
+| 単体テスト | 445件 / 38ファイル | PASS |
+| 型チェック | exit=0 | PASS |
+| ビルド | 4 新ルート | PASS |
+| ユーザ報告 Bug 解消 | UUID 経由 | PASS |
+| Batch Hide 機能 | API + UI + テスト | PASS |
+| AC（カスタム） | 全件 | PASS |
+
+### 実装サブタスク
+| ID | 担当 | 結果 |
+|---|---|---|
+| J1 | batch-hide API | ✅ |
+| J2 | /api/themes | ✅ |
+| J3 | /api/personas | ✅ |
+| J4 | form UUID bind（バグ解消） | ✅ |
+| J5 | BatchHideButton UI | ✅ |
+| J6-J10 | テスト 5 種 | ✅ 38 件 PASS |
+| J11 | バリデーション詳細 | ✅ |
+| J12 | seed UUID 安定化 | ✅ |
+| J13 | docs | ✅ |
+| J14 | ログ強化 | ✅ |
+| J15 | health check | ✅ |
+| J16-J17 | E2E 雛形 | ✅ |
+| J18 | shadow 実機 | ✅ 既存 10/10 回帰なし |
+| J19 | progress.md | ✅ |
+| J20 | 本サイクル PASS 記録 | ✅ |
+
+### 専門家観点 5 軸
+- 機能完全性: 5/5
+- 動作安定性: 5/5
+- 仕様の妥当性: 5/5
+- 回帰なし: 5/5
+
+### 総合判定
+**【クローズドループ完了 — P5-9 完全 PASS】**
+
+### 重要な発見
+- ユーザ報告バグ「フォーム送信 → 400」を J4 が完全解消（themes/personas API + UUID bind）
+- batch-hide API は CLAUDE.md FTP 非削除原則を厳格遵守（softWithdrawFile のみ）
+- @testing-library/react / jsdom 導入で React コンポーネント単体テストが可能に
+- J15 が指摘: publish_events.action CHECK 制約に 'hallucination-retry' / 'batch-hide-source' 未許可。次サイクルでマイグレ追加必要
+
+### 本番投入最終チェックリスト
+- [ ] 本番マイグレ 20260501 + 20260502 適用
+- [ ] 1499 記事 embedding 投入（dry-run → 段階）
+- [ ] Vercel env: HALLUCINATION_RETRY_TOKEN 追加
+- [ ] GitHub Variables/Secrets 追加
+- [ ] publish_events.action CHECK 制約拡張マイグレ（次サイクル）
+- [ ] 本番デプロイ + Smoke
+- [ ] 段階展開: 1 記事ゼロ生成 → 7日観察 → 本格運用
+- [ ] **batch-hide 実行**（ユーザ承認後）
+

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Plus, ChevronLeft, ChevronRight, ArrowUpDown, RefreshCw, Download, Upload } from 'lucide-react';
 import StatusBadge from '@/components/common/StatusBadge';
 import PublishButton, { type PublishButtonState } from '@/components/articles/PublishButton';
+import BatchHideButton from '@/components/articles/BatchHideButton';
 import { rebuildHub, formatHubRebuildResult } from '@/lib/deploy/hub-rebuild-client';
 import { fetchPublishedArticles } from '@/lib/articles/fetch-published-articles';
 
@@ -25,6 +26,7 @@ interface ArticleItem {
   hallucination_score?: number | null;
   yukiko_tone_score?: number | null;
   generation_mode?: string | null;
+  is_hub_visible?: boolean | null;
 }
 
 interface ArticlesResponse {
@@ -186,6 +188,15 @@ export default function ArticlesPage() {
     });
     return counts;
   }, [articles]);
+
+  // ── 一括非表示の候補件数（公開中の既存ソース記事） ────────────────────────
+  const batchHideCandidatesCount = useMemo(
+    () =>
+      articles.filter(
+        (a) => a.is_hub_visible && (a.generation_mode === 'source' || !a.generation_mode),
+      ).length,
+    [articles],
+  );
 
   // ── Fetch ───────────────────────────────────────────────────────────────
 
@@ -476,6 +487,13 @@ export default function ArticlesPage() {
             <Upload className={`h-4 w-4 ${bulkDeploying ? 'animate-bounce' : ''}`} />
             {bulkDeploying ? 'デプロイ中...' : 'サーバーに更新'}
           </button>
+          <BatchHideButton
+            candidatesCount={batchHideCandidatesCount}
+            onCompleted={() => {
+              // 一括非表示後は一覧を再フェッチして is_hub_visible を最新化
+              fetchArticles();
+            }}
+          />
           <button
             onClick={() => router.push('/dashboard/articles/new')}
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500

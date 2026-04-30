@@ -12,8 +12,10 @@
 --   - 既存 1,499 件のアメブロソース / 45 件の生成記事 / monkey-* には触れない
 --
 -- 冪等性:
---   - INSERT は ON CONFLICT (name)/(slug) DO NOTHING で no-op
---   - UPDATE は WHERE name LIKE 'zg\_%' で範囲限定
+--   - themes / personas は固定 UUID + ON CONFLICT (id) DO UPDATE で正規化
+--     (J12: E2E テストから ID を hardcode 参照できるよう安定化)
+--   - source_articles は ON CONFLICT DO NOTHING で no-op
+--   - UPDATE (visual_mood / preferred_words 等) は WHERE name = 'zg_xxx' で範囲限定
 --   - source_chunks は WHERE NOT EXISTS で重複防止
 --   - cleanup は test/e2e/helpers/zero-generation-fixtures.ts:cleanupZeroFixtures()
 --
@@ -26,22 +28,41 @@
 BEGIN;
 
 -- -----------------------------------------------------------------------------
--- 1. themes 8 件
+-- 1. themes 8 件 (固定 UUID: J12 安定化)
 --    spec H15: grief_care / soul_mission / relationships / self_growth /
 --              self_acceptance / inner_child / spiritual_awakening / daily_mindfulness
 --    既存 seed の 8 件 (zg_self_love 等) は意味的にカバーされているため再利用し、
 --    UPDATE で visual_mood (motif / color_hsl / lighting) を付与する。
+--
+--    [J12] E2E テスト参照のため id を固定 UUID 化。ON CONFLICT (id) DO UPDATE
+--          で冪等化 (再適用しても name/slug/description などが正規値に戻る)。
+--
+--    -- TEST_THEME_ID_SELF_LOVE:        00000000-0000-0000-0001-000000000001
+--    -- TEST_THEME_ID_GRIEF_CARE:       00000000-0000-0000-0001-000000000002
+--    -- TEST_THEME_ID_INNER_CHILD:      00000000-0000-0000-0001-000000000003
+--    -- TEST_THEME_ID_RELATIONSHIPS:    00000000-0000-0000-0001-000000000004
+--    -- TEST_THEME_ID_SOUL_MISSION:     00000000-0000-0000-0001-000000000005
+--    -- TEST_THEME_ID_SPIRITUAL_AWAKE:  00000000-0000-0000-0001-000000000006
+--    -- TEST_THEME_ID_DAILY_MINDFUL:    00000000-0000-0000-0001-000000000007
+--    -- TEST_THEME_ID_SELF_GROWTH:      00000000-0000-0000-0001-000000000008
 -- -----------------------------------------------------------------------------
-INSERT INTO themes (name, slug, category, energy_method, description, is_active, sort_order) VALUES
-  ('zg_self_love',        'zg-self-love',        'spiritual', 'energy_clearing', 'ZG: 自己愛と自己受容 (self_acceptance)',          TRUE, 1),
-  ('zg_grief_healing',    'zg-grief-healing',    'spiritual', 'energy_clearing', 'ZG: 喪失とグリーフケア (grief_care)',              TRUE, 2),
-  ('zg_inner_child',      'zg-inner-child',      'spiritual', 'inner_child',     'ZG: インナーチャイルドの癒し (inner_child)',        TRUE, 3),
-  ('zg_relationship',     'zg-relationship',     'spiritual', 'energy_clearing', 'ZG: 人間関係の調和 (relationships)',               TRUE, 4),
-  ('zg_career_purpose',   'zg-career-purpose',   'spiritual', 'inner_child',     'ZG: 天職と魂の目的 (soul_mission)',                 TRUE, 5),
-  ('zg_intuition',        'zg-intuition',        'spiritual', 'energy_clearing', 'ZG: 直感と内なる声 (spiritual_awakening)',          TRUE, 6),
-  ('zg_abundance',        'zg-abundance',        'spiritual', 'energy_clearing', 'ZG: 豊かさと循環 (daily_mindfulness)',              TRUE, 7),
-  ('zg_transition',       'zg-transition',       'spiritual', 'inner_child',     'ZG: 人生の転機と変容 (self_growth)',                TRUE, 8)
-ON CONFLICT (name) DO NOTHING;
+INSERT INTO themes (id, name, slug, category, energy_method, description, is_active, sort_order) VALUES
+  ('00000000-0000-0000-0001-000000000001'::uuid, 'zg_self_love',        'zg-self-love',        'spiritual', 'energy_clearing', 'ZG: 自己愛と自己受容 (self_acceptance)',          TRUE, 1),
+  ('00000000-0000-0000-0001-000000000002'::uuid, 'zg_grief_healing',    'zg-grief-healing',    'spiritual', 'energy_clearing', 'ZG: 喪失とグリーフケア (grief_care)',              TRUE, 2),
+  ('00000000-0000-0000-0001-000000000003'::uuid, 'zg_inner_child',      'zg-inner-child',      'spiritual', 'inner_child',     'ZG: インナーチャイルドの癒し (inner_child)',        TRUE, 3),
+  ('00000000-0000-0000-0001-000000000004'::uuid, 'zg_relationship',     'zg-relationship',     'spiritual', 'energy_clearing', 'ZG: 人間関係の調和 (relationships)',               TRUE, 4),
+  ('00000000-0000-0000-0001-000000000005'::uuid, 'zg_career_purpose',   'zg-career-purpose',   'spiritual', 'inner_child',     'ZG: 天職と魂の目的 (soul_mission)',                 TRUE, 5),
+  ('00000000-0000-0000-0001-000000000006'::uuid, 'zg_intuition',        'zg-intuition',        'spiritual', 'energy_clearing', 'ZG: 直感と内なる声 (spiritual_awakening)',          TRUE, 6),
+  ('00000000-0000-0000-0001-000000000007'::uuid, 'zg_abundance',        'zg-abundance',        'spiritual', 'energy_clearing', 'ZG: 豊かさと循環 (daily_mindfulness)',              TRUE, 7),
+  ('00000000-0000-0000-0001-000000000008'::uuid, 'zg_transition',       'zg-transition',       'spiritual', 'inner_child',     'ZG: 人生の転機と変容 (self_growth)',                TRUE, 8)
+ON CONFLICT (id) DO UPDATE SET
+  name          = EXCLUDED.name,
+  slug          = EXCLUDED.slug,
+  category      = EXCLUDED.category,
+  energy_method = EXCLUDED.energy_method,
+  description   = EXCLUDED.description,
+  is_active     = EXCLUDED.is_active,
+  sort_order    = EXCLUDED.sort_order;
 
 -- visual_mood 付与 (idempotent: zg_ 範囲のみ)
 UPDATE themes SET visual_mood = jsonb_build_object(
@@ -93,7 +114,7 @@ UPDATE themes SET visual_mood = jsonb_build_object(
 ) WHERE name = 'zg_transition';
 
 -- -----------------------------------------------------------------------------
--- 2. personas 5 件
+-- 2. personas 5 件 (固定 UUID: J12 安定化)
 --    spec H15: 30代主婦 / 40代キャリア / 50代女性 / 20代独身 / 60代以上
 --    既存 seed の 5 件は属性的に近似マッピング:
 --      zg_persona_a_seeker        ≒ 30代主婦 (不安期, 家族関係)
@@ -101,9 +122,19 @@ UPDATE themes SET visual_mood = jsonb_build_object(
 --      zg_persona_c_grieving      ≒ 50代女性 (人生再編, グリーフ)
 --      zg_persona_d_transitioning ≒ 20代独身 (恋愛/自己肯定の転換)
 --      zg_persona_e_introspective ≒ 60代以上 (人生振返り)
+--
+--    [J12] E2E テスト参照のため id を固定 UUID 化。ON CONFLICT (id) DO UPDATE
+--          で冪等化。
+--
+--    -- TEST_PERSONA_ID_HOUSEWIFE_30S:    00000000-0000-0000-0002-000000000001
+--    -- TEST_PERSONA_ID_CAREER_40S:       00000000-0000-0000-0002-000000000002
+--    -- TEST_PERSONA_ID_GRIEVING_50S:     00000000-0000-0000-0002-000000000003
+--    -- TEST_PERSONA_ID_SINGLE_20S:       00000000-0000-0000-0002-000000000004
+--    -- TEST_PERSONA_ID_INTROSPECT_60S:   00000000-0000-0000-0002-000000000005
 -- -----------------------------------------------------------------------------
-INSERT INTO personas (name, age_range, description, search_patterns, tone_guide, cta_approach, is_active, sort_order) VALUES
-  ('zg_persona_a_seeker',
+INSERT INTO personas (id, name, age_range, description, search_patterns, tone_guide, cta_approach, is_active, sort_order) VALUES
+  ('00000000-0000-0000-0002-000000000001'::uuid,
+   'zg_persona_a_seeker',
    '30-40',
    'ZG: 30代主婦。不安期にあり、家族関係に悩みつつ自分らしさを探している。',
    ARRAY['自分らしさ','本当の私','心の声','家族','不安'],
@@ -111,7 +142,8 @@ INSERT INTO personas (name, age_range, description, search_patterns, tone_guide,
    'empathy',
    TRUE, 1),
 
-  ('zg_persona_b_pragmatic',
+  ('00000000-0000-0000-0002-000000000002'::uuid,
+   'zg_persona_b_pragmatic',
    '40-55',
    'ZG: 40代キャリア女性。自己探求の転換期にあり、具体的な道筋を求める。',
    ARRAY['解決','方法','変えたい','キャリア','転機'],
@@ -119,7 +151,8 @@ INSERT INTO personas (name, age_range, description, search_patterns, tone_guide,
    'action',
    TRUE, 2),
 
-  ('zg_persona_c_grieving',
+  ('00000000-0000-0000-0002-000000000003'::uuid,
+   'zg_persona_c_grieving',
    '50-65',
    'ZG: 50代女性。人生再編の只中で、深いグリーフ (家族との別離等) を抱える。',
    ARRAY['喪失','悲しみ','立ち直れない','人生再編','空虚'],
@@ -127,7 +160,8 @@ INSERT INTO personas (name, age_range, description, search_patterns, tone_guide,
    'empathy',
    TRUE, 3),
 
-  ('zg_persona_d_transitioning',
+  ('00000000-0000-0000-0002-000000000004'::uuid,
+   'zg_persona_d_transitioning',
    '20-35',
    'ZG: 20代独身。恋愛と自己肯定の揺らぎ。人生の方向性を模索中。',
    ARRAY['恋愛','自己肯定','変化','決断','私らしく'],
@@ -135,14 +169,23 @@ INSERT INTO personas (name, age_range, description, search_patterns, tone_guide,
    'transition',
    TRUE, 4),
 
-  ('zg_persona_e_introspective',
+  ('00000000-0000-0000-0002-000000000005'::uuid,
+   'zg_persona_e_introspective',
    '60-80',
    'ZG: 60代以上。人生を振り返り、静かに内省を深めたい方。',
    ARRAY['内省','瞑想','本質','人生振返り','余生'],
    '詩的で余白を残す。問いかけ多め、答えは委ねる。',
    'introspect',
    TRUE, 5)
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+  name            = EXCLUDED.name,
+  age_range       = EXCLUDED.age_range,
+  description     = EXCLUDED.description,
+  search_patterns = EXCLUDED.search_patterns,
+  tone_guide      = EXCLUDED.tone_guide,
+  cta_approach    = EXCLUDED.cta_approach,
+  is_active       = EXCLUDED.is_active,
+  sort_order      = EXCLUDED.sort_order;
 
 -- preferred_words / avoided_words / image_style / cta_default_stage 付与
 UPDATE personas SET
