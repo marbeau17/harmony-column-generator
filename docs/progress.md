@@ -703,3 +703,67 @@ WHERE id IN (
 - 20260503 マイグレ本番適用（Vercel デプロイ前）
 - 公開承認フロー zero-gen 経路 E2E
 - 7 日観察 → 本格運用
+
+---
+
+# P5-11 + P5-12 — Stage2 投入 + 構造化ログ（2026-05-01）
+
+## P5-11: Stage2 継続スクリプト + html_body 列バグ修正
+- 試作 zero-gen 記事 cc1d079a への Stage2 投入を試みた結果、本番 articles テーブルに
+  `html_body` 列が無い隠れバグ顕在化（zero-generate-full route も同じバグを保有）
+- `scripts/ops/zero-gen-stage2-onwards.ts` 新規（Stage1 既存記事に Stage2 以降を実行）
+- `src/app/api/articles/zero-generate-full/route.ts` から html_body 書込削除
+- 失敗ログを `docs/zero-gen-stage2-failure-2026-05-01.md` に保管
+
+## P5-12: 構造化ログ全面導入 + バグ A/B 修正（15 並列）
+### バグ修正
+- A: `text-embedding-004` v1beta で 404 → embedding-client.ts を v1 ファースト + v1beta フォールバックに変更（モデル名は変更せず）
+- B: claim-extractor body 5,500 字超で MAX_TOKENS → maxOutputTokens 8192→24000 拡張
+- C: image_prompts object→array Stage1 prompt 強化 + Stage2 normalizer 追加（Gemini が object 形で返す regression に防衛）
+
+### 構造化ログ（15 並列で 24 ファイル変更）
+- 約 50 のログ key を `[<scope>.<event>]` 形式で統一導入
+- スコープ: `zero-gen.stage2.*` / `zero-gen.full.*` / `hallucination.*` / `tone.*` / `gemini.*` / `gemini.embed.*` / `rag.*` / `persist.*` / `db.articles.*` / `claim-extractor.*` / `image-prompt.*` / `cta-generator.*`
+- gemini-client に thinking_tokens 算出 + thinking_dominant 警告ログ追加
+- `docs/zero-gen-logging-conventions.md` 142 行で全 key 索引 + grep レシピ
+- `src/lib/ai/cost-tracker.ts` 純粋関数で USD 概算（5 unit test）
+- `test/unit/zero-gen-logging.test.ts` 3 ログ key 契約テスト
+
+## cc1d079a への実 Stage2 投入結果（2026-05-01 11:56 完了）
+| field | value |
+|---|---|
+| stage2_body_html | 5,215 chars |
+| hallucination_score | 85 |
+| yukiko_tone_score | 0.904 |
+| image_prompts | 3 種 populate |
+| article_claims | 71 件 |
+| article_revisions | 1 件（auto_snapshot） |
+| status | draft（保持） |
+| generation_mode | zero（保持） |
+
+### 残課題（次サイクル）
+- persist-tone が cookie-client 起因で CLI 経由失敗（yukiko_tone_score 自体は articles テーブルに書込済、breakdown JSON のみ未保存）
+- gemini-3.1-pro-preview の thinking 消費が大きく Stage2 で 70-90 秒（要 maxOutputTokens=32000）
+- claim-extractor の MAX_TOKENS リスクは body 8,000 字超で再発の可能性（次は body 分割）
+
+## 検証
+- 型チェック: exit=0
+- 全テスト: 468/468 PASS（既存 + 新規 8 件）
+- 本番実投入: cc1d079a で全列確定済（直接 service-role DB query 確認）
+
+## 関連ファイル
+- (added) scripts/ops/zero-gen-stage2-onwards.ts
+- (added) src/lib/ai/cost-tracker.ts
+- (added) docs/zero-gen-logging-conventions.md
+- (added) docs/zero-gen-stage2-failure-2026-05-01.md
+- (added) test/unit/cost-tracker.test.ts
+- (added) test/unit/zero-gen-logging.test.ts
+- (modified) 24 ファイル（hallucination/* 6, tone/* 2, ai/* 5, content/* 2, rag/* 1, db/* 1, prompts/* 3, route 1, persist 3）
+
+## 残タスク（さらに次サイクル）
+- 1499 記事 embedding 本番投入（v1 endpoint 動作確認後）
+- persist-tone を service-role 対応にリファクタ
+- claim-extractor の body 分割対応
+- 20260503 マイグレ本番適用
+- 公開承認フロー zero-gen 経路 E2E
+- 7 日観察 → 本格運用
