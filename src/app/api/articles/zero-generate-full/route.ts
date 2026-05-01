@@ -43,6 +43,7 @@ import {
   createServiceRoleClient,
 } from '@/lib/supabase/server';
 import { generateJson } from '@/lib/ai/gemini-client';
+import { normalizeStage2Html } from '@/lib/ai/stage2-html-normalize';
 import {
   zeroGenerateRequestSchema,
   type ZeroGenerateRequest,
@@ -290,14 +291,16 @@ async function generateStage2Body(args: {
 
   const { system, user: userPrompt } = buildZeroWritingPrompt(writingInput);
 
-  const { data } = await generateJson<{ html: string } | string>(
+  const { data } = await generateJson<unknown>(
     system,
     userPrompt,
-    { temperature: ZERO_WRITING_TEMPERATURE, topP: 0.9 },
+    { temperature: ZERO_WRITING_TEMPERATURE, topP: 0.9, maxOutputTokens: 32000 },
   );
 
-  if (typeof data === 'string') return data;
-  return (data as { html?: string })?.html ?? '';
+  // Gemini は { html } / string / [string] / [{html}] の 4 形を返しうるため正規化。
+  // バグD (2026-05-02): 旧コードは前2形のみ扱い、後2形では空文字に潰れていた
+  // (記事 #71 が editing 状態で stage2_body_html="" になった原因)。
+  return normalizeStage2Html(data);
 }
 
 // ─── articles INSERT ──────────────────────────────────────────────────────
