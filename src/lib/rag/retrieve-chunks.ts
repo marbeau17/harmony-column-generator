@@ -223,6 +223,16 @@ export async function retrieveChunks(
   const poolSize = input.candidatePoolSize ?? 20;
   const lambda = input.mmrLambda ?? 0.7;
 
+  const fnStart = Date.now();
+  console.log('[rag.retrieve-chunks.begin]', {
+    theme: input.theme,
+    persona_pain_chars: (input.persona_pain ?? '').length,
+    keywords_count: (input.keywords ?? []).length,
+    similarityThreshold: threshold,
+    topK,
+    poolSize,
+  });
+
   const queryText = buildQueryText(input);
 
   const t0 = Date.now();
@@ -238,6 +248,15 @@ export async function retrieveChunks(
 
   if (!rows) {
     // RPC が無い／失敗した場合は空で返す（呼出元で警告ハンドリング）
+    console.log('[rag.retrieve-chunks.end]', {
+      chunks_returned: 0,
+      top_similarity: null,
+      warning: 'insufficient_grounding',
+      elapsed_ms: Date.now() - fnStart,
+      queryEmbeddingMs,
+      retrievalMs,
+      reason: 'rpc_failed_or_missing',
+    });
     return {
       chunks: [],
       warning: 'insufficient_grounding',
@@ -297,6 +316,18 @@ export async function retrieveChunks(
   if (finalChunks.length < topK) {
     result.warning = 'insufficient_grounding';
   }
+
+  console.log('[rag.retrieve-chunks.end]', {
+    chunks_returned: finalChunks.length,
+    top_similarity: finalChunks.length > 0 ? finalChunks[0].similarity : null,
+    warning: result.warning ?? null,
+    elapsed_ms: Date.now() - fnStart,
+    queryEmbeddingMs,
+    retrievalMs,
+    candidateCount,
+    afterFilterCount,
+    afterThresholdCount,
+  });
 
   return result;
 }

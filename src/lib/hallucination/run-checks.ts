@@ -16,7 +16,13 @@
 // ============================================================================
 
 import { extractClaims as defaultExtractClaims } from './claim-extractor';
-import { validateHallucination as defaultValidateHallucination } from './index';
+import {
+  validateHallucination as defaultValidateHallucination,
+  validateFactualClaim,
+  validateAttributionClaim,
+  validateSpiritualClaim,
+  validateLogicalPair,
+} from './index';
 import type {
   ClaimsPayload,
   ClaimResult,
@@ -24,8 +30,68 @@ import type {
   HallucinationDeps,
   HallucinationResult as ValidateResult,
   RetrieveChunksFn,
+  Severity,
 } from './types';
 import type { Claim } from '@/types/hallucination';
+
+// ─── ログ用ヘルパ ───────────────────────────────────────────────────────────
+
+/**
+ * 個別 validator グループ（factual / attribution / spiritual / logical）を
+ * 計測しつつ実行する。Promise.all の rejection-bubbling 挙動を維持するため、
+ * try/catch で時間を測ってログ出力したのち、エラーを再 throw する。
+ */
+async function runValidatorGroupTimed(
+  name: 'factual' | 'attribution' | 'spiritual' | 'logical',
+  fn: () => Promise<ClaimResult[]>,
+): Promise<ClaimResult[]> {
+  const t0 = Date.now();
+  try {
+    const results = await fn();
+    const elapsed_ms = Date.now() - t0;
+    console.log('[hallucination.validator.end]', {
+      name,
+      ok: true,
+      findings_count: results.length,
+      elapsed_ms,
+    });
+    return results;
+  } catch (err) {
+    const elapsed_ms = Date.now() - t0;
+    const error_message = err instanceof Error ? err.message : String(err);
+    console.error('[hallucination.validator.end]', {
+      name,
+      ok: false,
+      error_message,
+      elapsed_ms,
+    });
+    throw err;
+  }
+}
+
+const SEVERITY_PENALTY: Record<Severity, number> = {
+  none: 0,
+  low: 3,
+  medium: 7,
+  high: 15,
+  critical: 25,
+};
+
+function calcScore(results: ClaimResult[]): number {
+  const total = results.reduce((acc, r) => acc + SEVERITY_PENALTY[r.severity], 0);
+  return Math.max(0, Math.min(100, 100 - total));
+}
+
+function summarizeResults(results: ClaimResult[]): ValidateResult['summary'] {
+  return {
+    total: results.length,
+    grounded: results.filter((r) => r.verdict === 'grounded').length,
+    weak: results.filter((r) => r.verdict === 'weak').length,
+    unsupported: results.filter((r) => r.verdict === 'unsupported').length,
+    flagged: results.filter((r) => r.verdict === 'flagged').length,
+    critical_hits: results.filter((r) => r.severity === 'critical').length,
+  };
+}
 
 // ─── 型定義 ────────────────────────────────────────────────────────────────
 
@@ -136,12 +202,43 @@ export async function runHallucinationChecks(
 ): Promise<HallucinationCheckResult> {
   const extractFn = opts.extractClaimsFn ?? defaultExtractClaims;
   const validateFn = opts.validateHallucinationFn ?? defaultValidateHallucination;
+  const useDefaultValidator = !opts.validateHallucinationFn;
 
-  // step1: claim 抽出
+  const t_run_start = Date.now();
+  console.log('[hallucination.run-checks.begin]', {
+    body_chars: htmlBody.length,
+    started_at: new Date().toISOString(),
+  });
+
+  // step1: claim 抽出（タイミング計測付き）
+  const t_claims_start = Date.now();
   const claims: Claim[] = await extractFn(htmlBody);
+  const claims_elapsed_ms = Date.now() - t_claims_start;
+
+  // claim_type 別件数を集計（factual / attribution / spiritual / logical）
+  const byType = { factual: 0, attribution: 0, spiritual: 0, logical: 0 };
+  for (const c of claims) {
+    if (c.claim_type === 'factual') byType.factual += 1;
+    else if (c.claim_type === 'attribution') byType.attribution += 1;
+    else if (c.claim_type === 'spiritual') byType.spiritual += 1;
+    else if (c.claim_type === 'logical') byType.logical += 1;
+  }
+  console.log('[hallucination.claims_extracted]', {
+    count: claims.length,
+    by_type: byType,
+    elapsed_ms: claims_elapsed_ms,
+  });
 
   // 空入力は score=100 / criticals=0 で早期 return
   if (claims.length === 0) {
+    const total_elapsed_ms = Date.now() - t_run_start;
+    console.log('[hallucination.run-checks.end]', {
+      hallucination_score: 100,
+      claims_count: 0,
+      critical_count: 0,
+      warning_count: 0,
+      total_elapsed_ms,
+    });
     return {
       hallucination_score: 100,
       criticals: 0,
@@ -166,9 +263,80 @@ export async function runHallucinationChecks(
     retrieveTopK,
     judgeContradiction: judgeFn,
   };
-  const result = await validateFn(payload, deps);
+
+  let result: ValidateResult;
+  if (useDefaultValidator) {
+    // デフォルト経路: 4 グループを個別に時間計測しつつ並列実行する。
+    // Promise.all の rejection-bubbling 挙動を維持するため、各グループは
+    // try/catch で計測ログを出した後にエラーを再 throw する（呼び出し側の
+    // エラーセマンティクスは既存実装と等価）。
+    const all = await Promise.all([
+      runValidatorGroupTimed('factual', () =>
+        Promise.all(
+          payload.factualClaims.map((c) => validateFactualClaim(c, deps.retrieveTopK)),
+        ),
+      ),
+      runValidatorGroupTimed('attribution', () =>
+        Promise.all(payload.attributionClaims.map((c) => validateAttributionClaim(c))),
+      ),
+      runValidatorGroupTimed('spiritual', () =>
+        Promise.all(payload.spiritualClaims.map((c) => validateSpiritualClaim(c))),
+      ),
+      runValidatorGroupTimed('logical', () =>
+        Promise.all(
+          payload.logicalPairs.map(([a, b]) =>
+            validateLogicalPair(a, b, deps.judgeContradiction),
+          ),
+        ),
+      ),
+    ]);
+    const flatResults: ClaimResult[] = all.flat();
+    result = {
+      hallucination_score: calcScore(flatResults),
+      results: flatResults,
+      summary: summarizeResults(flatResults),
+    };
+  } else {
+    // DI 経由（テスト時 mock 等）: 単一呼び出しの既存挙動を維持し、
+    // 結果から派生的に per-validator のログを出す（elapsed_ms は合算値）。
+    const t_val_start = Date.now();
+    try {
+      result = await validateFn(payload, deps);
+    } catch (err) {
+      const elapsed_ms = Date.now() - t_val_start;
+      const error_message = err instanceof Error ? err.message : String(err);
+      // どの validator が落ちたか不明のため、全体としてエラーを記録する
+      console.error('[hallucination.validator.end]', {
+        name: 'all',
+        ok: false,
+        error_message,
+        elapsed_ms,
+      });
+      throw err;
+    }
+    const elapsed_ms = Date.now() - t_val_start;
+    for (const name of ['factual', 'attribution', 'spiritual', 'logical'] as const) {
+      const findings_count = result.results.filter((r) => r.type === name).length;
+      console.log('[hallucination.validator.end]', {
+        name,
+        ok: true,
+        findings_count,
+        elapsed_ms,
+      });
+    }
+  }
 
   // step4: 集計結果を整形して返却
+  const total_elapsed_ms = Date.now() - t_run_start;
+  const warning_count = result.summary.weak + result.summary.unsupported + result.summary.flagged;
+  console.log('[hallucination.run-checks.end]', {
+    hallucination_score: result.hallucination_score,
+    claims_count: claims.length,
+    critical_count: result.summary.critical_hits,
+    warning_count,
+    total_elapsed_ms,
+  });
+
   return {
     hallucination_score: result.hallucination_score,
     criticals: result.summary.critical_hits,

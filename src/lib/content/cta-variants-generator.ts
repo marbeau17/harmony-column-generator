@@ -207,12 +207,18 @@ export function generateCtaVariants(input: GenerateCtaVariantsInput): CtaVariant
     throw new Error(`generateCtaVariants: unknown intent "${input.intent}"`);
   }
 
+  console.log('[cta-generator.begin]', {
+    articleSlug: input.articleSlug,
+    intent: input.intent,
+    persona_id: input.persona.id,
+  });
+
   const toneKey = resolvePersonaToneKey(input.persona);
   const personaSlug = personaSlugForUtm(input.persona);
 
   const positions: CtaPosition[] = [1, 2, 3];
 
-  return positions.map((position) => {
+  const variants = positions.map((position) => {
     const stage = stageFor(position);
     const variantLabel = variantLabelFor(position);
     const copyText = buildCopyText(input.intent, toneKey, stage);
@@ -229,4 +235,8 @@ export function generateCtaVariants(input: GenerateCtaVariantsInput): CtaVariant
       utm_content: utmContent,
     };
   });
+
+  console.log('[cta-generator.end]', { variants_count: variants.length });
+
+  return variants;
 }

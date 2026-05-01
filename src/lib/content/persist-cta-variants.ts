@@ -47,6 +47,12 @@ export async function persistCtaVariants(
     throw new Error('persistCtaVariants: variants must be a non-empty array');
   }
 
+  const startedAt = Date.now();
+  console.log('[persist.cta.begin]', {
+    articleId,
+    variants_count: variants.length,
+  });
+
   const supabase = await createServiceRoleClient();
 
   // ─── 既存レコードを削除 (DELETE+INSERT) ─────────────────────────────────
@@ -82,4 +88,10 @@ export async function persistCtaVariants(
       `persistCtaVariants: insert failed for article ${articleId}: ${insertError.message}`,
     );
   }
+
+  console.log('[persist.cta.end]', {
+    articleId,
+    inserted: rows.length,
+    elapsed_ms: Date.now() - startedAt,
+  });
 }

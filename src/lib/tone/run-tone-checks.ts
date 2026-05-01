@@ -40,11 +40,35 @@ export interface RunToneChecksResult {
 export async function runToneChecks(
   htmlBody: string,
 ): Promise<RunToneChecksResult> {
+  const t0 = Date.now();
+  console.log('[tone.run-checks.begin]', { body_chars: htmlBody.length });
+
   // 1. 14 項目採点
+  const toneStart = Date.now();
   const tone = scoreYukikoTone(htmlBody);
+  const toneElapsed = Date.now() - toneStart;
+
+  // breakdown は Record<string, number>（フラット構造、各値は 0-1 のスコア）
+  console.log('[tone.yukiko_scoring.computed]', {
+    total: tone.total,
+    passed: tone.passed,
+    blockers_count: tone.blockers?.length ?? 0,
+    blockers: tone.blockers ?? [],
+    breakdown_keys: Object.keys(tone.breakdown ?? {}).length,
+    breakdown_summary: Object.entries(tone.breakdown ?? {}).map(
+      ([criterion, score]) => ({
+        criterion,
+        score,
+        // breakdown はフラットな number。0 を「失格」、>=0.5 を「合格」と便宜的に扱う。
+        passed: typeof score === 'number' ? score >= 0.5 : undefined,
+      }),
+    ),
+    elapsed_ms: toneElapsed,
+  });
 
   // 2. + 3. embedding → centroid 類似度（失敗時は 0 にフォールバック）
   let similarity = 0;
+  const centroidStart = Date.now();
   try {
     const embedding = await generateEmbedding(htmlBody, 'RETRIEVAL_DOCUMENT');
     similarity = await centroidSimilarity(embedding);
@@ -54,6 +78,17 @@ export async function runToneChecks(
     });
     similarity = 0;
   }
+  const centroidElapsed = Date.now() - centroidStart;
+
+  const centroidPassed =
+    similarity === 0 ? null : similarity >= CENTROID_SIMILARITY_THRESHOLD;
+  console.log('[tone.centroid.computed]', {
+    centroid_similarity: similarity,
+    centroid_threshold: CENTROID_SIMILARITY_THRESHOLD,
+    centroid_passed: centroidPassed,
+    centroid_skipped: similarity === 0,
+    elapsed_ms: centroidElapsed,
+  });
 
   // 4. 合否判定
   // similarity が 0（centroid 不在 / embedding 失敗）の場合は tone.passed のみで判定
@@ -62,9 +97,21 @@ export async function runToneChecks(
       ? tone.passed
       : tone.passed && similarity >= CENTROID_SIMILARITY_THRESHOLD;
 
-  return {
+  const result: RunToneChecksResult = {
     tone,
     centroidSimilarity: similarity,
     passed,
   };
+
+  const totalElapsed = Date.now() - t0;
+  console.log('[tone.run-checks.end]', {
+    overall_passed: result.passed,
+    tone_passed: result.tone.passed,
+    tone_total: result.tone.total,
+    centroid_similarity: result.centroidSimilarity,
+    blockers: result.tone.blockers,
+    total_elapsed_ms: totalElapsed,
+  });
+
+  return result;
 }

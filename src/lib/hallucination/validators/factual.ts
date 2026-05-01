@@ -96,13 +96,44 @@ export async function validateFactualClaim(
   claim: string,
   retrieveTopK?: RetrieveChunksFn
 ): Promise<ClaimResult> {
+  const startedAt = Date.now();
+  const SIMILARITY_THRESHOLD_GROUNDED = 0.75;
+  const SIMILARITY_THRESHOLD_WEAK = 0.65;
+
   const numbers = extractNumbers(claim);
   const properNouns = extractProperNouns(claim);
   const targets = [...numbers, ...properNouns];
 
+  console.log('[hallucination.factual.begin]', {
+    claims_count: 1,
+    similarity_threshold: SIMILARITY_THRESHOLD_GROUNDED,
+    retrieved_chunks_count: 0,
+  });
+
+  const buildEnd = (
+    result: ClaimResult,
+    retrievedCount: number
+  ): ClaimResult => {
+    const isFinding = result.verdict !== 'grounded';
+    const bySeverity = {
+      critical: result.severity === 'critical' && isFinding ? 1 : 0,
+      high: result.severity === 'high' && isFinding ? 1 : 0,
+      medium: result.severity === 'medium' && isFinding ? 1 : 0,
+      low: result.severity === 'low' && isFinding ? 1 : 0,
+      info: 0,
+    };
+    console.log('[hallucination.factual.end]', {
+      findings_count: isFinding ? 1 : 0,
+      by_severity: bySeverity,
+      retrieved_chunks_count: retrievedCount,
+      elapsed_ms: Date.now() - startedAt,
+    });
+    return result;
+  };
+
   // 抽出対象が無い場合 → 検証対象外として grounded 扱い
   if (targets.length === 0) {
-    return {
+    return buildEnd({
       type: 'factual',
       claim,
       verdict: 'grounded',
@@ -110,7 +141,7 @@ export async function validateFactualClaim(
       severity: 'none',
       evidence: [],
       reason: '数値/固有名詞が含まれないため検証対象外',
-    };
+    }, 0);
   }
 
   const retriever: RetrieveChunksFn = retrieveTopK ?? fallbackRetrieve;
@@ -121,10 +152,10 @@ export async function validateFactualClaim(
 
   let verdict: ClaimResult['verdict'];
   let severity: ClaimResult['severity'];
-  if (sim >= 0.75) {
+  if (sim >= SIMILARITY_THRESHOLD_GROUNDED) {
     verdict = 'grounded';
     severity = 'none';
-  } else if (sim >= 0.65) {
+  } else if (sim >= SIMILARITY_THRESHOLD_WEAK) {
     verdict = 'weak';
     severity = 'medium';
   } else {
@@ -132,7 +163,7 @@ export async function validateFactualClaim(
     severity = 'high';
   }
 
-  return {
+  return buildEnd({
     type: 'factual',
     claim,
     verdict,
@@ -140,5 +171,5 @@ export async function validateFactualClaim(
     severity,
     evidence: chunks,
     reason: `数値:${numbers.length}件 / 固有名詞:${properNouns.length}件 / max_sim=${sim.toFixed(3)}`,
-  };
+  }, chunks.length);
 }

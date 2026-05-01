@@ -201,19 +201,37 @@ export async function extractClaims(htmlBody: string): Promise<Claim[]> {
   const sentences = splitSentences(plain);
   if (sentences.length === 0) return [];
 
+  // 診断ログ: 入力サイズと割当トークン
+  const systemPrompt = SYSTEM_PROMPT;
+  const userPrompt = buildUserPrompt(sentences);
+  const startedAt = Date.now();
+  console.log('[claim-extractor.begin]', {
+    body_chars: plain.length,
+    prompt_chars_estimated: systemPrompt.length + userPrompt.length,
+    max_output_tokens: 24000,
+  });
+
   let parsed: unknown;
+  let response: Awaited<ReturnType<typeof generateJson<unknown>>> | undefined;
   try {
-    const { data } = await generateJson<unknown>(
-      SYSTEM_PROMPT,
-      buildUserPrompt(sentences),
+    response = await generateJson<unknown>(
+      systemPrompt,
+      userPrompt,
       {
         temperature: 0.1,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 24000,
       },
     );
-    parsed = data;
+    parsed = response.data;
   } catch (err) {
+    const elapsed_ms = Date.now() - startedAt;
     console.error('[claim-extractor.gemini_failed]', { err });
+    console.error('[claim-extractor.end]', {
+      ok: false,
+      error_message: (err as Error)?.message,
+      body_chars: plain.length,
+      elapsed_ms,
+    });
     return [];
   }
 
@@ -224,11 +242,36 @@ export async function extractClaims(htmlBody: string): Promise<Claim[]> {
   } else if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { claims?: unknown }).claims)) {
     rows = (parsed as { claims: RawClaimRow[] }).claims;
   } else {
+    const elapsed_ms = Date.now() - startedAt;
     console.warn('[claim-extractor.unexpected_shape]', {
       type: typeof parsed,
+    });
+    console.error('[claim-extractor.end]', {
+      ok: false,
+      error_message: 'unexpected_shape',
+      body_chars: plain.length,
+      elapsed_ms,
     });
     return [];
   }
 
-  return normalizeRows(rows, sentences);
+  const claims = normalizeRows(rows, sentences);
+  const elapsed_ms = Date.now() - startedAt;
+  const tokenUsage = response?.response?.tokenUsage;
+  const finishReason = response?.response?.finishReason;
+  console.log('[claim-extractor.end]', {
+    ok: true,
+    claims_count: claims.length,
+    promptTokens: tokenUsage?.promptTokens,
+    completionTokens: tokenUsage?.completionTokens,
+    totalTokens: tokenUsage?.totalTokens,
+    thinking_tokens:
+      (tokenUsage?.totalTokens ?? 0) -
+      (tokenUsage?.promptTokens ?? 0) -
+      (tokenUsage?.completionTokens ?? 0),
+    finishReason,
+    elapsed_ms,
+  });
+
+  return claims;
 }

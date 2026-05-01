@@ -84,11 +84,36 @@ function isKnownPerson(name: string): boolean {
 export async function validateAttributionClaim(
   claim: string
 ): Promise<ClaimResult> {
+  const startedAt = Date.now();
+
+  console.log('[hallucination.attribution.begin]', {
+    claims_count: 1,
+    allowlist_persons_count: KNOWN_PERSONS.size,
+    allowlist_domains_count: KNOWN_DOMAINS.size,
+  });
+
+  const buildEnd = (result: ClaimResult): ClaimResult => {
+    const isFinding = result.verdict !== 'grounded';
+    const bySeverity = {
+      critical: result.severity === 'critical' && isFinding ? 1 : 0,
+      high: result.severity === 'high' && isFinding ? 1 : 0,
+      medium: result.severity === 'medium' && isFinding ? 1 : 0,
+      low: result.severity === 'low' && isFinding ? 1 : 0,
+      info: 0,
+    };
+    console.log('[hallucination.attribution.end]', {
+      findings_count: isFinding ? 1 : 0,
+      by_severity: bySeverity,
+      elapsed_ms: Date.now() - startedAt,
+    });
+    return result;
+  };
+
   const urls = extractUrls(claim);
   const persons = extractPersons(claim);
 
   if (urls.length === 0 && persons.length === 0) {
-    return {
+    return buildEnd({
       type: 'attribution',
       claim,
       verdict: 'grounded',
@@ -96,14 +121,14 @@ export async function validateAttributionClaim(
       severity: 'none',
       evidence: [],
       reason: 'URL/人名が含まれないため検証対象外',
-    };
+    });
   }
 
   const unknownUrls = urls.filter((u) => !isKnownUrl(u));
   const unknownPersons = persons.filter((p) => !isKnownPerson(p));
 
   if (unknownUrls.length === 0 && unknownPersons.length === 0) {
-    return {
+    return buildEnd({
       type: 'attribution',
       claim,
       verdict: 'grounded',
@@ -111,10 +136,10 @@ export async function validateAttributionClaim(
       severity: 'none',
       evidence: [],
       reason: `URL:${urls.length}件 / 人名:${persons.length}件すべて allowlist 済み`,
-    };
+    });
   }
 
-  return {
+  return buildEnd({
     type: 'attribution',
     claim,
     verdict: 'flagged',
@@ -122,5 +147,5 @@ export async function validateAttributionClaim(
     severity: 'high',
     evidence: [],
     reason: `不明な引用元: URL=[${unknownUrls.join(', ')}] PERSON=[${unknownPersons.join(', ')}]`,
-  };
+  });
 }

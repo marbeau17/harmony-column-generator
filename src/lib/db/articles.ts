@@ -156,43 +156,75 @@ export async function listArticles(
 export async function createArticle(
   input: CreateArticleInput,
 ): Promise<ArticleRow> {
-  assertArticleWriteAllowed(null, Object.keys(input));
-  const supabase = await createServiceRoleClient();
+  const __create_started_at = Date.now();
+  const __input_obj = (input as unknown) as Record<string, unknown>;
+  // 診断ログ: 書込前に主要フィールドのスナップショットを残す（M10）。
+  // 既存ロジック（session-guard / バリデーション / INSERT）は一切変更しない。
+  console.log('[db.articles.create.begin]', {
+    generation_mode: input.generation_mode ?? 'source',
+    intent: __input_obj.intent ?? null,
+    theme: input.theme ?? null,
+    persona: input.persona ?? null,
+    status: __input_obj.status ?? 'draft',
+    has_stage1_outline: 'stage1_outline' in __input_obj,
+    has_stage2_body: 'stage2_body_html' in __input_obj || 'html_body' in __input_obj,
+  });
 
-  // ソース記事の重複使用を防止（1ソース→1記事の原則）
-  if (input.source_article_id) {
-    const { data: existing } = await supabase
-      .from('articles')
-      .select('id, slug')
-      .eq('source_article_id', input.source_article_id)
-      .not('status', 'in', '("deleted")');
-    if (existing && existing.length > 0) {
-      throw new Error(
-        `このソース記事は既に「${existing[0].slug}」で使用されています。1つのソース記事から複数の記事を生成することは禁止されています。`,
-      );
+  try {
+    assertArticleWriteAllowed(null, Object.keys(input));
+    const supabase = await createServiceRoleClient();
+
+    // ソース記事の重複使用を防止（1ソース→1記事の原則）
+    if (input.source_article_id) {
+      const { data: existing } = await supabase
+        .from('articles')
+        .select('id, slug')
+        .eq('source_article_id', input.source_article_id)
+        .not('status', 'in', '("deleted")');
+      if (existing && existing.length > 0) {
+        throw new Error(
+          `このソース記事は既に「${existing[0].slug}」で使用されています。1つのソース記事から複数の記事を生成することは禁止されています。`,
+        );
+      }
     }
+
+    // generation_mode は明示的に書込む。未指定なら 'source' を既定値として採用する。
+    // DB 側 DEFAULT 'source' に依存せず明示することで、列の NULL 化や DEFAULT 変更時の
+    // 副作用を防ぎ、後続フィルタ（例: batch-hide-source）の判定を一貫させる。
+    const generationMode: 'zero' | 'source' = input.generation_mode ?? 'source';
+
+    const { data, error } = await supabase
+      .from('articles')
+      .insert({
+        ...input,
+        generation_mode: generationMode,
+        status: 'draft' as ArticleStatus,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      throw new Error(`createArticle failed: ${error.message}`);
+    }
+
+    const row = data as ArticleRow;
+    console.log('[db.articles.create.end]', {
+      ok: true,
+      id: row.id,
+      generation_mode:
+        (row as ArticleRow & { generation_mode?: string | null }).generation_mode ?? null,
+      elapsed_ms: Date.now() - __create_started_at,
+    });
+
+    return row;
+  } catch (e) {
+    console.log('[db.articles.create.end]', {
+      ok: false,
+      error_message: e instanceof Error ? e.message : String(e),
+      elapsed_ms: Date.now() - __create_started_at,
+    });
+    throw e;
   }
-
-  // generation_mode は明示的に書込む。未指定なら 'source' を既定値として採用する。
-  // DB 側 DEFAULT 'source' に依存せず明示することで、列の NULL 化や DEFAULT 変更時の
-  // 副作用を防ぎ、後続フィルタ（例: batch-hide-source）の判定を一貫させる。
-  const generationMode: 'zero' | 'source' = input.generation_mode ?? 'source';
-
-  const { data, error } = await supabase
-    .from('articles')
-    .insert({
-      ...input,
-      generation_mode: generationMode,
-      status: 'draft' as ArticleStatus,
-    })
-    .select('*')
-    .single();
-
-  if (error) {
-    throw new Error(`createArticle failed: ${error.message}`);
-  }
-
-  return data as ArticleRow;
 }
 
 /**
@@ -202,54 +234,92 @@ export async function updateArticle(
   id: string,
   fields: Partial<Omit<ArticleRow, 'id' | 'created_at' | 'status'>>,
 ): Promise<ArticleRow> {
-  assertArticleWriteAllowed(id, Object.keys(fields));
-  const supabase = await createServiceRoleClient();
+  const __update_started_at = Date.now();
+  const __updates_obj = (fields ?? {}) as Record<string, unknown>;
+  // 診断ログ: 更新前に対象 id とフィールド種別のスナップショットを残す（M10）。
+  // 既存ロジック（session-guard / RLS / リビジョン保存 / UPDATE）は一切変更しない。
+  console.log('[db.articles.update.begin]', {
+    id,
+    fields_count: Object.keys(__updates_obj).length,
+    touches_body:
+      'stage2_body_html' in __updates_obj || 'stage3_final_html' in __updates_obj,
+    touches_status: 'status' in __updates_obj,
+    touches_mode: 'generation_mode' in __updates_obj,
+    touches_visibility:
+      'is_hub_visible' in __updates_obj || 'visibility_state' in __updates_obj,
+  });
 
-  // Save revision snapshot before content changes
-  const contentFields = ['stage2_body_html', 'stage3_final_html', 'title', 'meta_description'];
-  const hasContentChange = contentFields.some(f => f in fields);
+  try {
+    try {
+      assertArticleWriteAllowed(id, Object.keys(fields));
+    } catch (guardErr) {
+      // session-guard 拒否は元のエラーメッセージをそのまま伝播する。
+      // ログだけ追加で残してから再 throw（拒否理由・拒否時刻の追跡用）。
+      console.log('[db.articles.update.guard_blocked]', { id });
+      throw guardErr;
+    }
+    const supabase = await createServiceRoleClient();
 
-  if (hasContentChange) {
-    // Get current state before overwriting
-    const { data: current } = await supabase
-      .from('articles')
-      .select('title, stage2_body_html, stage3_final_html, meta_description')
-      .eq('id', id)
-      .single();
+    // Save revision snapshot before content changes
+    const contentFields = ['stage2_body_html', 'stage3_final_html', 'title', 'meta_description'];
+    const hasContentChange = contentFields.some(f => f in fields);
 
-    if (current && (current.stage3_final_html || current.stage2_body_html)) {
-      // Only snapshot if content actually changed (avoid noise from auto-save ticks)
-      const currentBody = current.stage3_final_html || current.stage2_body_html || '';
-      const incomingBody = fields.stage3_final_html ?? fields.stage2_body_html;
-      const bodyChanged = incomingBody !== undefined && incomingBody !== currentBody;
-      const titleChanged = fields.title !== undefined && fields.title !== current.title;
-      const metaChanged = fields.meta_description !== undefined && fields.meta_description !== current.meta_description;
+    if (hasContentChange) {
+      // Get current state before overwriting
+      const { data: current } = await supabase
+        .from('articles')
+        .select('title, stage2_body_html, stage3_final_html, meta_description')
+        .eq('id', id)
+        .single();
 
-      if (bodyChanged || titleChanged || metaChanged) {
-        await saveRevision(id, {
-          title: current.title,
-          body_html: currentBody,
-          meta_description: current.meta_description,
-        }, 'auto_snapshot').catch(() => {}); // Don't fail the update if snapshot fails
+      if (current && (current.stage3_final_html || current.stage2_body_html)) {
+        // Only snapshot if content actually changed (avoid noise from auto-save ticks)
+        const currentBody = current.stage3_final_html || current.stage2_body_html || '';
+        const incomingBody = fields.stage3_final_html ?? fields.stage2_body_html;
+        const bodyChanged = incomingBody !== undefined && incomingBody !== currentBody;
+        const titleChanged = fields.title !== undefined && fields.title !== current.title;
+        const metaChanged = fields.meta_description !== undefined && fields.meta_description !== current.meta_description;
+
+        if (bodyChanged || titleChanged || metaChanged) {
+          await saveRevision(id, {
+            title: current.title,
+            body_html: currentBody,
+            meta_description: current.meta_description,
+          }, 'auto_snapshot').catch(() => {}); // Don't fail the update if snapshot fails
+        }
       }
     }
+
+    const { data, error } = await supabase
+      .from('articles')
+      .update({
+        ...fields,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) {
+      throw new Error(`updateArticle failed: ${error.message}`);
+    }
+
+    console.log('[db.articles.update.end]', {
+      ok: true,
+      id,
+      elapsed_ms: Date.now() - __update_started_at,
+    });
+
+    return data as ArticleRow;
+  } catch (e) {
+    console.log('[db.articles.update.end]', {
+      ok: false,
+      id,
+      elapsed_ms: Date.now() - __update_started_at,
+      error_message: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
   }
-
-  const { data, error } = await supabase
-    .from('articles')
-    .update({
-      ...fields,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .select('*')
-    .single();
-
-  if (error) {
-    throw new Error(`updateArticle failed: ${error.message}`);
-  }
-
-  return data as ArticleRow;
 }
 
 /**

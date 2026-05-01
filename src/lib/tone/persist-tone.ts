@@ -25,6 +25,9 @@ export async function persistToneScore(
     throw new Error('persistToneScore: articleId is required');
   }
 
+  const startedAt = Date.now();
+  console.log('[persist.tone.begin]', { articleId });
+
   const supabase = await createServiceRoleClient();
 
   const payload = {
@@ -47,4 +50,10 @@ export async function persistToneScore(
       `persistToneScore: update failed for article ${articleId}: ${error.message}`,
     );
   }
+
+  console.log('[persist.tone.end]', {
+    articleId,
+    ok: true,
+    elapsed_ms: Date.now() - startedAt,
+  });
 }

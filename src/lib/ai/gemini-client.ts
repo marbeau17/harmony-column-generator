@@ -104,6 +104,31 @@ export async function callGemini(
     };
   }
 
+  // ── リクエスト形状ログ（thinking model のトークン消費可視化用） ──
+  const effectiveTemperature = config.temperature ?? DEFAULTS.temperature;
+  const effectiveTopP = config.topP ?? DEFAULTS.topP;
+  const effectiveTopK = config.topK ?? DEFAULTS.topK;
+  const effectiveMaxOutputTokens =
+    config.maxOutputTokens ?? DEFAULTS.maxOutputTokens;
+  console.log('[gemini.request.begin]', {
+    model,
+    temperature: effectiveTemperature,
+    maxOutputTokens: effectiveMaxOutputTokens,
+    topP: effectiveTopP,
+    topK: effectiveTopK,
+    systemInstructionChars: config.systemInstruction?.length ?? 0,
+    userPromptChars: config.messages.reduce(
+      (sum, m) =>
+        sum +
+        m.parts.reduce(
+          (s, p) => s + ((p as { text?: string }).text?.length ?? 0),
+          0,
+        ),
+      0,
+    ),
+    responseAsJson: !!config.responseAsJson,
+  });
+
   // ── リトライループ ──
   const maxRetries = config.maxRetries ?? DEFAULTS.maxRetries;
   const timeoutMs = config.timeoutMs ?? DEFAULTS.timeoutMs;
@@ -191,6 +216,25 @@ export async function callGemini(
         totalTokens: usage.totalTokenCount || 0,
       };
 
+      // thinking model（Gemini 3.x）の private reasoning 消費分を導出する
+      // total > prompt + completion の差分が thinking tokens
+      const thinkingDiff =
+        tokenUsage.totalTokens -
+        tokenUsage.promptTokens -
+        tokenUsage.completionTokens;
+      const thinkingTokens = thinkingDiff > 0 ? thinkingDiff : 0;
+      const thinkingPctOfTotal =
+        tokenUsage.totalTokens > 0
+          ? ((thinkingTokens / tokenUsage.totalTokens) * 100).toFixed(1)
+          : '0.0';
+      const completionPctOfBudget =
+        effectiveMaxOutputTokens > 0
+          ? (
+              (tokenUsage.completionTokens / effectiveMaxOutputTokens) *
+              100
+            ).toFixed(1)
+          : '0.0';
+
       console.info('[gemini.success]', {
         model,
         durationMs,
@@ -198,9 +242,26 @@ export async function callGemini(
         promptTokens: tokenUsage.promptTokens,
         completionTokens: tokenUsage.completionTokens,
         totalTokens: tokenUsage.totalTokens,
+        thinkingTokens,
+        thinkingPctOfTotal,
+        completionPctOfBudget,
         responseLength: text.length,
         attempt,
       });
+
+      // MAX_TOKENS で打ち切られ、かつ thinking が 70% 超 → maxOutputTokens 不足の典型
+      if (
+        finishReason === 'MAX_TOKENS' &&
+        thinkingTokens > tokenUsage.totalTokens * 0.7
+      ) {
+        console.warn('[gemini.thinking_dominant]', {
+          model,
+          thinkingTokens,
+          completionTokens: tokenUsage.completionTokens,
+          maxOutputTokens: effectiveMaxOutputTokens,
+          hint: 'maxOutputTokens を 2-3 倍に増やすか thinkingBudget の指定を検討',
+        });
+      }
 
       console.log(`[gemini] Response OK in ${Math.round((Date.now() - callStart) / 1000)}s (${text.length} chars, ${finishReason})`);
       return {

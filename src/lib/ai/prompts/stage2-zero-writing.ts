@@ -282,7 +282,24 @@ export function buildZeroWritingUserPrompt(input: ZeroWritingInput): string {
     .join('\n');
 
   // 画像プレースホルダー（hero を除く body / summary）
-  const imageBlock = (outline.image_prompts ?? [])
+  // Gemini が稀に配列形式ではなくオブジェクト形式 {hero, body, summary} を返してくる
+  // ことがあるため、両形式を受け入れる正規化を行う（spec準拠の配列形式へ変換）
+  const imagePromptsRaw: unknown = outline.image_prompts;
+  const imagePromptsArray: Array<{ slot: 'hero' | 'body' | 'summary'; prompt: string }> =
+    Array.isArray(imagePromptsRaw)
+      ? (imagePromptsRaw as Array<{ slot: 'hero' | 'body' | 'summary'; prompt: string }>)
+      : imagePromptsRaw && typeof imagePromptsRaw === 'object'
+        ? (['hero', 'body', 'summary'] as const)
+            .filter(
+              (s) =>
+                typeof (imagePromptsRaw as Record<string, unknown>)[s] === 'string'
+            )
+            .map((s) => ({
+              slot: s,
+              prompt: (imagePromptsRaw as Record<string, string>)[s],
+            }))
+        : [];
+  const imageBlock = imagePromptsArray
     .filter((p) => p.slot !== 'hero')
     .map((p) => `<!--IMAGE:${p.slot}:${p.slot}.webp-->`)
     .join('\n');

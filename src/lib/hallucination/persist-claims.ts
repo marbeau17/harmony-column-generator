@@ -77,6 +77,12 @@ export async function persistClaims(
     throw new Error('persistClaims: articleId is required');
   }
 
+  const startedAt = Date.now();
+  console.log('[persist.claims.begin]', {
+    articleId,
+    claims_count: claims.length,
+  });
+
   const supabase = factory();
 
   // 既存 record を削除（再生成時の置換）
@@ -92,7 +98,14 @@ export async function persistClaims(
   }
 
   // 空配列なら INSERT は skip（DELETE のみで完了）
-  if (claims.length === 0) return;
+  if (claims.length === 0) {
+    console.log('[persist.claims.end]', {
+      articleId,
+      inserted: 0,
+      elapsed_ms: Date.now() - startedAt,
+    });
+    return;
+  }
 
   const rows = claims.map((c) => toRow(articleId, c));
 
@@ -105,4 +118,10 @@ export async function persistClaims(
       `persistClaims: failed to insert ${rows.length} claims for article ${articleId}: ${insertError.message}`,
     );
   }
+
+  console.log('[persist.claims.end]', {
+    articleId,
+    inserted: rows.length,
+    elapsed_ms: Date.now() - startedAt,
+  });
 }

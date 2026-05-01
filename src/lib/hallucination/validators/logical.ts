@@ -48,11 +48,33 @@ export async function validateLogicalPair(
   sentenceB: string,
   judge?: ContradictionJudgeFn
 ): Promise<ClaimResult> {
+  const startedAt = Date.now();
   const claim = `A: ${sentenceA} ／ B: ${sentenceB}`;
+
+  console.log('[hallucination.logical.begin]', {
+    claims_count: 1,
+  });
+
+  const buildEnd = (result: ClaimResult): ClaimResult => {
+    const isFinding = result.verdict !== 'grounded';
+    const bySeverity = {
+      critical: result.severity === 'critical' && isFinding ? 1 : 0,
+      high: result.severity === 'high' && isFinding ? 1 : 0,
+      medium: result.severity === 'medium' && isFinding ? 1 : 0,
+      low: result.severity === 'low' && isFinding ? 1 : 0,
+      info: 0,
+    };
+    console.log('[hallucination.logical.end]', {
+      findings_count: isFinding ? 1 : 0,
+      by_severity: bySeverity,
+      elapsed_ms: Date.now() - startedAt,
+    });
+    return result;
+  };
 
   // 同一文 / どちらかが空 → スキップ
   if (!sentenceA.trim() || !sentenceB.trim() || sentenceA.trim() === sentenceB.trim()) {
-    return {
+    return buildEnd({
       type: 'logical',
       claim,
       verdict: 'grounded',
@@ -60,16 +82,29 @@ export async function validateLogicalPair(
       severity: 'none',
       evidence: [],
       reason: '文ペアが不正または同一のため検証対象外',
-    };
+    });
   }
 
   const fn = judge ?? defaultJudge;
 
   let result: { contradiction: boolean; reason: string };
+  const pairStartedAt = Date.now();
   try {
     result = await fn(sentenceA, sentenceB);
+    console.log('[hallucination.logical.pair_checked]', {
+      idx_a: 0,
+      idx_b: 1,
+      contradiction: result.contradiction,
+      elapsed_ms: Date.now() - pairStartedAt,
+    });
   } catch (e) {
-    return {
+    console.log('[hallucination.logical.pair_checked]', {
+      idx_a: 0,
+      idx_b: 1,
+      contradiction: false,
+      elapsed_ms: Date.now() - pairStartedAt,
+    });
+    return buildEnd({
       type: 'logical',
       claim,
       verdict: 'weak',
@@ -77,11 +112,11 @@ export async function validateLogicalPair(
       severity: 'medium',
       evidence: [],
       reason: `LLM 判定失敗: ${e instanceof Error ? e.message : String(e)}`,
-    };
+    });
   }
 
   if (result.contradiction) {
-    return {
+    return buildEnd({
       type: 'logical',
       claim,
       verdict: 'flagged',
@@ -89,10 +124,10 @@ export async function validateLogicalPair(
       severity: 'high',
       evidence: [],
       reason: `矛盾検出: ${result.reason}`,
-    };
+    });
   }
 
-  return {
+  return buildEnd({
     type: 'logical',
     claim,
     verdict: 'grounded',
@@ -100,5 +135,5 @@ export async function validateLogicalPair(
     severity: 'none',
     evidence: [],
     reason: result.reason || '矛盾なし',
-  };
+  });
 }

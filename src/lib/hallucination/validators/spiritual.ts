@@ -99,11 +99,35 @@ function isNegated(hit: HitInfo, fullText: string): boolean {
 export async function validateSpiritualClaim(
   claim: string
 ): Promise<ClaimResult> {
+  const startedAt = Date.now();
+
+  console.log('[hallucination.spiritual.begin]', {
+    claims_count: 1,
+    dictionary_terms_count: FORBIDDEN_TERMS.length,
+  });
+
+  const buildEnd = (result: ClaimResult): ClaimResult => {
+    const isFinding = result.verdict !== 'grounded';
+    const bySeverity = {
+      critical: result.severity === 'critical' && isFinding ? 1 : 0,
+      high: result.severity === 'high' && isFinding ? 1 : 0,
+      medium: result.severity === 'medium' && isFinding ? 1 : 0,
+      low: result.severity === 'low' && isFinding ? 1 : 0,
+      info: 0,
+    };
+    console.log('[hallucination.spiritual.end]', {
+      findings_count: isFinding ? 1 : 0,
+      by_severity: bySeverity,
+      elapsed_ms: Date.now() - startedAt,
+    });
+    return result;
+  };
+
   const allHits = findAllHits(claim);
   const activeHits = allHits.filter((h) => !isNegated(h, claim));
 
   if (activeHits.length === 0) {
-    return {
+    return buildEnd({
       type: 'spiritual',
       claim,
       verdict: 'grounded',
@@ -113,11 +137,11 @@ export async function validateSpiritualClaim(
       reason: allHits.length > 0
         ? `NG語ヒット ${allHits.length} 件は全て否定文脈のため除外`
         : 'NG語ヒットなし',
-    };
+    });
   }
 
   const terms = activeHits.map((h) => h.term).join(', ');
-  return {
+  return buildEnd({
     type: 'spiritual',
     claim,
     verdict: 'flagged',
@@ -130,7 +154,7 @@ export async function validateSpiritualClaim(
       source: 'forbidden-dictionary',
     })),
     reason: `NG語ヒット: ${terms}`,
-  };
+  });
 }
 
 // テスト用 export

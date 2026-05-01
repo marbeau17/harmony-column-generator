@@ -32,7 +32,14 @@ export interface GenerateEmbeddingOptions {
 
 const EMBEDDING_MODEL_DEFAULT = 'text-embedding-004';
 const EMBEDDING_DIMENSIONS = 768;
-const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const BASE_HOST = 'https://generativelanguage.googleapis.com';
+/**
+ * Gemini API のバージョンフォールバック順。
+ * `text-embedding-004` は v1 エンドポイントに存在するため v1 を優先し、
+ * 404 が返る環境では v1beta にフォールバックする。
+ */
+const API_VERSIONS = ['v1', 'v1beta'] as const;
+type ApiVersion = (typeof API_VERSIONS)[number];
 
 const RETRY_BASE_DELAY_MS = 1000;
 const DEFAULT_MAX_RETRIES = 1;
@@ -50,6 +57,16 @@ function isRetryableError(status: number): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** APIキーをマスクした URL 文字列を返す（ログ出力用）。 */
+function maskUrl(url: string): string {
+  return url.replace(/key=[^&]+/g, 'key=***');
+}
+
+/** 指定 API バージョンの embedContent エンドポイントを組み立てる。 */
+function buildEmbedUrl(apiVersion: ApiVersion, model: string, apiKey: string): string {
+  return `${BASE_HOST}/${apiVersion}/models/${model}:embedContent?key=${apiKey}`;
 }
 
 /**
@@ -77,8 +94,6 @@ export async function generateEmbedding(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
 
-  const url = `${BASE_URL}/${model}:embedContent?key=${apiKey}`;
-
   const requestBody: Record<string, unknown> = {
     model: `models/${model}`,
     content: { parts: [{ text }] },
@@ -89,6 +104,9 @@ export async function generateEmbedding(
   }
 
   let lastError: Error | null = null;
+  let lastFailureStatus: number | null = null;
+  let lastFailureBody = '';
+  let lastApiVersionTried: ApiVersion | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) {
@@ -97,76 +115,143 @@ export async function generateEmbedding(
       await sleep(delay);
     }
 
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const startTime = Date.now();
+    // ── API バージョンフォールバック: v1 → v1beta ───────────────────────────
+    // text-embedding-004 は v1 エンドポイントに存在するため v1 を優先し、
+    // 404 が返った場合のみ v1beta にフォールバックする。
+    let attemptError: Error | null = null;
+    let attemptShouldRetry = false;
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
+    versionLoop: for (let vi = 0; vi < API_VERSIONS.length; vi++) {
+      const apiVersion = API_VERSIONS[vi];
+      const url = buildEmbedUrl(apiVersion, model, apiKey);
+      const maskedUrl = maskUrl(url);
+      lastApiVersionTried = apiVersion;
 
-      clearTimeout(timer);
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'unknown');
-        if (isRetryableError(response.status) && attempt < maxRetries) {
-          lastError = new Error(
-            `Gemini Embedding API error ${response.status}: ${errorBody.substring(0, 200)}`,
-          );
-          continue;
-        }
-        throw new Error(
-          `Gemini Embedding API error ${response.status}: ${errorBody.substring(0, 500)}`,
-        );
-      }
-
-      const data = await response.json();
-      const durationMs = Date.now() - startTime;
-
-      const values: number[] | undefined = data?.embedding?.values;
-      if (!values || !Array.isArray(values)) {
-        throw new Error(
-          `Gemini Embedding returned no values: ${JSON.stringify(data).substring(0, 300)}`,
-        );
-      }
-      if (values.length !== EMBEDDING_DIMENSIONS) {
-        console.warn('[gemini.embed.unexpected_dims]', {
-          expected: EMBEDDING_DIMENSIONS,
-          got: values.length,
-          model,
-        });
-      }
-
-      console.info('[gemini.embed.success]', {
-        model,
-        taskType,
-        durationMs,
-        dims: values.length,
-        textLength: text.length,
+      console.log('[gemini.embed.begin]', {
+        model_id: model,
+        api_version: apiVersion,
+        url: maskedUrl,
+        content_chars: text.length,
+        task_type: taskType,
+        output_dim: EMBEDDING_DIMENSIONS,
         attempt,
       });
 
-      return values;
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        lastError = new Error(
-          `Gemini Embedding API timeout after ${timeoutMs}ms (attempt ${attempt + 1})`,
-        );
-        if (attempt < maxRetries) continue;
-        throw lastError;
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const startTime = Date.now();
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timer);
+
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => 'unknown');
+          lastFailureStatus = response.status;
+          lastFailureBody = errorBody;
+
+          // 404 のときは次のバージョン (v1beta) にフォールバック
+          if (response.status === 404 && vi < API_VERSIONS.length - 1) {
+            console.warn('[gemini.embed.version_fallback]', {
+              from: apiVersion,
+              to: API_VERSIONS[vi + 1],
+              reason: '404',
+              body_head: errorBody.slice(0, 200),
+            });
+            continue versionLoop;
+          }
+
+          // リトライ可能なステータスコードならリトライへ
+          if (isRetryableError(response.status) && attempt < maxRetries) {
+            attemptError = new Error(
+              `Gemini Embedding API error ${response.status} (${apiVersion}): ${errorBody.substring(0, 200)}`,
+            );
+            attemptShouldRetry = true;
+            break versionLoop;
+          }
+
+          // それ以外のエラーは即時失敗
+          throw new Error(
+            `Gemini Embedding API error ${response.status} (${apiVersion}): ${errorBody.substring(0, 500)}`,
+          );
+        }
+
+        const data = await response.json();
+        const elapsed_ms = Date.now() - startTime;
+
+        const values: number[] | undefined = data?.embedding?.values;
+        if (!values || !Array.isArray(values)) {
+          throw new Error(
+            `Gemini Embedding returned no values (${apiVersion}): ${JSON.stringify(data).substring(0, 300)}`,
+          );
+        }
+        if (values.length !== EMBEDDING_DIMENSIONS) {
+          console.warn('[gemini.embed.unexpected_dims]', {
+            expected: EMBEDDING_DIMENSIONS,
+            got: values.length,
+            model,
+            api_version: apiVersion,
+          });
+        }
+
+        console.log('[gemini.embed.success]', {
+          model_id: model,
+          api_version_used: apiVersion,
+          content_chars: text.length,
+          dimension: values.length,
+          elapsed_ms,
+          taskType,
+          attempt,
+        });
+
+        return values;
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          attemptError = new Error(
+            `Gemini Embedding API timeout after ${timeoutMs}ms (${apiVersion}, attempt ${attempt + 1})`,
+          );
+          attemptShouldRetry = attempt < maxRetries;
+          break versionLoop;
+        }
+        // fetch 自体がスローした場合は他バージョンも試さず、リトライ判定へ
+        attemptError = error instanceof Error ? error : new Error(String(error));
+        attemptShouldRetry = attempt < maxRetries;
+        break versionLoop;
       }
-      if (attempt >= maxRetries) {
-        console.error('[gemini.embed.final_failure]', { attempt, model, error });
-        throw error;
-      }
-      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+    // ── /API バージョンフォールバック ──────────────────────────────────────
+
+    if (attemptError && attemptShouldRetry) {
+      lastError = attemptError;
+      continue;
+    }
+    if (attemptError) {
+      console.error('[gemini.embed.final_failure]', {
+        model_id: model,
+        api_version_tried: lastApiVersionTried,
+        status: lastFailureStatus,
+        body_head: lastFailureBody.slice(0, 500),
+        attempt,
+        error: attemptError.message,
+      });
+      throw attemptError;
     }
   }
 
+  console.error('[gemini.embed.final_failure]', {
+    model_id: model,
+    api_version_tried: lastApiVersionTried,
+    status: lastFailureStatus,
+    body_head: lastFailureBody.slice(0, 500),
+    attempt: maxRetries,
+    error: lastError?.message ?? 'unknown',
+  });
   throw lastError || new Error('Gemini Embedding API call failed after retries');
 }
 

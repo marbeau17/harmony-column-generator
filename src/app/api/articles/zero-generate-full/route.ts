@@ -394,6 +394,10 @@ function buildArticleSlug(articleId: string, title: string): string {
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   const requestId = generateRequestId();
+  console.log('[zero-gen.full.request.begin]', {
+    requestId,
+    startedAt: new Date().toISOString(),
+  });
   const failures: FailureEntry[] = [];
   const stages: PipelineStageStatus = {
     outline: 'failed',
@@ -424,6 +428,13 @@ export async function POST(request: NextRequest) {
       );
     }
     userId = user.id;
+    const email = user.email ?? '';
+    const emailLocal = email.includes('@') ? email.split('@')[0] : email;
+    console.log('[zero-gen.full.auth.ok]', {
+      requestId,
+      userId,
+      email_masked: emailLocal.slice(0, 3) + '***',
+    });
   } catch (err) {
     logger.error(
       'api',
@@ -472,6 +483,14 @@ export async function POST(request: NextRequest) {
       );
     }
     body = parsed.data;
+    console.log('[zero-gen.full.body.validated]', {
+      requestId,
+      theme_id: body.theme_id,
+      persona_id: body.persona_id,
+      intent: body.intent,
+      target_length: body.target_length,
+      keywords_count: body.keywords.length,
+    });
   } catch (err) {
     logger.error(
       'api',
@@ -497,6 +516,13 @@ export async function POST(request: NextRequest) {
     const fetched = await fetchThemeAndPersona(body.theme_id, body.persona_id);
     theme = fetched.theme;
     persona = fetched.persona;
+    console.log('[zero-gen.full.refs.resolved]', {
+      requestId,
+      theme_name: theme.name,
+      persona_name: persona.name,
+      has_visual_mood: theme.visual_mood != null,
+      has_image_style: persona.image_style != null,
+    });
   } catch (err) {
     logger.error(
       'api',
@@ -521,6 +547,8 @@ export async function POST(request: NextRequest) {
 
   // 4. Stage1 outline 生成（upstream Gemini → 502）
   let outline: ZeroOutlineOutput;
+  console.log('[zero-gen.full.outline.begin]', { requestId });
+  const outlineStartedAt = Date.now();
   try {
     const zeroInput: ZeroOutlineInput = {
       theme: {
@@ -540,7 +568,27 @@ export async function POST(request: NextRequest) {
     };
     outline = await generateStage1Outline(zeroInput);
     stages.outline = 'ok';
+    console.log('[zero-gen.full.outline.end]', {
+      requestId,
+      ok: true,
+      h2_chapters_count: Array.isArray(outline.h2_chapters)
+        ? outline.h2_chapters.length
+        : 0,
+      citation_highlights_count: Array.isArray(outline.citation_highlights)
+        ? outline.citation_highlights.length
+        : 0,
+      faq_count: Array.isArray((outline as { faq?: unknown[] }).faq)
+        ? ((outline as { faq?: unknown[] }).faq as unknown[]).length
+        : 0,
+      elapsed_ms: Date.now() - outlineStartedAt,
+    });
   } catch (err) {
+    console.log('[zero-gen.full.outline.end]', {
+      requestId,
+      ok: false,
+      error_message: errorMessage(err),
+      elapsed_ms: Date.now() - outlineStartedAt,
+    });
     recordStageFailure(failures, 'outline', err, { requestId });
     stages.outline = 'failed';
     return NextResponse.json(
@@ -557,18 +605,27 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. RAG retrieve（失敗しても本フロー継続）
+  const ragStartedAt = Date.now();
   const rag = await retrieveRagChunks({
     theme: theme.name,
     persona_pain: persona.tone_guide ?? '',
     keywords: body.keywords,
   });
   stages.rag = rag.status;
+  console.log('[zero-gen.full.rag.end]', {
+    requestId,
+    status: rag.status,
+    chunks_count: rag.chunks.length,
+    elapsed_ms: Date.now() - ragStartedAt,
+  });
   if (rag.status === 'failed') {
     recordStageFailure(failures, 'rag', rag.error, { requestId });
   }
 
   // 6. Stage2 writing 生成（upstream Gemini → 502）
   let bodyHtml = '';
+  console.log('[zero-gen.full.writing.begin]', { requestId });
+  const writingStartedAt = Date.now();
   try {
     bodyHtml = await generateStage2Body({
       outline,
@@ -577,7 +634,19 @@ export async function POST(request: NextRequest) {
       retrievedChunks: rag.chunks,
     });
     stages.writing = 'ok';
+    console.log('[zero-gen.full.writing.end]', {
+      requestId,
+      ok: true,
+      body_chars: bodyHtml.length,
+      elapsed_ms: Date.now() - writingStartedAt,
+    });
   } catch (err) {
+    console.log('[zero-gen.full.writing.end]', {
+      requestId,
+      ok: false,
+      error_message: errorMessage(err),
+      elapsed_ms: Date.now() - writingStartedAt,
+    });
     recordStageFailure(failures, 'writing', err, { requestId });
     stages.writing = 'failed';
     return NextResponse.json(
@@ -594,6 +663,10 @@ export async function POST(request: NextRequest) {
   }
 
   // 7. 並列検証 (claim 抽出 + 4 検証 + tone)
+  console.log('[zero-gen.full.validation.begin]', {
+    requestId,
+    body_chars: bodyHtml.length,
+  });
   const [halluSettled, toneSettled] = await Promise.all([
     runHallucinationChecks(bodyHtml).then(
       (result) => ({ ok: true as const, result }),
@@ -608,8 +681,27 @@ export async function POST(request: NextRequest) {
   const halluResult = halluSettled.ok ? halluSettled.result : null;
   if (halluSettled.ok) {
     stages.hallucination = 'ok';
+    console.log('[zero-gen.full.hallucination.result]', {
+      requestId,
+      ok: true,
+      score:
+        halluResult && typeof halluResult.hallucination_score === 'number'
+          ? halluResult.hallucination_score
+          : null,
+      claims_count:
+        halluResult && Array.isArray(halluResult.claims)
+          ? halluResult.claims.length
+          : 0,
+    });
   } else {
     stages.hallucination = 'failed';
+    console.log('[zero-gen.full.hallucination.result]', {
+      requestId,
+      ok: false,
+      score: null,
+      claims_count: 0,
+      error_message: errorMessage(halluSettled.err),
+    });
     // claim_extraction も hallucination も同経路で実行されるため、両方を記録。
     recordStageFailure(failures, 'claim_extraction', halluSettled.err, {
       requestId,
@@ -622,8 +714,25 @@ export async function POST(request: NextRequest) {
   const toneResult = toneSettled.ok ? toneSettled.result : null;
   if (toneSettled.ok) {
     stages.tone = 'ok';
+    console.log('[zero-gen.full.tone.result]', {
+      requestId,
+      ok: true,
+      total: toneResult?.tone?.total ?? null,
+      passed: toneResult?.passed ?? null,
+      blockers_count: Array.isArray(toneResult?.tone?.blockers)
+        ? toneResult.tone.blockers.length
+        : 0,
+    });
   } else {
     stages.tone = 'failed';
+    console.log('[zero-gen.full.tone.result]', {
+      requestId,
+      ok: false,
+      total: null,
+      passed: null,
+      blockers_count: 0,
+      error_message: errorMessage(toneSettled.err),
+    });
     recordStageFailure(failures, 'tone', toneSettled.err, { requestId });
   }
 
@@ -643,9 +752,24 @@ export async function POST(request: NextRequest) {
       },
     });
     stages.images = 'ok';
+    console.log('[zero-gen.full.image.end]', {
+      requestId,
+      ok: true,
+      hero_chars: imagePrompts.hero.length,
+      body_chars: imagePrompts.body.length,
+      summary_chars: imagePrompts.summary.length,
+    });
   } catch (err) {
     recordStageFailure(failures, 'image', err, { requestId });
     stages.images = 'failed';
+    console.log('[zero-gen.full.image.end]', {
+      requestId,
+      ok: false,
+      hero_chars: 0,
+      body_chars: 0,
+      summary_chars: 0,
+      error_message: errorMessage(err),
+    });
   }
 
   // 10. articles INSERT（DB error → 500）
@@ -659,6 +783,8 @@ export async function POST(request: NextRequest) {
       : null;
 
   let articleId: string;
+  console.log('[zero-gen.full.db.insert.begin]', { requestId });
+  const dbInsertStartedAt = Date.now();
   try {
     const inserted = await insertZeroArticle({
       keywords: body.keywords,
@@ -673,7 +799,20 @@ export async function POST(request: NextRequest) {
     });
     articleId = inserted.id;
     stages.insert_article = 'ok';
+    console.log('[zero-gen.full.db.insert.end]', {
+      requestId,
+      ok: true,
+      articleId,
+      elapsed_ms: Date.now() - dbInsertStartedAt,
+    });
   } catch (err) {
+    console.log('[zero-gen.full.db.insert.end]', {
+      requestId,
+      ok: false,
+      articleId: null,
+      error_message: errorMessage(err),
+      elapsed_ms: Date.now() - dbInsertStartedAt,
+    });
     recordStageFailure(failures, 'db_insert', err, { requestId });
     stages.insert_article = 'failed';
     return NextResponse.json(
@@ -726,6 +865,11 @@ export async function POST(request: NextRequest) {
   } else {
     stages.insert_claims = 'skipped';
   }
+  console.log('[zero-gen.full.persist.claims]', {
+    requestId,
+    articleId,
+    status: stages.insert_claims,
+  });
 
   if (Array.isArray(ctaVariants) && ctaVariants.length > 0) {
     try {
@@ -741,6 +885,12 @@ export async function POST(request: NextRequest) {
   } else {
     stages.insert_cta_variants = 'skipped';
   }
+  console.log('[zero-gen.full.persist.cta]', {
+    requestId,
+    articleId,
+    status: stages.insert_cta_variants,
+    count: Array.isArray(ctaVariants) ? ctaVariants.length : 0,
+  });
 
   if (toneResult) {
     try {
@@ -756,6 +906,11 @@ export async function POST(request: NextRequest) {
   } else {
     stages.insert_tone = 'skipped';
   }
+  console.log('[zero-gen.full.persist.tone]', {
+    requestId,
+    articleId,
+    status: stages.insert_tone,
+  });
 
   // 12. article_revisions に履歴 INSERT (HTML 履歴ルール)
   try {
@@ -768,6 +923,11 @@ export async function POST(request: NextRequest) {
     });
     stages.insert_revision = 'failed';
   }
+  console.log('[zero-gen.full.persist.revision]', {
+    requestId,
+    articleId,
+    status: stages.insert_revision,
+  });
 
   // 13. レスポンス
   // writing は失敗時に既に return しているため、ここでは ok 固定。
@@ -821,5 +981,14 @@ export async function POST(request: NextRequest) {
     durationMs: responseBody.duration_ms,
   });
 
-  return NextResponse.json(responseBody, { status: partial ? 207 : 201 });
+  const statusCode = partial ? 207 : 201;
+  console.log('[zero-gen.full.request.end]', {
+    requestId,
+    articleId,
+    partial,
+    status_code: statusCode,
+    total_elapsed_ms: Date.now() - startedAt,
+  });
+
+  return NextResponse.json(responseBody, { status: statusCode });
 }

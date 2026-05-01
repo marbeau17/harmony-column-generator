@@ -210,6 +210,13 @@ export function buildZeroImagePrompts(
 ): ZeroImagePromptResult {
   const { outline } = input;
 
+  console.log('[image-prompt.begin]', {
+    theme_name: input.theme?.name,
+    has_visual_mood: !!input.theme?.visual_mood,
+    has_image_style: !!input.persona?.image_style,
+    outline_h2_count: outline.h2_chapters?.length ?? 0,
+  });
+
   const personaStyle = buildPersonaStyle(input.persona?.image_style);
   const themeMood = buildThemeMood(input.theme?.visual_mood);
   const motif = resolveThemeMotif(input.theme?.name);
@@ -243,6 +250,12 @@ export function buildZeroImagePrompts(
       fallbackContext,
     });
   }
+
+  console.log('[image-prompt.end]', {
+    hero_chars: result.hero.length,
+    body_chars: result.body.length,
+    summary_chars: result.summary.length,
+  });
 
   return result;
 }

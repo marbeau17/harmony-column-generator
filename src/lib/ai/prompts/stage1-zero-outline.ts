@@ -202,7 +202,15 @@ emotion_curve は H2 章数分の整数列で、-2（沈み込み）〜 +2（解
 - h2_chapters: 各章 title / summary / target_chars / arc_phase（awareness|wavering|acceptance|action のいずれか）
 - citation_highlights: 80〜120 字 × 3（記事内で引用されうる核心フレーズ）
 - faq_items: 2〜3 個の Q&A（Q は読者の検索クエリ風、A は 100〜150 字）
-- image_prompts: hero / body / summary の 3 個（日本語、柔らかく幻想的な情景）
+- image_prompts は必ず以下の **配列形式** で返すこと（オブジェクト形式 \`{hero, body, summary}\` は不可）:
+\`\`\`json
+"image_prompts": [
+  {"slot": "hero", "prompt": "..."},
+  {"slot": "body", "prompt": "..."},
+  {"slot": "summary", "prompt": "..."}
+]
+\`\`\`
+  各要素は必ず \`slot\` と \`prompt\` のキーを持つオブジェクトとし、prompt は日本語で柔らかく幻想的な情景を描写する
 
 ## 絶対禁止
 - 元記事の参照を装った具体エピソードのねつ造
@@ -244,7 +252,7 @@ function buildUserPrompt(input: ZeroOutlineInput): string {
 3. 主要キーワードは少なくとも 1 つの H2 タイトルに自然に含める
 4. citation_highlights は記事内に必ず登場させたい「核心フレーズ」を 3 つ。各 80〜120 字で、由起子さんの語り口で書く
 5. faq_items は読者が検索しそうな疑問。Q は短く、A は 100〜150 字
-6. image_prompts は hero / body / summary の 3 スロットすべて埋めること
+6. image_prompts は hero / body / summary の 3 スロットすべて埋めること。**必ず配列形式 \`[{"slot": "hero", "prompt": "..."}, {"slot": "body", "prompt": "..."}, {"slot": "summary", "prompt": "..."}]\` で返すこと**。オブジェクト形式 \`{hero: "...", body: "...", summary: "..."}\` は禁止
 
 ## 出力
 ZeroOutlineOutput スキーマに完全準拠した JSON のみを出力してください。`;
