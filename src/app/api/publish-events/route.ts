@@ -58,6 +58,7 @@ interface PublishEventRow {
   hub_deploy_error: string | null;
   actor_email: string | null;
   created_at: string;
+  article?: { generation_mode: string | null } | null;
 }
 
 interface HallucinationArticleRow {
@@ -238,7 +239,9 @@ export async function GET(req: NextRequest) {
   // 失敗イベント直近 10 件（hub_deploy_status = 'failed'）
   const { data: failedRecent, error: failErr } = await service
     .from('publish_events')
-    .select('id, article_id, action, hub_deploy_error, actor_email, created_at')
+    .select(
+      'id, article_id, action, hub_deploy_error, actor_email, created_at, article:articles(generation_mode)',
+    )
     .eq('hub_deploy_status', 'failed')
     .gte('created_at', sinceIso)
     .order('created_at', { ascending: false })
@@ -271,12 +274,30 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Supabase の embed は join 先が単一でも配列で返ることがあるため、
+  // クライアント側で扱いやすいよう { generation_mode } | null へ正規化する。
+  const failedRecentNormalized: PublishEventRow[] = (failedRecent ?? []).map(
+    (row) => {
+      const r = row as PublishEventRow & {
+        article?:
+          | { generation_mode: string | null }
+          | { generation_mode: string | null }[]
+          | null;
+      };
+      const articleRaw = r.article;
+      const article = Array.isArray(articleRaw)
+        ? (articleRaw[0] ?? null)
+        : (articleRaw ?? null);
+      return { ...r, article };
+    },
+  );
+
   return NextResponse.json({
     range,
     totalEvents,
     byAction,
     byHubStatus,
-    failedRecent: (failedRecent ?? []) as PublishEventRow[],
+    failedRecent: failedRecentNormalized,
     ...(hallucination !== undefined ? { hallucination } : {}),
     ...(tone !== undefined ? { tone } : {}),
   });

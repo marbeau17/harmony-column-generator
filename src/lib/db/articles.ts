@@ -84,6 +84,14 @@ export interface CreateArticleInput {
   theme?: string;
   persona?: string;
   target_word_count?: number;
+  /**
+   * 生成モード。明示的に指定しない場合は 'source'（既存 source-based 生成）を採用する。
+   * - 'source': 既存記事を起点とした視点変換生成（DEFAULT 互換）
+   * - 'zero':   ゼロ生成 V1（zero-generate / zero-generate-full 経由は直接 INSERT のためここを通らない）
+   * DB 側にも DEFAULT 'source' が定義されているが、依存せず明示書込みすることで
+   * 後続の集計・フィルタ（例: batch-hide-source）で NULL 扱いを避ける。
+   */
+  generation_mode?: 'zero' | 'source';
 }
 
 // ---------- CRUD ----------
@@ -165,10 +173,16 @@ export async function createArticle(
     }
   }
 
+  // generation_mode は明示的に書込む。未指定なら 'source' を既定値として採用する。
+  // DB 側 DEFAULT 'source' に依存せず明示することで、列の NULL 化や DEFAULT 変更時の
+  // 副作用を防ぎ、後続フィルタ（例: batch-hide-source）の判定を一貫させる。
+  const generationMode: 'zero' | 'source' = input.generation_mode ?? 'source';
+
   const { data, error } = await supabase
     .from('articles')
     .insert({
       ...input,
+      generation_mode: generationMode,
       status: 'draft' as ArticleStatus,
     })
     .select('*')

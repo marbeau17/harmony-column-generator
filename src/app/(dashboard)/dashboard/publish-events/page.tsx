@@ -13,6 +13,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import GenerationModeBadge from '@/components/articles/GenerationModeBadge';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,8 @@ interface FailedEvent {
   hub_deploy_error: string | null;
   actor_email: string | null;
   created_at: string;
+  article?: { generation_mode: string | null } | null;
+  generation_mode?: string | null;
 }
 
 interface HallucinationArticle {
@@ -330,6 +333,7 @@ export default function PublishEventsPage() {
                     <tr>
                       <th className={thClass}>発生時刻</th>
                       <th className={thClass}>article_id</th>
+                      <th className={thClass}>mode</th>
                       <th className={thClass}>action</th>
                       <th className={thClass}>actor</th>
                       <th className={thClass}>error</th>
@@ -346,6 +350,16 @@ export default function PublishEventsPage() {
                           title={ev.article_id}
                         >
                           {ev.article_id.slice(0, 8)}...
+                        </td>
+                        <td className={tdClass}>
+                          <GenerationModeBadge
+                            mode={
+                              ev.article?.generation_mode ??
+                              ev.generation_mode ??
+                              null
+                            }
+                            size="sm"
+                          />
                         </td>
                         <td className={tdClass}>{ev.action}</td>
                         <td className={`${tdClass} text-xs`}>

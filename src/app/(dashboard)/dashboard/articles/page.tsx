@@ -7,8 +7,10 @@ import { Search, Plus, ChevronLeft, ChevronRight, ArrowUpDown, RefreshCw, Downlo
 import StatusBadge from '@/components/common/StatusBadge';
 import PublishButton, { type PublishButtonState } from '@/components/articles/PublishButton';
 import BatchHideButton from '@/components/articles/BatchHideButton';
+import GenerationModeBadge from '@/components/articles/GenerationModeBadge';
 import { rebuildHub, formatHubRebuildResult } from '@/lib/deploy/hub-rebuild-client';
 import { fetchPublishedArticles } from '@/lib/articles/fetch-published-articles';
+import { filterArticlesByMode } from '@/lib/utils/article-mode-filter';
 
 // publish-control-v2 flag (inlined at build time). Default OFF — existing UI unchanged.
 const PUBLISH_CONTROL_V2 = process.env.NEXT_PUBLIC_PUBLISH_CONTROL_V2 === 'on';
@@ -169,6 +171,7 @@ export default function ArticlesPage() {
   const initialStatus = searchParams.get('status') ?? '';
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [reviewFilter, setReviewFilter] = useState<'all' | 'reviewed' | 'unreviewed'>('all');
+  const [modeFilter, setModeFilter] = useState<'all' | 'zero' | 'source'>('all');
   const [keyword, setKeyword] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(1);
@@ -241,6 +244,10 @@ export default function ArticlesPage() {
     } else if (reviewFilter === 'unreviewed') {
       filtered = articles.filter((a) => a.reviewed_at == null);
     }
+
+    // Apply mode filter (null/未設定 は legacy source 扱い)
+    // 純ロジックは src/lib/utils/article-mode-filter.ts に切り出し済み
+    filtered = filterArticlesByMode(filtered, modeFilter);
 
     // sortKey=null の場合はAPI返却順をそのまま維持（自動ソートしない）
     if (!sortKey) return filtered;
@@ -410,22 +417,6 @@ export default function ArticlesPage() {
     return <span className={`tabular-nums ${cls}`}>{score.toFixed(2)}</span>;
   };
 
-  // \u751f\u6210\u30e2\u30fc\u30c9\u8868\u793a
-  const renderGenerationMode = (mode: string | null | undefined) => {
-    if (!mode) {
-      return <span className="text-brand-300 dark:text-brand-500">\u2014</span>;
-    }
-    const isZero = mode === 'zero';
-    const cls = isZero
-      ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
-      : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300';
-    return (
-      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
-        {mode}
-      </span>
-    );
-  };
-
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -587,6 +578,27 @@ export default function ArticlesPage() {
               {rf.label}
             </button>
           ))}
+
+          {/* Mode filter separator */}
+          <span className="hidden sm:inline-flex items-center text-brand-300">|</span>
+
+          {/* Generation mode filter dropdown */}
+          <select
+            value={modeFilter}
+            onChange={(e) => {
+              setModeFilter(e.target.value as 'all' | 'zero' | 'source');
+              setPage(1);
+            }}
+            aria-label="生成モードで絞り込み"
+            className="rounded-full border border-brand-200 bg-white px-3 py-1.5 text-sm font-medium
+              text-brand-700 transition hover:bg-brand-100 focus:border-brand-500 focus:outline-none
+              focus:ring-2 focus:ring-brand-500/20
+              dark:border-brand-700 dark:bg-brand-900 dark:text-brand-200 dark:hover:bg-brand-800"
+          >
+            <option value="all">モード: 全て</option>
+            <option value="zero">ゼロ生成</option>
+            <option value="source">リライト</option>
+          </select>
         </div>
 
         {/* Search */}
@@ -758,7 +770,7 @@ export default function ArticlesPage() {
                     {renderToneScore(article.yukiko_tone_score)}
                   </td>
                   <td className="px-3 py-3 text-center">
-                    {renderGenerationMode(article.generation_mode)}
+                    <GenerationModeBadge mode={article.generation_mode} size="sm" />
                   </td>
                   <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                     {PUBLISH_CONTROL_V2 ? (

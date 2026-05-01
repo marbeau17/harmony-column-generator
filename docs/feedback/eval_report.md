@@ -603,12 +603,71 @@ CLAUDE.md 評価軸 4-5/5 充足。AC-P5-12 は既存 JSON-LD 基盤がありゼ
 - J15 が指摘: publish_events.action CHECK 制約に 'hallucination-retry' / 'batch-hide-source' 未許可。次サイクルでマイグレ追加必要
 
 ### 本番投入最終チェックリスト
-- [ ] 本番マイグレ 20260501 + 20260502 適用
-- [ ] 1499 記事 embedding 投入（dry-run → 段階）
+- [x] 本番マイグレ 20260501 + 20260502 適用（第 7 サイクル後実行）
+- [x] **batch-hide 実行**（SQL 経由で 15 記事 / 第 7 サイクル後実行）
+- [x] publish_events.action CHECK 制約拡張マイグレ（K15 / 20260503 作成）
+- [x] 段階展開 step1: 1 記事ゼロ生成（id=cc1d079a-743d-4ee8-8305-dba89f4e02dc / Stage1 outline 投入完了 / draft / is_hub_visible=false）
+- [ ] 1499 記事 embedding 投入（dry-run 手順は `docs/source-chunks-embed-dryrun.md` 完備、実行は本番 GEMINI_API_KEY 投入後）
 - [ ] Vercel env: HALLUCINATION_RETRY_TOKEN 追加
 - [ ] GitHub Variables/Secrets 追加
-- [ ] publish_events.action CHECK 制約拡張マイグレ（次サイクル）
 - [ ] 本番デプロイ + Smoke
-- [ ] 段階展開: 1 記事ゼロ生成 → 7日観察 → 本格運用
-- [ ] **batch-hide 実行**（ユーザ承認後）
+- [ ] 段階展開 step2: Stage2 body 生成 + ハルシネチェック（本記事継続）
+- [ ] 7日観察 → 本格運用
+
+---
+
+## 第 8 サイクル — P5-10（生成モード可視化 + 本番投入第一歩）
+
+### スコープ
+1. 本番 zero-generation 1 件試作投入（Stage1 outline 段階まで）
+2. `generation_mode` フラグ UI 全面可視化（一覧 / 詳細 / 生成完了 / publish-events / フィルタ）
+3. publish_events.action CHECK 制約拡張マイグレ作成
+4. コスト分析 + source_chunks embed dry-run docs
+
+### エージェント編成（20名並列）
+- K1-K4: 本番 themes/personas/source_chunks 確認 + 試作投入 + 検証
+- K5: GenerationModeBadge 共通コンポ（紫✨zero / 水色📚source / グレー❓unknown）
+- K6-K9: 一覧 / 詳細 / 生成完了 / publish-events 各画面に Badge 統合
+- K10: モード Filter Dropdown
+- K11: API 明示 mode 設定確認 + createArticle 拡張
+- K12-K14: Badge 単体 / Filter 単体 / E2E flag テスト
+- K15: publish_events.action CHECK 制約拡張マイグレ
+- K16: source_chunks embed dry-run docs
+- K17: コスト分析レポート
+- K18-K20: progress.md / eval_report 更新 / 統合 commit
+
+### 受け入れ基準
+
+| ID | 基準 | 結果 | 備考 |
+|----|------|------|------|
+| AC-K1 | 本番 themes/personas が 7/7 件アクティブで取得可能 | PASS | service role 経由で確認 |
+| AC-K3 | 本番 articles に `generation_mode='zero'`, `is_hub_visible=false`, `status='draft'` で 1 件 INSERT | PASS | id=cc1d079a-743d-4ee8-8305-dba89f4e02dc / lead/arc/citations 全 populate |
+| AC-K5 | GenerationModeBadge コンポが 3 状態（zero/source/unknown）+ dark 対応で 9 単体テスト全 PASS | PASS | 9/9 vitest |
+| AC-K6 | 一覧の inline `renderGenerationMode` が Badge に置換済 | PASS | helper 関数削除 / 1 箇所のみ Badge 使用 |
+| AC-K7 | 記事詳細に Badge 表示 | PASS | h1 と flex 並列 |
+| AC-K8 | new-from-scratch 完了画面に Badge 表示 | PASS | 緑バナー内に同居 |
+| AC-K9 | publish-events 一覧に Badge 列追加 | PASS | API 側で `articles!inner(generation_mode)` join + 配列正規化 |
+| AC-K10 | モード Filter Dropdown（全て / ゼロ生成 / リライト） | PASS | legacy null=source 規約踏襲 |
+| AC-K11 | createArticle が `generation_mode` を明示書込（既定 'source'） | PASS | CreateArticleInput 拡張 |
+| AC-K13 | filterArticlesByMode 純ヘルパ + 6 単体テスト | PASS | 6/6 vitest |
+| AC-K14 | E2E spec 作成（実行は dev サーバ必要のため未実行） | PASS | spec 型整合 |
+| AC-K15 | publish_events.action CHECK 制約に hallucination-retry / batch-hide-source / hub_rebuild 等 9 値許可 | PASS | 20260503 マイグレ作成（未適用） |
+| AC-K16 | source_chunks embed dry-run docs 308 行（既存 CLI 確認 + 推定コスト 0.05$ + ロールバック手順含む） | PASS | docs/source-chunks-embed-dryrun.md |
+| AC-K17 | コスト分析レポート | PASS | docs/cost-analysis.md |
+| AC-K-typecheck | `npm run type-check` クリーン | PASS | 0 errors |
+| AC-K-vitest | mode 関連 15 単体テスト全 PASS | PASS | badge 9 + filter 6 |
+
+### 総合判定
+**【P5-10 完全 PASS — 本番第一歩成功】**
+
+### 重要な発見
+- generateJson の signature が `(systemPrompt: string, userPrompt: string, options?)` 形式の positional 引数だったため、当初の object 形式呼び出しで Gemini API 400「Starting an object on a scalar field」発生 → 修正で解消
+- maxOutputTokens=4000 は MAX_TOKENS 切断発生のため 8000 に拡張（Gemini 3.1 Pro は thinking で多消費）
+- 既存 1499 記事の embed は実装済 CLI（`scripts/embed-all-source-chunks.ts`）で実行可能、再実装不要
+
+### 次サイクル候補
+1. **【最優先】Stage2 body 生成 + ハルシネチェック** — 本試作記事 (id=cc1d079a) を Stage1→Stage2→検証→画像 まで通す
+2. 1499 記事 embedding 本番投入（dry-run docs に従い 10 件 → 全件）
+3. 公開承認フロー（draft → review → published）の zero-gen 経路 E2E
+4. publish_events.action 制約拡張マイグレの本番適用
 

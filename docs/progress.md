@@ -635,3 +635,71 @@ WHERE id IN (
 - Vercel/GitHub 環境変数追加 (HALLUCINATION_RETRY_TOKEN 等)
 - 段階展開 → 本番 batch-hide 実行（ユーザ承認後）
 - publish_events.action CHECK 制約に 'hallucination-retry' 'batch-hide-source' 追加マイグレ（J15 が言及）
+
+---
+
+# P5-10 — 生成モード可視化 + 本番投入第一歩（2026-05-01）
+
+## 目的
+ユーザ要件「rewrite or created newly from scratch or not」を全画面で識別可能にし、
+本番に zero-generation 記事を 1 件試作投入してパイプライン健全性を検証する。
+
+## 実施内容（20名並列）
+
+### Wave 1: 本番状態確認 + 試作投入
+- K1 本番 themes/personas 取得確認（7/7 アクティブ）
+- K2 本番 source_chunks 件数確認（0 件）
+- K3 本番 zero-gen 1 件 INSERT — id=`cc1d079a-743d-4ee8-8305-dba89f4e02dc` / generation_mode=zero / draft / is_hub_visible=false
+- K4 試作結果検証（lead/arc/citations 全 populate 確認）
+- K11 createArticle に `generation_mode?: 'zero'|'source'` 入力 + 既定 'source' 明示
+
+### Wave 2: UI 可視化（共通コンポ + 4 画面 + Filter）
+- K5 GenerationModeBadge 共通コンポ（紫 ✨ zero / 水色 📚 source / グレー ❓ unknown / dark 対応）
+- K6 一覧ページ inline rendering → Badge に置換
+- K7 記事詳細ページに Badge 追加（h1 隣接）
+- K8 new-from-scratch 完了バナーに Badge 追加
+- K9 publish-events 一覧に Badge 列追加 + API 側 `articles!inner(generation_mode)` join
+- K10 モード Filter Dropdown 追加（全て / ゼロ生成 / リライト、legacy null=source 規約踏襲）
+- K12 Badge 単体テスト 9/9 PASS
+- K13 filterArticlesByMode 純ヘルパ + 6 単体テスト PASS
+- K14 E2E spec 作成（generation-mode-flag.spec.ts、実行は dev 必要）
+
+### Wave 3: 制約拡張 + 運用 docs
+- K15 publish_events.action CHECK 制約拡張マイグレ作成（20260503 / 9 値許可 / ロールバック節含む）
+- K16 source_chunks embed dry-run docs（308 行 / 既存 CLI 確認 + コスト 0.05$ + ロールバック）
+- K17 コスト分析レポート（$0.18/article、月 $5-54）
+
+### Wave 4: 検証 + 統合
+- K18 progress.md 更新（本セクション）
+- K19 eval_report.md 第 8 サイクル PASS 記録
+- K20 統合 commit + push
+
+## 検証
+- 型チェック: `npm run type-check` exit=0
+- 単体テスト: badge 9 + filter 6 = 15/15 PASS
+- 本番 INSERT: id=cc1d079a-743d-4ee8-8305-dba89f4e02dc 確認済（service role 経由）
+- 既存 P5-1〜P5-9: 回帰なし
+
+## 関連ファイル
+- (added) src/components/articles/GenerationModeBadge.tsx
+- (added) src/lib/utils/article-mode-filter.ts
+- (added) supabase/migrations/20260503000000_publish_events_action_extension.sql
+- (added) docs/cost-analysis.md
+- (added) docs/source-chunks-embed-dryrun.md
+- (added) scripts/ops/zero-gen-production-test.ts
+- (added) test/unit/generation-mode-badge.test.tsx
+- (added) test/unit/articles-list-mode-filter.test.tsx
+- (added) test/e2e/generation-mode-flag.spec.ts
+- (modified) src/app/(dashboard)/dashboard/articles/page.tsx
+- (modified) src/app/(dashboard)/dashboard/articles/[id]/page.tsx
+- (modified) src/app/(dashboard)/dashboard/articles/new-from-scratch/page.tsx
+- (modified) src/app/(dashboard)/dashboard/publish-events/page.tsx
+- (modified) src/app/api/publish-events/route.ts
+- (modified) src/lib/db/articles.ts
+
+## 残タスク（次サイクル）
+- 試作記事 cc1d079a の Stage2 body 生成 + ハルシネチェック → 画像 → review
+- 1499 記事 embedding 本番投入（dry-run docs に従い 10 件 → 全件）
+- 20260503 マイグレ本番適用（Vercel デプロイ前）
+- 公開承認フロー zero-gen 経路 E2E
+- 7 日観察 → 本格運用

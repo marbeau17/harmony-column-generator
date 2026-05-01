@@ -27,6 +27,7 @@ import IntentRadioCard, { type IntentType } from '@/components/articles/IntentRa
 import HallucinationResultPane from '@/components/articles/HallucinationResultPane';
 import RegenerationControls from '@/components/articles/RegenerationControls';
 import DiffViewer from '@/components/articles/DiffViewer';
+import GenerationModeBadge from '@/components/articles/GenerationModeBadge';
 import type {
   Claim,
   ClaimType,
@@ -957,9 +958,12 @@ export default function NewFromScratchPage() {
                 aria-hidden
               />
               <div>
-                <h2 className="text-sm font-semibold text-emerald-800 dark:text-emerald-100">
-                  記事生成が完了しました
-                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-semibold text-emerald-800 dark:text-emerald-100">
+                    記事生成が完了しました
+                  </h2>
+                  <GenerationModeBadge mode={result?.generation_mode ?? 'zero'} size="md" />
+                </div>
                 {result?.lead_summary && (
                   <p className="mt-1 line-clamp-3 text-xs text-emerald-900/80 dark:text-emerald-200/80">
                     {result.lead_summary}

@@ -9,6 +9,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { Article, ArticleStatus } from '@/types/article';
 import StatusBadge from '@/components/common/StatusBadge';
+import GenerationModeBadge from '@/components/articles/GenerationModeBadge';
 
 // ─── ステータスラベル ──────────────────────────────────────────────────────────
 
@@ -520,9 +521,12 @@ export default function ArticleDetailPage() {
               更新: {new Date(article.updated_at).toLocaleDateString('ja-JP')}
             </span>
           </div>
-          <h1 className="text-xl font-bold text-brand-800 sm:text-2xl">
-            {article.title || '（タイトル未設定）'}
-          </h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-xl font-bold text-brand-800 sm:text-2xl">
+              {article.title || '（タイトル未設定）'}
+            </h1>
+            <GenerationModeBadge mode={article.generation_mode} size="md" />
+          </div>
         </div>
         <button
           className="shrink-0 self-start rounded-lg border border-brand-200 px-4 py-2 text-sm text-brand-600 hover:bg-brand-50"
