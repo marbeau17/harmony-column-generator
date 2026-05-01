@@ -329,7 +329,6 @@ async function insertZeroArticle(args: {
       'untitled',
     stage1_outline: args.outline,
     stage2_body_html: args.bodyHtml,
-    html_body: args.bodyHtml,
     lead_summary: args.outline.lead_summary ?? null,
     narrative_arc: args.outline.narrative_arc ?? null,
     emotion_curve: args.outline.emotion_curve ?? null,
