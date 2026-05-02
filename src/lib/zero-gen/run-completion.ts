@@ -298,8 +298,15 @@ export async function runZeroGenCompletion(args: {
     for (const p of prompts.slice(0, 3)) {
       const tImg = Date.now();
       onProgress?.('image_gen', { position: p.position });
+      // P5-29: Gemini Image Model は人物のポートレートを暴走的に生成しがち。
+      // プロンプトに静物/風景指定 + 人物禁止 を強化付与する。
+      const enhancedPrompt =
+        `${p.prompt}\n\n` +
+        `Style: still life or peaceful landscape illustration, soft pastel watercolor, ethereal warm lighting. ` +
+        `STRICTLY NO: human face, portrait, person, character, woman, man, body parts, eyes, mouth, hands. ` +
+        `Focus on objects, nature, scenery only.`;
       try {
-        const result = await generateImage(p.prompt, { timeoutMs: 90_000 });
+        const result = await generateImage(enhancedPrompt, { timeoutMs: 90_000 });
         const path = `articles/${articleId}/${p.position}.${mimeToExt(result.mimeType)}`;
         const { error: upErr } = await supabase.storage
           .from(STORAGE_BUCKET)

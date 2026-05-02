@@ -16,9 +16,10 @@ import type { ZeroOutlineOutput } from './stage1-zero-outline';
 const COMMON_STYLE_KEYWORDS =
   'soft pastel illustration, ethereal, dreamy, warm lighting, gentle glow';
 
-/** Zero Generation 用ネガティブプロンプト（spec §10.1 固定） */
+/** Zero Generation 用ネガティブプロンプト（spec §10.1 固定 + P5-29 強化） */
 export const ZERO_NEGATIVE_PROMPT =
-  'text, watermark, logo, signature, deformed hands, religious symbols, medical equipment';
+  'text, watermark, logo, signature, deformed hands, religious symbols, medical equipment, ' +
+  'human face, portrait, person, character, woman face, man face, body parts, eyes, mouth';
 
 // ─── テーマ別モチーフマップ（image-prompt.ts から踏襲） ──────────────────────
 
