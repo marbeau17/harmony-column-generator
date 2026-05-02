@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import type { CookieOptions } from '@supabase/ssr';
+import { createClient as createPureSupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 export async function createServerSupabaseClient() {
@@ -28,31 +29,24 @@ export async function createServerSupabaseClient() {
 
 // Service Role用（管理操作用）
 //
-// バグF (2026-05-02): cookies() は Next.js の request context 外（CLI / cron worker /
-// background fetch）で必ず例外を投げる。Service role はそもそも auth セッションを
-// 必要としないので、request 外で呼ばれた場合は cookies を空配列で fallback して
-// 同じ client を返す。これで route handler / server component / CLI 全 context で
-// 同一関数を使い回せる。
+// バグL (2026-05-02): @supabase/ssr の createServerClient で SERVICE_ROLE_KEY を
+// 渡しても cookies に anon JWT が含まれる Vercel function 環境では anon role 扱い
+// になり、RLS 有効テーブル (generation_jobs 等) への INSERT が拒否されていた。
+// → @supabase/supabase-js 純正 createClient に切替。これは cookie を一切見ない
+// pure service role キーベースの client で、RLS バイパスが確実に効く。
+//
+// バグF (2026-05-02): cookies() は Next.js の request context 外で例外を投げる
+// 問題は、純正クライアントを使うことで自動的に解決 (cookies に依存しない)。
+// route handler / server component / CLI / cron worker 全 context で動作。
 export async function createServiceRoleClient() {
-  let cookieStore: Awaited<ReturnType<typeof cookies>> | null = null;
-  try {
-    cookieStore = await cookies();
-  } catch {
-    // CLI / non-request context — service role なので cookies は不要
-    cookieStore = null;
-  }
-  return createServerClient(
+  return createPureSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
-      cookies: {
-        getAll() {
-          return cookieStore ? cookieStore.getAll() : [];
-        },
-        setAll() {
-          // Service Role では cookie 書き込み不要 + CLI では cookieStore が null
-        },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
       },
-    }
+    },
   );
 }
