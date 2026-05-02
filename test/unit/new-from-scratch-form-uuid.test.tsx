@@ -12,7 +12,7 @@
 //   2. <select id="theme"> の option value が UUID 形式 (z.string().uuid() 通る)
 //   3. <select id="persona"> の option value が UUID 形式
 //   4. テーマ + ペルソナ + キーワード + intent + target_length 入力後 submit
-//   5. POST /api/articles/zero-generate-full の body が
+//   5. POST /api/articles/zero-generate-async の body が
 //        { theme_id: <uuid>, persona_id: <uuid>, keywords: [...], intent: ...,
 //          target_length: 2000 } 形式
 //   6. /api/themes が 500 を返したときエラーバナー (role="alert") が表示される
@@ -282,7 +282,7 @@ describe('NewFromScratchPage — UUID 送信フォーム', () => {
     }
   });
 
-  it('4 & 5. submit 時 POST /api/articles/zero-generate-full の body が {theme_id, persona_id, keywords, intent, target_length} 形式 (UUID)', async () => {
+  it('4 & 5. submit 時 POST /api/articles/zero-generate-async の body が {theme_id, persona_id, keywords, intent, target_length} 形式 (UUID)', async () => {
     let captured: { url: string; method?: string; body?: unknown } | null = null;
 
     planFetch([
@@ -301,20 +301,17 @@ describe('NewFromScratchPage — UUID 送信フォーム', () => {
           } satisfies PersonasResp),
       },
       {
-        match: (u, i) => u.includes('/api/articles/zero-generate-full') && i?.method === 'POST',
+        match: (u, i) => u.includes('/api/articles/zero-generate-async') && i?.method === 'POST',
         respond: (u, i) => {
           captured = {
             url: u,
             method: i?.method,
             body: typeof i?.body === 'string' ? JSON.parse(i.body) : i?.body,
           };
+          // P5-20: 非同期生成 — 即返で job_id を返す
           return okJson({
-            article_id: '99999999-9999-4999-8999-999999999999',
-            status: 'completed',
-            partial_success: false,
-            scores: { hallucination: 90, yukiko_tone: 0.8 },
-            claims_count: 0,
-            criticals: 0,
+            job_id: '99999999-9999-4999-8999-999999999999',
+            status: 'queued',
           });
         },
       },
@@ -374,7 +371,7 @@ describe('NewFromScratchPage — UUID 送信フォーム', () => {
 
     expect(captured).not.toBeNull();
     expect(captured!.method).toBe('POST');
-    expect(captured!.url).toContain('/api/articles/zero-generate-full');
+    expect(captured!.url).toContain('/api/articles/zero-generate-async');
 
     const body = captured!.body as Record<string, unknown>;
     expect(body).toEqual(

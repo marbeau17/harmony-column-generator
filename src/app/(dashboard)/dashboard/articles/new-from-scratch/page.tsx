@@ -35,6 +35,7 @@ import type {
   Risk,
   RiskLevel,
 } from '@/types/hallucination';
+import { useGenerationJob } from '@/hooks/useGenerationJob';
 
 // ─── Option types（API から取得した themes / personas を保持） ─────────────
 
@@ -321,6 +322,10 @@ export default function NewFromScratchPage() {
   const generating = stage !== 'idle' && stage !== 'done' && stage !== 'error';
   const stageTimers = useRef<number[]>([]);
 
+  // P5-20: 非同期生成 (案B) — job_id を保持して別画面に移動できるようにする
+  const { job: activeJob, startJob: startGenerationJob } = useGenerationJob();
+  const jobActive = activeJob && activeJob.stage !== 'done' && activeJob.stage !== 'failed';
+
   // ── ページ離脱防止（生成中） ─────────────────────────────────────────────
   useEffect(() => {
     if (!generating) return;
@@ -596,6 +601,10 @@ export default function NewFromScratchPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (generating) return;
+    if (jobActive) {
+      toast.error('別の生成が進行中です。完了を待ってから再度実行してください。');
+      return;
+    }
 
     // 簡易バリデーション
     if (!themeId) { toast.error('テーマを選択してください'); return; }
@@ -626,11 +635,11 @@ export default function NewFromScratchPage() {
     );
 
     try {
-      const res = await fetch('/api/articles/zero-generate-full', {
+      // P5-20: 非同期生成 — POST 即返で job_id を取得、SSE で進捗購読
+      const res = await fetch('/api/articles/zero-generate-async', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // /api/themes と /api/personas から取得した UUID をそのまま送信。
           theme_id: themeId,
           persona_id: personaId,
           keywords,
@@ -639,24 +648,17 @@ export default function NewFromScratchPage() {
         }),
       });
 
-      if (!res.ok && res.status !== 207) {
+      if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as
           | ValidationErrorBody
           | Record<string, unknown>;
 
-        // 400 かつ zod flatten 形式の details が含まれる場合は、
-        // フィールド別に個別 toast を表示しユーザーフレンドリーに通知する。
         if (res.status === 400 && hasZodDetails(body)) {
           const shown = showZodFieldErrors(body.details);
           const headline =
             (typeof body.error === 'string' && body.error) ||
             '入力内容に誤りがあります';
-          // フィールドメッセージが 1 件も無ければ headline をそのまま表示し、
-          // 1 件以上あれば既に個別表示済みなのでスローのみ（catch 側の toast は抑止）。
-          if (!shown) {
-            toast.error(headline);
-          }
-          // catch 側で再度 toast を出さないよう、特別な Error を投げる。
+          if (!shown) toast.error(headline);
           const err = new Error(headline) as Error & { __validationHandled?: boolean };
           err.__validationHandled = true;
           throw err;
@@ -665,26 +667,20 @@ export default function NewFromScratchPage() {
         throw new Error(
           (body && typeof (body as { error?: unknown }).error === 'string'
             ? ((body as { error: string }).error)
-            : '') ||
-            `生成に失敗しました (HTTP ${res.status})`,
+            : '') || `生成の開始に失敗しました (HTTP ${res.status})`,
         );
       }
 
-      const json = (await res.json()) as ZeroGenerateFullResponse;
+      const { job_id } = (await res.json()) as { job_id: string };
       stageTimers.current.forEach((id) => window.clearTimeout(id));
       stageTimers.current = [];
-      setResult(json);
-      setStage('done');
-      if (json.partial_success) {
-        toast('一部処理が失敗しましたが、記事は生成されました', { icon: 'ℹ️' });
-      } else {
-        toast.success('記事生成が完了しました');
-      }
-
-      // 後追いで詳細 + claims を取得
-      if (json.article_id) {
-        void enrichResult(json.article_id);
-      }
+      // フォーム側のステッパは閉じ、グローバルバナーが進捗を表示
+      setStage('idle');
+      // フックに登録 — localStorage 永続化 + SSE 購読開始
+      startGenerationJob(job_id);
+      toast.success('🚀 生成を開始しました。完了したらバナーで通知します。', {
+        duration: 6000,
+      });
     } catch (err) {
       stageTimers.current.forEach((id) => window.clearTimeout(id));
       stageTimers.current = [];
@@ -1068,19 +1064,20 @@ export default function NewFromScratchPage() {
                 )}
                 <button
                   type="submit"
-                  disabled={generating || optionsLoading}
+                  disabled={generating || optionsLoading || !!jobActive}
+                  title={jobActive ? '別の生成が進行中です。完了を待ってから再投入してください' : undefined}
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5
                     text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 active:bg-brand-700
                     focus:outline-none focus:ring-2 focus:ring-brand-500/40
                     disabled:cursor-not-allowed disabled:opacity-50
                     dark:bg-brand-500 dark:hover:bg-brand-400"
                 >
-                  {generating ? (
+                  {generating || jobActive ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
                   ) : (
                     <Sparkles className="h-4 w-4" />
                   )}
-                  {generating ? '生成中…' : '生成'}
+                  {generating ? '開始中…' : jobActive ? '生成進行中' : '生成'}
                 </button>
               </div>
             </div>

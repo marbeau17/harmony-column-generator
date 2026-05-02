@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import GenerationProgressBanner from '@/components/articles/GenerationProgressBanner';
 
 interface DashboardShellProps {
   children: React.ReactNode;
@@ -27,6 +28,8 @@ export default function DashboardShell({ children, userName }: DashboardShellPro
         }`}
       >
         <Header userName={userName} />
+        {/* P5-20: 非同期生成バナー — どの画面にいても進捗 / 完了を表示 */}
+        <GenerationProgressBanner />
         <main className="px-4 py-5 sm:p-6">{children}</main>
       </div>
     </div>
