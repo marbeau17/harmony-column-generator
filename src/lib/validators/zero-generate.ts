@@ -45,3 +45,40 @@ export const zeroGenerateRequestSchema = z.object({
 });
 
 export type ZeroGenerateRequest = z.infer<typeof zeroGenerateRequestSchema>;
+
+/**
+ * POST /api/articles/zero-generate/suggest-keywords のリクエストボディ。
+ *
+ * - theme_id / persona_id 必須（候補生成のための context）
+ * - intent / exclude は optional（ユーザがまだ選択していない初期段階でも呼べる）
+ * - exclude は既に追加済キーワード（提案で重複させないため）
+ */
+export const suggestKeywordsRequestSchema = z.object({
+  theme_id: z.string().uuid('theme_id は UUID 形式で指定してください'),
+  persona_id: z.string().uuid('persona_id は UUID 形式で指定してください'),
+  intent: intentSchema.optional(),
+  exclude: z.array(z.string()).max(20).optional(),
+});
+
+export type SuggestKeywordsRequest = z.infer<typeof suggestKeywordsRequestSchema>;
+
+/** 候補の出所。persona = DB の search_patterns 由来 / ai = Gemini 提案。 */
+export type KeywordSuggestionSource = 'persona' | 'ai';
+
+export interface KeywordSuggestion {
+  keyword: string;
+  source: KeywordSuggestionSource;
+  rationale: string;
+  /** 0..1 のスコア（並び替え用、UI 表示には使わない） */
+  score: number;
+}
+
+export interface SuggestKeywordsResponse {
+  candidates: KeywordSuggestion[];
+  /** ペルソナ + テーマ要約。UI でデバッグ確認用に表示してもよい */
+  context: {
+    theme_name: string;
+    persona_name: string;
+    persona_age_range: string | null;
+  };
+}

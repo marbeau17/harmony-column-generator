@@ -81,6 +81,8 @@ vi.mock('lucide-react', () => {
     HeartHandshake: NullIcon,
     Wrench:         NullIcon,
     Eye:            NullIcon,
+    Lightbulb:      NullIcon,
+    Loader2:        NullIcon,
   };
 });
 

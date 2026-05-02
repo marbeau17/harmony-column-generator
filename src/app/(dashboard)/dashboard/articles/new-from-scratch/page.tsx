@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Sparkles, X, ArrowRight, ShieldCheck, Heart } from 'lucide-react';
+import { Sparkles, X, ArrowRight, ShieldCheck, Heart, Lightbulb, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import GenerationStepper, { type GenerationStage } from '@/components/articles/GenerationStepper';
@@ -382,6 +382,73 @@ export default function NewFromScratchPage() {
     };
   }, []);
 
+  // ── Keyword suggestion state ──────────────────────────────────────────────
+  const [suggestions, setSuggestions] = useState<
+    Array<{ keyword: string; source: 'persona' | 'ai'; rationale: string }>
+  >([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+
+  const fetchSuggestions = useCallback(async () => {
+    if (!themeId) {
+      toast.error('まずテーマを選択してください');
+      return;
+    }
+    if (!personaId) {
+      toast.error('まずペルソナを選択してください');
+      return;
+    }
+    setSuggestLoading(true);
+    setSuggestError(null);
+    try {
+      const res = await fetch('/api/articles/zero-generate/suggest-keywords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          theme_id: themeId,
+          persona_id: personaId,
+          intent: intent || undefined,
+          exclude: keywords,
+        }),
+      });
+      if (!res.ok && res.status !== 207) {
+        const errBody = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(errBody.error ?? `HTTP ${res.status}`);
+      }
+      const json = (await res.json()) as {
+        candidates?: Array<{
+          keyword: string;
+          source: 'persona' | 'ai';
+          rationale: string;
+        }>;
+        partial_success?: boolean;
+      };
+      const got = json.candidates ?? [];
+      setSuggestions(got);
+      if (got.length === 0) {
+        toast('候補が見つかりませんでした', { icon: '🤔' });
+      } else if (json.partial_success) {
+        toast.success(`${got.length}件の候補（AI 一部失敗）`, { icon: '⚠️' });
+      } else {
+        toast.success(`${got.length}件の候補を提案しました`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '候補の取得に失敗しました';
+      setSuggestError(msg);
+      toast.error(msg);
+    } finally {
+      setSuggestLoading(false);
+    }
+  }, [themeId, personaId, intent, keywords]);
+
+  // 既に追加済の候補は表示時にミュート（クリックは無効）。
+  const isSuggestionAdded = useCallback(
+    (kw: string) => keywords.includes(kw.trim()),
+    [keywords],
+  );
+
   // ── Keyword chip handlers ─────────────────────────────────────────────────
   const addKeyword = useCallback(
     (raw: string) => {
@@ -733,15 +800,43 @@ export default function NewFromScratchPage() {
 
               {/* キーワード Tag Chip */}
               <div>
-                <label
-                  htmlFor="keywords"
-                  className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-100"
-                >
-                  キーワード <span className="text-red-500">*</span>
-                  <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
-                    最大 {MAX_KEYWORDS} 個 / Enter または , で追加
-                  </span>
-                </label>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="keywords"
+                    className="block text-sm font-semibold text-gray-800 dark:text-gray-100"
+                  >
+                    キーワード <span className="text-red-500">*</span>
+                    <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
+                      最大 {MAX_KEYWORDS} 個 / Enter または , で追加
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={fetchSuggestions}
+                    disabled={
+                      generating ||
+                      suggestLoading ||
+                      !themeId ||
+                      !personaId ||
+                      keywords.length >= MAX_KEYWORDS
+                    }
+                    title={
+                      !themeId || !personaId
+                        ? 'テーマとペルソナを選択するとキーワード候補を提案できます'
+                        : 'AI + ペルソナの検索パターンから候補を提案'
+                    }
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800
+                      transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50
+                      dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                  >
+                    {suggestLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Lightbulb className="h-3.5 w-3.5" />
+                    )}
+                    {suggestLoading ? '提案中…' : '候補を提案'}
+                  </button>
+                </div>
                 <div
                   className={`flex min-h-[44px] flex-wrap items-center gap-1.5 rounded-lg border px-2 py-1.5 transition
                     focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20
@@ -770,6 +865,7 @@ export default function NewFromScratchPage() {
                     </span>
                   ))}
                   <input
+                    aria-describedby={suggestions.length > 0 ? 'kw-suggestions' : undefined}
                     id="keywords"
                     type="text"
                     value={keywordDraft}
@@ -795,6 +891,62 @@ export default function NewFromScratchPage() {
                       dark:text-gray-100 dark:placeholder:text-gray-500"
                   />
                 </div>
+
+                {/* キーワード候補チップグリッド (バグG 系防衛 + SEO 補助) */}
+                {suggestError && !suggestLoading && (
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                    {suggestError}
+                  </p>
+                )}
+                {suggestions.length > 0 && (
+                  <div
+                    id="kw-suggestions"
+                    className="mt-2 rounded-lg border border-amber-200 bg-amber-50/40 p-2.5
+                      dark:border-amber-800 dark:bg-amber-900/10"
+                  >
+                    <p className="mb-1.5 flex items-center gap-1 text-xs font-semibold text-amber-900 dark:text-amber-100">
+                      <Lightbulb className="h-3 w-3" />
+                      候補をクリックで追加（{suggestions.length}件）
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestions.map((s, idx) => {
+                        const added = isSuggestionAdded(s.keyword);
+                        const sourceLabel =
+                          s.source === 'persona' ? 'ペルソナ' : 'AI';
+                        const sourceBg =
+                          s.source === 'persona'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100'
+                            : 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-100';
+                        return (
+                          <button
+                            key={`${s.keyword}-${idx}`}
+                            type="button"
+                            onClick={() => {
+                              if (added) return;
+                              addKeyword(s.keyword);
+                            }}
+                            disabled={added || generating || keywords.length >= MAX_KEYWORDS}
+                            title={s.rationale}
+                            className={`group inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition
+                              ${
+                                added
+                                  ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500'
+                                  : 'border-amber-300 bg-white text-gray-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-amber-900/40'
+                              }`}
+                          >
+                            <span
+                              className={`rounded-sm px-1 text-[10px] font-bold ${sourceBg}`}
+                            >
+                              {sourceLabel}
+                            </span>
+                            {s.keyword}
+                            {added && <span className="text-[10px]">追加済</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 意図 Radio Card */}
