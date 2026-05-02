@@ -447,9 +447,23 @@ export async function runZeroGenCompletion(args: {
       .eq('id', articleId)
       .maybeSingle();
     if (cur?.status === 'draft') {
+      // P5-37: settings.workflow.zero_gen_auto_approve = true ならば
+      //        reviewed_at も同時にセットして由起子さん確認ゲートを通過させる。
+      //        false (デフォルト) の場合は editing 遷移のみで reviewed_at は null のまま、
+      //        由起子さんが UI から手動で確認する。
+      const { data: wf } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'workflow')
+        .maybeSingle();
+      const autoApprove = Boolean(
+        (wf?.value as { zero_gen_auto_approve?: boolean } | null)?.zero_gen_auto_approve,
+      );
+      const update: Record<string, unknown> = { status: 'editing' };
+      if (autoApprove) update.reviewed_at = new Date().toISOString();
       const { error: stErr } = await supabase
         .from('articles')
-        .update({ status: 'editing' })
+        .update(update)
         .eq('id', articleId);
       if (stErr) {
         logger.warn('ai', 'completion.status_advance_failed', {
@@ -461,6 +475,7 @@ export async function runZeroGenCompletion(args: {
           articleId,
           from: 'draft',
           to: 'editing',
+          auto_approved: autoApprove,
         });
       }
     }

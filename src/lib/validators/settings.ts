@@ -78,11 +78,20 @@ const seoSettingsSchema = z.object({
   disclaimer: z.string().optional(),
 });
 
+// ─── ワークフロー設定 ──────────────────────────────────────────────────────
+// 公開フローに関する toggle。P5-37 で zero-gen auto-approve を追加。
+const workflowSettingsSchema = z.object({
+  // ゼロ生成完了時に reviewed_at を自動でセットして由起子さん確認ゲートを
+  // 通過させる。true = 自動承認 / false = 由起子さん手動確認 (デフォルト)。
+  zero_gen_auto_approve: z.boolean().optional(),
+});
+
 const sectionSchemas = {
   basic: basicSettingsSchema,
   ai: aiSettingsSchema,
   cta: ctaSettingsSchema,
   seo: seoSettingsSchema,
+  workflow: workflowSettingsSchema,
 } as const;
 
 export type SettingsSection = keyof typeof sectionSchemas;
@@ -90,7 +99,7 @@ export type SettingsSection = keyof typeof sectionSchemas;
 // ─── 設定更新スキーマ（section + data） ─────────────────────────────────────
 
 export const updateSettingsSchema = z.object({
-  section: z.enum(['basic', 'ai', 'cta', 'seo']),
+  section: z.enum(['basic', 'ai', 'cta', 'seo', 'workflow']),
   data: z.record(z.unknown()),
 });
 

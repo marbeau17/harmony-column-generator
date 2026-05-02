@@ -168,6 +168,10 @@ export default function SettingsPage() {
   const [cta, setCTA] = useState<CTASettings>(DEFAULT_CTA);
   const [seo, setSEO] = useState<SEOSettings>(DEFAULT_SEO);
 
+  // P5-37: workflow.zero_gen_auto_approve トグル
+  const [zeroGenAutoApprove, setZeroGenAutoApprove] = useState(false);
+  const [savingWorkflow, setSavingWorkflow] = useState(false);
+
   // 未保存変更の追跡（タブごと）
   const [dirty, setDirty] = useState<Record<TabKey, boolean>>({
     basic: false, ai: false, cta: false, seo: false, deploy: false,
@@ -202,6 +206,30 @@ export default function SettingsPage() {
   // ハイライト一括適用 state
   const [highlightRunning, setHighlightRunning] = useState(false);
   const [highlightMessage, setHighlightMessage] = useState<string | null>(null);
+
+  // P5-37: zero-gen auto-approve toggle 保存
+  const handleToggleAutoApprove = async (next: boolean) => {
+    setSavingWorkflow(true);
+    const prev = zeroGenAutoApprove;
+    setZeroGenAutoApprove(next); // optimistic
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          section: 'workflow',
+          data: { zero_gen_auto_approve: next },
+        }),
+      });
+      if (!res.ok) throw new Error('保存に失敗しました');
+      showToast(next ? 'ゼロ生成記事を自動承認に切替えました' : '由起子さん手動確認に切替えました', 'success');
+    } catch (e: any) {
+      setZeroGenAutoApprove(prev);
+      showToast(`エラー: ${e.message}`, 'error');
+    } finally {
+      setSavingWorkflow(false);
+    }
+  };
 
   const handleRebuild = async () => {
     setDeploying('rebuild');
@@ -277,6 +305,9 @@ export default function SettingsPage() {
       }
       if (data.seo && typeof data.seo === 'object') {
         setSEO({ ...DEFAULT_SEO, ...data.seo });
+      }
+      if (data.workflow && typeof data.workflow === 'object') {
+        setZeroGenAutoApprove(Boolean(data.workflow.zero_gen_auto_approve));
       }
     } catch {
       // ignore — use defaults
@@ -990,6 +1021,46 @@ export default function SettingsPage() {
         {/* ─── デプロイ ─── */}
         {activeTab === 'deploy' && (
           <div className="space-y-6 w-full max-w-xl">
+            {/* P5-37: ゼロ生成記事 自動承認トグル */}
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-amber-900 mb-1">
+                    ゼロ生成記事の由起子さん確認
+                  </h3>
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    {zeroGenAutoApprove ? (
+                      <>
+                        <strong>自動承認 ON:</strong> ゼロ生成完了時に
+                        <code className="px-1 bg-amber-100 rounded">reviewed_at</code>
+                        を自動セット。FTP デプロイが即可能になります（由起子さん確認をスキップ）。
+                      </>
+                    ) : (
+                      <>
+                        <strong>手動確認:</strong> ゼロ生成完了後、記事詳細で
+                        「由起子さん確認」ボタンを実行しないと FTP デプロイできません（推奨・デフォルト）。
+                      </>
+                    )}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleToggleAutoApprove(!zeroGenAutoApprove)}
+                  disabled={savingWorkflow}
+                  role="switch"
+                  aria-checked={zeroGenAutoApprove}
+                  className={`shrink-0 relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    zeroGenAutoApprove ? 'bg-amber-600' : 'bg-gray-300'
+                  } disabled:opacity-50`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      zeroGenAutoApprove ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             <div>
               <h3 className="text-sm font-semibold text-gray-800 mb-1">
                 FTP 接続情報
