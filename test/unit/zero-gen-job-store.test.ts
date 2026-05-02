@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
+import os from 'os';
 import {
   createJobState,
   updateJobState,
@@ -22,6 +23,10 @@ import {
   __resetMemStoreForTests,
   type JobState,
 } from '@/lib/jobs/zero-gen-job-store';
+
+// store と同じディレクトリ解決ロジックを使う
+const TEST_JOBS_DIR =
+  process.env.BLOGAUTO_JOBS_DIR ?? path.join(os.tmpdir(), 'blogauto-zero-gen-jobs');
 
 // テスト用のユニークな job_id 生成（UUID 形式に近い）
 function makeJobId(tag: string): string {
@@ -63,7 +68,7 @@ describe('createJobState', () => {
     const jobId = trackJobId(makeJobId('b'));
     await createJobState(jobId);
 
-    const file = path.join(process.cwd(), 'tmp', 'zero-gen-jobs', `${jobId}.json`);
+    const file = path.join(TEST_JOBS_DIR, `${jobId}.json`);
     const raw = await fs.readFile(file, 'utf8');
     const parsed = JSON.parse(raw) as JobState;
     expect(parsed.stage).toBe('queued');
@@ -178,7 +183,7 @@ describe('clearJobState', () => {
 
     expect(await getJobState(jobId)).toBeNull();
 
-    const file = path.join(process.cwd(), 'tmp', 'zero-gen-jobs', `${jobId}.json`);
+    const file = path.join(TEST_JOBS_DIR, `${jobId}.json`);
     await expect(fs.access(file)).rejects.toBeTruthy();
   });
 
@@ -214,7 +219,7 @@ describe('並行アクセス (race condition 回避)', () => {
     expect(finalState?.progress).toBeLessThanOrEqual(1);
 
     // ファイル側も読めて、JSON が壊れていないこと（直列キューで rename 原子性が守られる）
-    const file = path.join(process.cwd(), 'tmp', 'zero-gen-jobs', `${jobId}.json`);
+    const file = path.join(TEST_JOBS_DIR, `${jobId}.json`);
     const raw = await fs.readFile(file, 'utf8');
     const parsed = JSON.parse(raw) as JobState;
     expect(parsed.stage).toBe('stage1');

@@ -26,6 +26,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
+import os from 'os';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -53,8 +54,11 @@ const memStore: Map<string, JobState> = new Map();
 const writeQueue: Map<string, Promise<void>> = new Map();
 
 function getJobsDir(): string {
-  // process.cwd() 配下に固定（Next.js dev / build いずれでもプロジェクトルート）
-  return path.join(process.cwd(), 'tmp', 'zero-gen-jobs');
+  // Vercel の本番関数では process.cwd() は read-only。
+  // os.tmpdir() を使い、dev (/var/folders/.../T) / Vercel (/tmp) の両環境で書込可能にする。
+  // `BLOGAUTO_JOBS_DIR` 環境変数で override 可能（テスト用）。
+  if (process.env.BLOGAUTO_JOBS_DIR) return process.env.BLOGAUTO_JOBS_DIR;
+  return path.join(os.tmpdir(), 'blogauto-zero-gen-jobs');
 }
 
 function getJobFile(jobId: string): string {
@@ -66,12 +70,23 @@ async function ensureDir(): Promise<void> {
 }
 
 async function writeFile(jobId: string, state: JobState): Promise<void> {
-  await ensureDir();
-  const tmp = getJobFile(jobId) + '.tmp';
-  const final = getJobFile(jobId);
-  await fs.writeFile(tmp, JSON.stringify(state, null, 2), 'utf8');
-  // rename は POSIX で原子的（同一 FS）
-  await fs.rename(tmp, final);
+  // Vercel function 環境で fs 書込が失敗しても (本来は /tmp で動くはずだが念のため)
+  // route 側に 500 を返さないよう、内部でエラーを握りつぶす。in-memory store が
+  // 同一 process 内では truth source なので fs は補助的役割。
+  try {
+    await ensureDir();
+    const tmp = getJobFile(jobId) + '.tmp';
+    const final = getJobFile(jobId);
+    await fs.writeFile(tmp, JSON.stringify(state, null, 2), 'utf8');
+    // rename は POSIX で原子的（同一 FS）
+    await fs.rename(tmp, final);
+  } catch (err) {
+    // EROFS / EACCES / ENOSPC 等で fs 書込失敗時はログだけ出して継続
+    console.warn('[zero-gen-job-store.writeFile.failed]', {
+      jobId,
+      error_message: (err as Error).message,
+    });
+  }
 }
 
 async function readFileIfExists(jobId: string): Promise<JobState | null> {
