@@ -3,7 +3,7 @@
  *
  * 目的:
  *   - generateArticleHtml() の関連記事 (related_articles) ブロックで
- *     thumbSrc が `/spiritual/column/{slug}/images/hero.jpg` 形式
+ *     thumbSrc が `/column/{slug}/images/hero.jpg` 形式
  *     (env 駆動の hubPath 反映) で生成されることを担保する。
  *   - 旧 `/column/{slug}/images/hero.jpg` ハードコード形式が
  *     再発しないことを完全排除アサーションで検出する。
@@ -62,7 +62,7 @@ function makeArticle(overrides: Partial<Article> = {}): Article {
 
 describe('generateArticleHtml() related thumbnail URL pinning (P5-44)', () => {
   beforeEach(() => {
-    // env をデフォルトに固定 (default = harmony-mc.com + /spiritual/column)
+    // env をデフォルトに固定 (default = harmony-mc.com + /column)
     vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
     vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
   });
@@ -71,57 +71,54 @@ describe('generateArticleHtml() related thumbnail URL pinning (P5-44)', () => {
     vi.unstubAllEnvs();
   });
 
-  it('case 1: thumbSrc は /spiritual/column/{slug}/images/hero.jpg 形式 (hubPath 反映)', () => {
+  it('case 1: thumbSrc は /column/{slug}/images/hero.jpg 形式 (hubPath 反映)', () => {
     const html = generateArticleHtml(
       makeArticle({
         related_articles: [
-          { slug: 'related-slug-1', title: '関連記事1', href: '/spiritual/column/related-slug-1/' },
+          { slug: 'related-slug-1', title: '関連記事1', href: '/column/related-slug-1/' },
         ] as unknown as Article['related_articles'],
       }),
     );
     expect(html).toContain(
-      '<img src="/spiritual/column/related-slug-1/images/hero.jpg" alt="関連記事1"',
+      '<img src="/column/related-slug-1/images/hero.jpg" alt="関連記事1"',
     );
   });
 
-  it('case 2: 旧 /column/{slug}/images/hero.jpg ハードコード形式は出力に含まれない', () => {
+  it('case 2: /columns/ 複数形バグ + .html 拡張子が thumb に混入しない', () => {
     const html = generateArticleHtml(
       makeArticle({
         related_articles: [
-          { slug: 'related-slug-1', title: '関連記事1', href: '/spiritual/column/related-slug-1/' },
-          { slug: 'related-slug-2', title: '関連記事2', href: '/spiritual/column/related-slug-2/' },
-          { slug: 'related-slug-3', title: '関連記事3', href: '/spiritual/column/related-slug-3/' },
+          { slug: 'related-slug-1', title: '関連記事1', href: '/column/related-slug-1/' },
+          { slug: 'related-slug-2', title: '関連記事2', href: '/column/related-slug-2/' },
+          { slug: 'related-slug-3', title: '関連記事3', href: '/column/related-slug-3/' },
         ] as unknown as Article['related_articles'],
       }),
     );
-    // 旧形式: ホスト直後の `/column/{slug}/images/hero.jpg` が混入していないこと
-    // (`/spiritual/column/` は `/column/` を substring として含むので、
-    //  src 属性そのもので照合する)
-    expect(html).not.toContain('src="/column/related-slug-1/images/hero.jpg"');
-    expect(html).not.toContain('src="/column/related-slug-2/images/hero.jpg"');
-    expect(html).not.toContain('src="/column/related-slug-3/images/hero.jpg"');
+    // P5-45: /column/ 配下統一後は /columns/ 複数形 + .html 拡張子の再発防止のみ
+    expect(html).not.toContain('/columns/related-slug-1/');
+    expect(html).not.toContain('related-slug-1.html');
   });
 
   it('case 3: 全 3 件の関連記事サムネイルが順番通り新形式で出力される', () => {
     const html = generateArticleHtml(
       makeArticle({
         related_articles: [
-          { slug: 'related-slug-1', title: '関連記事1', href: '/spiritual/column/related-slug-1/' },
-          { slug: 'related-slug-2', title: '関連記事2', href: '/spiritual/column/related-slug-2/' },
-          { slug: 'related-slug-3', title: '関連記事3', href: '/spiritual/column/related-slug-3/' },
+          { slug: 'related-slug-1', title: '関連記事1', href: '/column/related-slug-1/' },
+          { slug: 'related-slug-2', title: '関連記事2', href: '/column/related-slug-2/' },
+          { slug: 'related-slug-3', title: '関連記事3', href: '/column/related-slug-3/' },
         ] as unknown as Article['related_articles'],
       }),
     );
 
     // すべての関連記事 thumb が hubPath 込みの新形式で並んでいる
-    expect(html).toContain('src="/spiritual/column/related-slug-1/images/hero.jpg"');
-    expect(html).toContain('src="/spiritual/column/related-slug-2/images/hero.jpg"');
-    expect(html).toContain('src="/spiritual/column/related-slug-3/images/hero.jpg"');
+    expect(html).toContain('src="/column/related-slug-1/images/hero.jpg"');
+    expect(html).toContain('src="/column/related-slug-2/images/hero.jpg"');
+    expect(html).toContain('src="/column/related-slug-3/images/hero.jpg"');
 
     // 出現順が related_articles 配列順と一致 (related-1 → related-2 → related-3)
-    const idx1 = html.indexOf('/spiritual/column/related-slug-1/images/hero.jpg');
-    const idx2 = html.indexOf('/spiritual/column/related-slug-2/images/hero.jpg');
-    const idx3 = html.indexOf('/spiritual/column/related-slug-3/images/hero.jpg');
+    const idx1 = html.indexOf('/column/related-slug-1/images/hero.jpg');
+    const idx2 = html.indexOf('/column/related-slug-2/images/hero.jpg');
+    const idx3 = html.indexOf('/column/related-slug-3/images/hero.jpg');
     expect(idx1).toBeGreaterThan(0);
     expect(idx2).toBeGreaterThan(idx1);
     expect(idx3).toBeGreaterThan(idx2);
@@ -129,7 +126,7 @@ describe('generateArticleHtml() related thumbnail URL pinning (P5-44)', () => {
 
   it('case 4: 旧 hardcoded `/column/` 形式の href も新 hubPath 形式 thumb に正規化される (fallback)', () => {
     // 旧データ互換: href が `/column/{slug}/` (hubPath 抜き) で来た場合でも
-    // thumbSrc は新形式の `/spiritual/column/{slug}/images/hero.jpg` で出力されること。
+    // thumbSrc は新形式の `/column/{slug}/images/hero.jpg` で出力されること。
     // (article-html-generator.ts の `.replace(/^\/column\//, '')` fallback で
     //  slug が抽出され、hubPath ベースで thumb URL が再構築される。)
     const html = generateArticleHtml(
@@ -142,9 +139,10 @@ describe('generateArticleHtml() related thumbnail URL pinning (P5-44)', () => {
 
     // 新形式の thumb URL が出力されている
     expect(html).toContain(
-      '<img src="/spiritual/column/legacy-slug/images/hero.jpg" alt="旧形式リンクの関連記事"',
+      '<img src="/column/legacy-slug/images/hero.jpg" alt="旧形式リンクの関連記事"',
     );
-    // 旧形式の thumb URL がハードコードで残っていない
-    expect(html).not.toContain('src="/column/legacy-slug/images/hero.jpg"');
+    // P5-45: 複数形 / .html 拡張子バグの再発防止
+    expect(html).not.toContain('/columns/legacy-slug/');
+    expect(html).not.toContain('legacy-slug.html');
   });
 });

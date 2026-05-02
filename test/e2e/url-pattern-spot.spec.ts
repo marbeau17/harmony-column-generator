@@ -2,7 +2,7 @@
  * P5-44: URL パターン Production Spot Check (E2E)
  *
  * production smoke の一部として、API 経由で取得した記事 / ハブ HTML の
- * canonical URL が新形式 (`/spiritual/column/{slug}/` / `/spiritual/column/`)
+ * canonical URL が新形式 (`/column/{slug}/` / `/column/`)
  * に従うことを spot 検証する。
  *
  * 制約:
@@ -38,7 +38,7 @@ function extractCanonical(html: string): string | null {
 }
 
 test.describe('URL pattern spot (P5-44 production HTML pinning)', () => {
-  test('P1. 記事 HTML の canonical は /spiritual/column/{slug}/ 形式 (取得不可なら skip)', async ({ request }) => {
+  test('P1. 記事 HTML の canonical は /column/{slug}/ 形式 (取得不可なら skip)', async ({ request }) => {
     let html: string | null = null;
     for (const path of ARTICLE_HTML_CANDIDATES) {
       const res = await request.get(`${BASE_URL}${path}`);
@@ -54,14 +54,14 @@ test.describe('URL pattern spot (P5-44 production HTML pinning)', () => {
 
     const canonical = extractCanonical(html ?? '');
     expect(canonical, 'canonical link が見つからない').not.toBeNull();
-    // 新形式: /spiritual/column/{slug}/ で trailing slash 必須
+    // 新形式: /column/{slug}/ で trailing slash 必須
     expect(canonical).toMatch(/\/spiritual\/column\/[^/]+\/$/);
     // 旧形式の混入が無い
     expect(canonical).not.toMatch(/\.html(?:[?#]|$)/);
     expect(canonical).not.toContain('/columns/');
   });
 
-  test('P2. ハブ HTML の canonical は /spiritual/column/ (単数形) 形式 (取得不可なら skip)', async ({ request }) => {
+  test('P2. ハブ HTML の canonical は /column/ (単数形) 形式 (取得不可なら skip)', async ({ request }) => {
     let html: string | null = null;
     for (const path of HUB_HTML_CANDIDATES) {
       const res = await request.get(`${BASE_URL}${path}`);
@@ -77,7 +77,7 @@ test.describe('URL pattern spot (P5-44 production HTML pinning)', () => {
 
     const canonical = extractCanonical(html ?? '');
     expect(canonical, 'canonical link が見つからない').not.toBeNull();
-    // page 1 = /spiritual/column/  /  page 2+ = /spiritual/column/page/{N}/
+    // page 1 = /column/  /  page 2+ = /column/page/{N}/
     expect(canonical).toMatch(/\/spiritual\/column\/(?:page\/\d+\/)?$/);
     // 旧 /columns/ (複数形バグ) が再発していない
     expect(canonical).not.toContain('/columns/');
