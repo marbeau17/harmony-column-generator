@@ -42,12 +42,24 @@ const LABEL: Record<PublishButtonState, { icon: string; text: string; cls: strin
   },
 };
 
+// P5-39: Crockford's base32 (I/L/O/U 除外) で 26 文字 ULID を生成。
+// バックエンド検証 isValidRequestId は /^[0-9A-HJKMNP-TV-Z]{26}$/i なので、
+// タイムスタンプ部も同じ alphabet でエンコードしないと 400 を返してしまう。
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+function encodeCrockford(num: number, len: number): string {
+  let s = '';
+  for (let i = 0; i < len; i++) {
+    s = CROCKFORD[num % 32] + s;
+    num = Math.floor(num / 32);
+  }
+  return s;
+}
 function ulid(): string {
-  const t = Date.now().toString(32).padStart(10, '0').toUpperCase();
+  const t = encodeCrockford(Date.now(), 10);
   const r = Array.from({ length: 16 }, () =>
-    '0123456789ABCDEFGHJKMNPQRSTVWXYZ'.charAt(Math.floor(Math.random() * 32)),
+    CROCKFORD.charAt(Math.floor(Math.random() * 32)),
   ).join('');
-  return (t + r).padEnd(26, '0').slice(0, 26);
+  return (t + r).slice(0, 26);
 }
 
 export default function PublishButton({ articleId, articleTitle, initialState, onChanged }: Props) {
