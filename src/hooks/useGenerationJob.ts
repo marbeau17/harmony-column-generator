@@ -35,33 +35,49 @@ export interface GenerationJobState {
 }
 
 const STORAGE_KEY = 'blogauto.activeGenerationJob';
+const SYNC_EVENT = 'blogauto-job-changed';
 const TERMINAL_STAGES: GenerationJobStage[] = ['done', 'failed'];
+
+// 同一タブ内で複数コンポーネントの useGenerationJob インスタンスが
+// state を共有するための CustomEvent 名。startJob/clearJob 時に dispatch する。
+
+function readFromStorage(): GenerationJobState | null {
+  if (typeof window === 'undefined') return null;
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as GenerationJobState;
+    if (!parsed.job_id) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    const ageMs = Date.now() - new Date(parsed.startedAt).getTime();
+    if (ageMs > 60 * 60 * 1000) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+    return null;
+  }
+}
 
 export function useGenerationJob() {
   const [job, setJob] = useState<GenerationJobState | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
-  // ─── 初期化: localStorage から復元 ─────────────────────────────────────
+  // ─── 初期化 + 同一タブ内 sync (CustomEvent) ─────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as GenerationJobState;
-      if (!parsed.job_id) {
-        localStorage.removeItem(STORAGE_KEY);
-        return;
-      }
-      // 完了/失敗状態でも 60 分以内なら表示しておく (ユーザが「閉じる」するまで)
-      const ageMs = Date.now() - new Date(parsed.startedAt).getTime();
-      if (ageMs > 60 * 60 * 1000) {
-        localStorage.removeItem(STORAGE_KEY);
-        return;
-      }
-      setJob(parsed);
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    const sync = () => setJob(readFromStorage());
+    sync(); // mount 時に一度
+    window.addEventListener(SYNC_EVENT, sync);
+    window.addEventListener('storage', sync); // cross-tab
+    return () => {
+      window.removeEventListener(SYNC_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
   }, []);
 
   // ─── SSE 購読 (非終端状態のみ) ────────────────────────────────────────
@@ -92,6 +108,10 @@ export function useGenerationJob() {
           if (TERMINAL_STAGES.includes(updated.stage)) {
             es.close();
           }
+          // 他コンポーネントに通知
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event(SYNC_EVENT));
+          }
           return updated;
         });
       } catch {
@@ -120,6 +140,8 @@ export function useGenerationJob() {
     setJob(newJob);
     if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newJob));
+      // 同一タブの他コンポーネントに通知
+      window.dispatchEvent(new Event(SYNC_EVENT));
     }
   }, []);
 
@@ -128,6 +150,7 @@ export function useGenerationJob() {
     setJob(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
+      window.dispatchEvent(new Event(SYNC_EVENT));
     }
     if (esRef.current) {
       esRef.current.close();

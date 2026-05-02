@@ -771,6 +771,27 @@ export default function NewFromScratchPage() {
                 </div>
               )}
 
+              {/* P5-22: 生成中の目立つ表示 — フォーム送信が成功して bg job が動いている */}
+              {jobActive && (
+                <div
+                  className="flex items-center gap-3 rounded-lg border-2 border-amber-400 bg-amber-50 px-4 py-3 shadow-sm
+                    dark:border-amber-600 dark:bg-amber-950/40"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span className="inline-block h-3 w-3 shrink-0 animate-pulse rounded-full bg-amber-500" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-amber-900 dark:text-amber-100">
+                      🚀 バックグラウンドで生成中
+                    </p>
+                    <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-200">
+                      他の画面に移動しても継続します。完了すると上部バナーで通知されます。
+                      ステージ: {activeJob?.stage ?? 'queued'} ({Math.round((activeJob?.progress ?? 0) * 100)}%)
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* テーマ */}
               <div>
                 <label
@@ -788,7 +809,7 @@ export default function NewFromScratchPage() {
                   id="theme"
                   value={themeId}
                   onChange={(e) => setThemeId(e.target.value)}
-                  disabled={generating || optionsLoading || themes.length === 0}
+                  disabled={generating || optionsLoading || themes.length === 0 || !!jobActive}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm
                     text-gray-900 transition focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20
                     disabled:cursor-not-allowed disabled:opacity-50
@@ -824,7 +845,7 @@ export default function NewFromScratchPage() {
                   id="persona"
                   value={personaId}
                   onChange={(e) => setPersonaId(e.target.value)}
-                  disabled={generating || optionsLoading || personas.length === 0}
+                  disabled={generating || optionsLoading || personas.length === 0 || !!jobActive}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm
                     text-gray-900 transition focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20
                     disabled:cursor-not-allowed disabled:opacity-50
@@ -914,7 +935,7 @@ export default function NewFromScratchPage() {
                       <button
                         type="button"
                         onClick={() => removeKeyword(kw)}
-                        disabled={generating}
+                        disabled={generating || !!jobActive}
                         className="rounded-full p-0.5 transition hover:bg-brand-200 disabled:opacity-50 dark:hover:bg-brand-800"
                         aria-label={`${kw} を削除`}
                       >
@@ -935,7 +956,7 @@ export default function NewFromScratchPage() {
                         setKeywordDraft('');
                       }
                     }}
-                    disabled={generating || keywords.length >= MAX_KEYWORDS}
+                    disabled={generating || keywords.length >= MAX_KEYWORDS || !!jobActive}
                     placeholder={
                       keywords.length >= MAX_KEYWORDS
                         ? '上限に達しました'
@@ -1015,7 +1036,7 @@ export default function NewFromScratchPage() {
                 <IntentRadioCard
                   value={intent}
                   onChange={(v) => setIntent(v)}
-                  disabled={generating}
+                  disabled={generating || !!jobActive}
                 />
               </div>
 
@@ -1041,7 +1062,7 @@ export default function NewFromScratchPage() {
                     const n = Number(e.target.value);
                     if (Number.isFinite(n)) setTargetLength(n);
                   }}
-                  disabled={generating}
+                  disabled={generating || !!jobActive}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm
                     text-gray-900 transition focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20
                     disabled:cursor-not-allowed disabled:opacity-50

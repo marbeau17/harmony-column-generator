@@ -11,7 +11,33 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import type { GenerationJobStage, GenerationJobState } from './useGenerationJob';
 
 const STORAGE_KEY = 'blogauto.activeGenerationJobs';
+const SYNC_EVENT = 'blogauto-jobs-changed';
 const TERMINAL_STAGES: GenerationJobStage[] = ['done', 'failed'];
+
+function readJobsFromStorage(): GenerationJobState[] {
+  if (typeof window === 'undefined') return [];
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as GenerationJobState[];
+    if (!Array.isArray(parsed)) {
+      localStorage.removeItem(STORAGE_KEY);
+      return [];
+    }
+    const fresh = parsed.filter((j) => {
+      if (!j.job_id) return false;
+      const ageMs = Date.now() - new Date(j.startedAt).getTime();
+      return ageMs <= 60 * 60 * 1000;
+    });
+    if (fresh.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+    }
+    return fresh;
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+    return [];
+  }
+}
 
 export interface JobsSummary {
   total: number;
@@ -27,29 +53,17 @@ export function useGenerationJobs() {
   const [jobs, setJobs] = useState<GenerationJobState[]>([]);
   const esMapRef = useRef<Map<string, EventSource>>(new Map());
 
-  // ─── 初期化: localStorage から復元 ─────────────────────────────────────
+  // ─── 初期化 + 同一タブ sync (CustomEvent) ─────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as GenerationJobState[];
-      if (!Array.isArray(parsed)) {
-        localStorage.removeItem(STORAGE_KEY);
-        return;
-      }
-      const fresh = parsed.filter((j) => {
-        if (!j.job_id) return false;
-        const ageMs = Date.now() - new Date(j.startedAt).getTime();
-        return ageMs <= 60 * 60 * 1000; // 60 分以内
-      });
-      setJobs(fresh);
-      if (fresh.length !== parsed.length) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
-      }
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    const sync = () => setJobs(readJobsFromStorage());
+    sync();
+    window.addEventListener(SYNC_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(SYNC_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
   }, []);
 
   // ─── 各 job の SSE 購読 (非終端状態のみ) ────────────────────────────
@@ -83,6 +97,9 @@ export function useGenerationJobs() {
                 : p,
             );
             localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new Event(SYNC_EVENT));
+            }
             return updated;
           });
           if (data.stage && TERMINAL_STAGES.includes(data.stage as GenerationJobStage)) {
@@ -129,6 +146,7 @@ export function useGenerationJobs() {
       const merged = [...prev, ...newJobs];
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        window.dispatchEvent(new Event(SYNC_EVENT));
       }
       return merged;
     });
@@ -141,6 +159,7 @@ export function useGenerationJobs() {
       if (typeof window !== 'undefined') {
         if (filtered.length === 0) localStorage.removeItem(STORAGE_KEY);
         else localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+        window.dispatchEvent(new Event(SYNC_EVENT));
       }
       return filtered;
     });
@@ -149,7 +168,10 @@ export function useGenerationJobs() {
   // ─── 全 job 削除 ───────────────────────────────────────────────────
   const clearAll = useCallback(() => {
     setJobs([]);
-    if (typeof window !== 'undefined') localStorage.removeItem(STORAGE_KEY);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEY);
+      window.dispatchEvent(new Event(SYNC_EVENT));
+    }
     for (const es of esMapRef.current.values()) es.close();
     esMapRef.current.clear();
   }, []);
