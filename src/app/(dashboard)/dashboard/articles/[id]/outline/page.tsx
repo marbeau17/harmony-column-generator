@@ -150,7 +150,12 @@ export default function OutlinePage() {
       const res = await fetch(`/api/articles/${articleId}`);
       if (!res.ok) throw new Error('記事の取得に失敗しました');
       const json = await res.json();
-      const data: Article = json.data;
+      const data: Article & { generation_mode?: string | null } = json.data;
+      // zero-gen 記事は outline 段階を持たないため edit へリダイレクト
+      if (data.generation_mode === 'zero') {
+        router.replace(`/dashboard/articles/${articleId}/edit`);
+        return;
+      }
       setArticle(data);
       setEditTitle(data.stage1_outline?.title_proposal ?? data.title ?? '');
       setEditMeta(data.stage1_outline?.meta_description ?? data.meta_description ?? '');
@@ -159,7 +164,7 @@ export default function OutlinePage() {
     } finally {
       setLoading(false);
     }
-  }, [articleId]);
+  }, [articleId, router]);
 
   useEffect(() => {
     fetchArticle();

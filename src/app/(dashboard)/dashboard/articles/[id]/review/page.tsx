@@ -207,7 +207,12 @@ export default function ReviewPage() {
       const res = await fetch(`/api/articles/${articleId}`);
       if (!res.ok) throw new Error('記事の取得に失敗しました');
       const json = await res.json();
-      const data: Article = json.data;
+      const data: Article & { generation_mode?: string | null } = json.data;
+      // zero-gen 記事は body_review 段階を持たないため edit へリダイレクト
+      if (data.generation_mode === 'zero') {
+        router.replace(`/dashboard/articles/${articleId}/edit`);
+        return null;
+      }
       setArticle(data);
       return data;
     } catch (err) {
@@ -216,7 +221,7 @@ export default function ReviewPage() {
     } finally {
       setLoading(false);
     }
-  }, [articleId]);
+  }, [articleId, router]);
 
   // ─── 初回取得 + ポーリング ────────────────────────────────────────────
 
