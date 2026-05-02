@@ -187,10 +187,27 @@ export default function ArticleDetailPage() {
     fetchRevisions();
   }, [fetchArticle, fetchRevisions]);
 
-  // ─── body_generating 時のポーリング ─────────────────────────────────────
-
+  // ─── 仕上げ中ポーリング (P5-25) ────────────────────────────────────────
+  // body_generating だけでなく、zero-gen 記事で「Stage2 完了済だが画像未反映」
+  // のとき (= runZeroGenCompletion が裏で走っている期間) も自動更新する。
+  // 条件: generation_mode='zero' AND stage2 あり AND image_files 空 AND
+  //       作成 5 分以内
   useEffect(() => {
-    if (article?.status === 'body_generating') {
+    if (!article) return;
+    const isBodyGenerating = article.status === 'body_generating';
+    const imageCount = Array.isArray(article.image_files)
+      ? (article.image_files as unknown[]).length
+      : 0;
+    const createdMs = article.created_at
+      ? Date.now() - new Date(article.created_at).getTime()
+      : Infinity;
+    const isFinalizingZeroGen =
+      article.generation_mode === 'zero' &&
+      Boolean(article.stage2_body_html) &&
+      imageCount === 0 &&
+      createdMs < 5 * 60 * 1000;
+
+    if (isBodyGenerating || isFinalizingZeroGen) {
       pollingRef.current = setInterval(async () => {
         try {
           const res = await fetch(`/api/articles/${articleId}`);
@@ -198,9 +215,18 @@ export default function ArticleDetailPage() {
           const json = await res.json();
           const updated = json.data as Article;
           setArticle(updated);
-          if (updated.status !== 'body_generating' && pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = null;
+          const newImageCount = Array.isArray(updated.image_files)
+            ? (updated.image_files as unknown[]).length
+            : 0;
+          // 終了条件: status が body_generating でなくなった OR 画像が登録された
+          if (
+            updated.status !== 'body_generating' &&
+            (newImageCount > 0 || !isFinalizingZeroGen)
+          ) {
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
           }
         } catch {
           // ポーリング中のエラーは無視
@@ -988,6 +1014,33 @@ export default function ArticleDetailPage() {
           <p className="text-sm text-slate-400">画像プロンプトはまだありません。</p>
         )}
       </section>
+
+      {/* ─ P5-25: 仕上げ中のヒント表示 ─ */}
+      {(() => {
+        const imageCount = Array.isArray(article.image_files) ? (article.image_files as unknown[]).length : 0;
+        const createdMs = article.created_at ? Date.now() - new Date(article.created_at).getTime() : Infinity;
+        const isFinalizing =
+          article.generation_mode === 'zero' &&
+          Boolean(article.stage2_body_html) &&
+          imageCount === 0 &&
+          createdMs < 5 * 60 * 1000;
+        if (!isFinalizing) return null;
+        return (
+          <section className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4 shadow-sm dark:border-amber-700 dark:bg-amber-950/30">
+            <div className="flex items-center gap-3">
+              <span className="inline-block h-3 w-3 shrink-0 animate-pulse rounded-full bg-amber-500" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-100">
+                  🎨 画像/Stage3 仕上げ中
+                </p>
+                <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-200">
+                  バックグラウンドで実画像 3 枚を生成中です。約 1-2 分でこの画面に自動反映されます。
+                </p>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* ─ 生成済み画像 ─ */}
       {article.image_files && Array.isArray(article.image_files) && (article.image_files as Array<{ url: string; alt?: string; position?: string }>).length > 0 && (
