@@ -1,9 +1,18 @@
 // ============================================================================
 // src/lib/seo/structured-data.ts
-// JSON-LD 構造化データ生成
+// JSON-LD 構造化データ生成 (P5-18 で settings ベースに refactor)
+//
+// 旧版 (commit ~bc4049a) は SITE_URL / PERSON_INFO 等の hardcoded 定数を
+// 持っていたが、それらは src/lib/seo/seo-settings.ts に DEFAULT_SEO_SETTINGS と
+// して移管され、本ファイルは settings 引数を受け取る純粋関数になった。
+// 後方互換: settings 未指定 → DEFAULT_SEO_SETTINGS を使うため既存呼出はそのまま動く。
 // ============================================================================
 
 import type { Article } from '@/types/article';
+import {
+  DEFAULT_SEO_SETTINGS,
+  type SeoSettings,
+} from '@/lib/seo/seo-settings';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -23,39 +32,21 @@ interface JsonLdSchema {
   [key: string]: unknown;
 }
 
-// ─── 定数: Person 固定情報 ──────────────────────────────────────────────────
-
-const PERSON_INFO = {
-  name: '小林由起子',
-  jobTitle: 'スピリチュアルカウンセラー',
-  url: 'https://harmony-mc.com/profile',
-  knowsAbout: [
-    '霊視',
-    '前世リーディング',
-    'カルマ',
-    'チャクラ',
-    'エネルギーワーク',
-  ],
-} as const;
-
-const SITE_URL = 'https://harmony-mc.com';
-
 // ─── Article JSON-LD ────────────────────────────────────────────────────────
 
-/**
- * Article スキーマを生成する。
- * Google が推奨する Article 構造化データに準拠。
- */
-export function generateArticleSchema(article: Article): JsonLdSchema {
+export function generateArticleSchema(
+  article: Article,
+  settings: SeoSettings = DEFAULT_SEO_SETTINGS,
+): JsonLdSchema {
   const publishedDate = article.published_at ?? article.created_at;
   const modifiedDate = article.updated_at;
   const slug = article.slug ?? article.id;
-  const url = `${SITE_URL}/column/${slug}`;
+  const url = `${settings.site_url}/column/${slug}`;
   const title = article.title ?? '';
   const description = article.meta_description ?? '';
   const imageUrl = article.image_files
-    ? extractFirstImageUrl(article.image_files)
-    : `${SITE_URL}/og-default.jpg`;
+    ? extractFirstImageUrl(article.image_files, settings.og_default_image_url)
+    : settings.og_default_image_url;
 
   return {
     '@type': 'Article',
@@ -67,16 +58,16 @@ export function generateArticleSchema(article: Article): JsonLdSchema {
     image: imageUrl,
     author: {
       '@type': 'Person',
-      name: PERSON_INFO.name,
-      url: PERSON_INFO.url,
+      name: settings.author_name,
+      url: settings.author_profile_url,
     },
     publisher: {
       '@type': 'Organization',
-      name: 'Harmony スピリチュアルコラム',
-      url: SITE_URL,
+      name: settings.publisher_name,
+      url: settings.publisher_url,
       logo: {
         '@type': 'ImageObject',
-        url: `${SITE_URL}/logo.png`,
+        url: settings.publisher_logo_url,
       },
     },
     mainEntityOfPage: {
@@ -92,15 +83,10 @@ export function generateArticleSchema(article: Article): JsonLdSchema {
 
 // ─── FAQPage JSON-LD ────────────────────────────────────────────────────────
 
-/**
- * FAQPage スキーマを生成する。
- * AIO（AI Overview）表示に有効。
- */
 export function generateFAQSchema(faqs: FAQItem[]): JsonLdSchema {
   if (faqs.length === 0) {
     return { '@type': 'FAQPage', mainEntity: [] };
   }
-
   return {
     '@type': 'FAQPage',
     mainEntity: faqs.map((faq) => ({
@@ -116,13 +102,7 @@ export function generateFAQSchema(faqs: FAQItem[]): JsonLdSchema {
 
 // ─── BreadcrumbList JSON-LD ─────────────────────────────────────────────────
 
-/**
- * BreadcrumbList スキーマを生成する。
- * パンくずリスト構造化データ。
- */
-export function generateBreadcrumbSchema(
-  items: BreadcrumbItem[],
-): JsonLdSchema {
+export function generateBreadcrumbSchema(items: BreadcrumbItem[]): JsonLdSchema {
   return {
     '@type': 'BreadcrumbList',
     itemListElement: items.map((item, index) => ({
@@ -136,51 +116,61 @@ export function generateBreadcrumbSchema(
 
 // ─── Person JSON-LD ─────────────────────────────────────────────────────────
 
-/**
- * Person スキーマを生成する。
- * 小林由起子の固定情報を返す。E-E-A-T シグナルとして重要。
- */
-export function generatePersonSchema(): JsonLdSchema {
-  return {
+export function generatePersonSchema(
+  settings: SeoSettings = DEFAULT_SEO_SETTINGS,
+): JsonLdSchema {
+  // sameAs: profile_url を必ず先頭に含める。重複は除去。
+  const sameAsRaw = [settings.author_profile_url, ...settings.author_same_as].filter(
+    (s): s is string => typeof s === 'string' && s.length > 0,
+  );
+  const sameAs = Array.from(new Set(sameAsRaw));
+
+  const out: JsonLdSchema = {
     '@type': 'Person',
-    name: PERSON_INFO.name,
-    jobTitle: PERSON_INFO.jobTitle,
-    url: PERSON_INFO.url,
-    knowsAbout: [...PERSON_INFO.knowsAbout],
-    sameAs: [SITE_URL],
+    name: settings.author_name,
+    jobTitle: settings.author_job_title,
+    url: settings.author_profile_url,
+    knowsAbout: [...settings.author_knows_about],
+    sameAs,
   };
+  if (settings.author_image_url) out.image = settings.author_image_url;
+  if (settings.author_bio) out.description = settings.author_bio;
+  return out;
 }
 
 // ─── 統合 @graph 形式 ───────────────────────────────────────────────────────
 
 /**
- * @graph 形式で全スキーマを統合した JSON-LD 文字列を生成する。
- * head 内に <script type="application/ld+json"> として埋め込む。
+ * @graph 形式で全スキーマを統合した JSON-LD オブジェクトを生成する。
+ * 戻り値はオブジェクトのまま（呼び出し側で JSON.stringify する）。
+ *
+ * settings の enable_* トグルが false の schema は `@graph` から除外される。
  */
-export function generateFullSchema(article: Article): string {
+export function generateFullSchema(
+  article: Article,
+  settings: SeoSettings = DEFAULT_SEO_SETTINGS,
+): string {
   const slug = article.slug ?? article.id;
-  const url = `${SITE_URL}/column/${slug}`;
+  const url = `${settings.site_url}/column/${slug}`;
 
-  // FAQ データをパース
   const faqs = parseFaqData(article.faq_data);
 
-  // パンくずリスト
   const breadcrumbs: BreadcrumbItem[] = [
-    { name: 'ホーム', url: SITE_URL },
-    { name: 'コラム', url: `${SITE_URL}/column` },
-    { name: article.title ?? 'コラム記事', url },
+    { name: settings.breadcrumb_home_label, url: settings.site_url },
+    {
+      name: settings.breadcrumb_section_label,
+      url: settings.breadcrumb_section_url.startsWith('http')
+        ? settings.breadcrumb_section_url
+        : `${settings.site_url}${settings.breadcrumb_section_url}`,
+    },
+    { name: article.title ?? settings.breadcrumb_section_label, url },
   ];
 
-  const graph: JsonLdSchema[] = [
-    generateArticleSchema(article),
-    generatePersonSchema(),
-    generateBreadcrumbSchema(breadcrumbs),
-  ];
-
-  // FAQ がある場合のみ追加
-  if (faqs.length > 0) {
-    graph.push(generateFAQSchema(faqs));
-  }
+  const graph: JsonLdSchema[] = [];
+  if (settings.enable_article_schema) graph.push(generateArticleSchema(article, settings));
+  if (settings.enable_person_schema) graph.push(generatePersonSchema(settings));
+  if (settings.enable_breadcrumb_schema) graph.push(generateBreadcrumbSchema(breadcrumbs));
+  if (settings.enable_faq_schema && faqs.length > 0) graph.push(generateFAQSchema(faqs));
 
   const fullSchema = {
     '@context': 'https://schema.org',
@@ -192,37 +182,27 @@ export function generateFullSchema(article: Article): string {
 
 // ─── ヘルパー ───────────────────────────────────────────────────────────────
 
-/**
- * image_files フィールドから最初の画像 URL を抽出する。
- */
-function extractFirstImageUrl(imageFiles: unknown): string {
+function extractFirstImageUrl(imageFiles: unknown, fallback: string): string {
   if (typeof imageFiles === 'string') {
     try {
       const parsed = JSON.parse(imageFiles);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed[0].url ?? parsed[0].src ?? `${SITE_URL}/og-default.jpg`;
+        return (parsed[0].url as string | undefined) ?? (parsed[0].src as string | undefined) ?? fallback;
       }
     } catch {
-      return `${SITE_URL}/og-default.jpg`;
+      return fallback;
     }
   }
-
   if (Array.isArray(imageFiles) && imageFiles.length > 0) {
     const first = imageFiles[0] as Record<string, string>;
-    return first.url ?? first.src ?? `${SITE_URL}/og-default.jpg`;
+    return first.url ?? first.src ?? fallback;
   }
-
-  return `${SITE_URL}/og-default.jpg`;
+  return fallback;
 }
 
-/**
- * faq_data フィールドを FAQItem[] にパースする。
- */
 function parseFaqData(faqData: unknown): FAQItem[] {
   if (!faqData) return [];
-
   let items: unknown[];
-
   if (typeof faqData === 'string') {
     try {
       items = JSON.parse(faqData);
@@ -234,9 +214,7 @@ function parseFaqData(faqData: unknown): FAQItem[] {
   } else {
     return [];
   }
-
   if (!Array.isArray(items)) return [];
-
   return items.filter(
     (item): item is FAQItem =>
       typeof item === 'object' &&

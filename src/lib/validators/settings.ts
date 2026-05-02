@@ -39,7 +39,41 @@ const ctaSettingsSchema = z.object({
   cta3: ctaItemSchema.optional(),
 });
 
+// schema.org 構造化データ設定 (詳細は docs/schema-org-settings-spec.md)
+// すべて optional。未指定フィールドは DEFAULT_SEO_SETTINGS でフォールバック。
 const seoSettingsSchema = z.object({
+  // サイト基本
+  site_url: z.string().optional(),
+  site_name: z.string().optional(),
+  site_logo_url: z.string().optional(),
+  og_default_image_url: z.string().optional(),
+
+  // 著者 (Person)
+  author_name: z.string().optional(),
+  author_job_title: z.string().optional(),
+  author_profile_url: z.string().optional(),
+  author_image_url: z.string().optional(),
+  author_bio: z.string().optional(),
+  author_same_as: z.array(z.string()).optional(),
+  author_knows_about: z.array(z.string()).optional(),
+
+  // 発行元 (Organization)
+  publisher_name: z.string().optional(),
+  publisher_url: z.string().optional(),
+  publisher_logo_url: z.string().optional(),
+
+  // パンくず
+  breadcrumb_home_label: z.string().optional(),
+  breadcrumb_section_label: z.string().optional(),
+  breadcrumb_section_url: z.string().optional(),
+
+  // スキーマ ON/OFF
+  enable_article_schema: z.boolean().optional(),
+  enable_faq_schema: z.boolean().optional(),
+  enable_breadcrumb_schema: z.boolean().optional(),
+  enable_person_schema: z.boolean().optional(),
+
+  // 後方互換 (既存)
   author_jsonld: z.string().optional(),
   disclaimer: z.string().optional(),
 });

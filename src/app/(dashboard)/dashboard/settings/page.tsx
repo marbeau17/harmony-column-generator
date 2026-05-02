@@ -34,6 +34,38 @@ interface CTASettings {
 }
 
 interface SEOSettings {
+  // ─── サイト基本 ─────────────────
+  site_url: string;
+  site_name: string;
+  site_logo_url: string;
+  og_default_image_url: string;
+
+  // ─── 著者 (Person) ──────────────
+  author_name: string;
+  author_job_title: string;
+  author_profile_url: string;
+  author_image_url: string;
+  author_bio: string;
+  author_same_as: string[];      // 1 行 1 URL
+  author_knows_about: string[];  // 1 行 1 タグ
+
+  // ─── 発行元 (Organization) ──────
+  publisher_name: string;
+  publisher_url: string;
+  publisher_logo_url: string;
+
+  // ─── パンくず ──────────────────
+  breadcrumb_home_label: string;
+  breadcrumb_section_label: string;
+  breadcrumb_section_url: string;
+
+  // ─── スキーマ ON/OFF ────────────
+  enable_article_schema: boolean;
+  enable_faq_schema: boolean;
+  enable_breadcrumb_schema: boolean;
+  enable_person_schema: boolean;
+
+  // ─── 後方互換 ──────────────────
   author_jsonld: string;
   disclaimer: string;
 }
@@ -96,6 +128,28 @@ const DEFAULT_CTA: CTASettings = {
 };
 
 const DEFAULT_SEO: SEOSettings = {
+  // 既定値は src/lib/seo/seo-settings.ts の DEFAULT_SEO_SETTINGS と同期
+  site_url: 'https://harmony-mc.com',
+  site_name: 'Harmony スピリチュアルコラム',
+  site_logo_url: 'https://harmony-mc.com/logo.png',
+  og_default_image_url: 'https://harmony-mc.com/og-default.jpg',
+  author_name: '小林由起子',
+  author_job_title: 'スピリチュアルカウンセラー',
+  author_profile_url: 'https://harmony-mc.com/profile',
+  author_image_url: '',
+  author_bio: '',
+  author_same_as: [],
+  author_knows_about: ['霊視', '前世リーディング', 'カルマ', 'チャクラ', 'エネルギーワーク'],
+  publisher_name: 'Harmony スピリチュアルコラム',
+  publisher_url: 'https://harmony-mc.com',
+  publisher_logo_url: 'https://harmony-mc.com/logo.png',
+  breadcrumb_home_label: 'ホーム',
+  breadcrumb_section_label: 'コラム',
+  breadcrumb_section_url: '/column',
+  enable_article_schema: true,
+  enable_faq_schema: true,
+  enable_breadcrumb_schema: true,
+  enable_person_schema: true,
   author_jsonld: '',
   disclaimer: '',
 };
@@ -650,36 +704,286 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* ─── SEO 設定 ─── */}
+        {/* ─── SEO 設定（schema.org 構造化データ）─── */}
         {activeTab === 'seo' && (
-          <div className="space-y-5 w-full max-w-xl">
-            <div>
-              <label className={labelClass}>著者プロフィール JSON-LD</label>
-              <textarea
-                rows={8}
-                value={seo.author_jsonld}
-                onChange={(e) =>
-                  updateSEO({ ...seo, author_jsonld: e.target.value })
-                }
-                placeholder='{"@type": "Person", "name": "...", ...}'
-                className={`${textareaClass} font-mono text-xs`}
-              />
-              <p className="mt-1 text-xs text-gray-400">
-                JSON-LD 形式で著者情報を記述します（構造化データ用）
-              </p>
-            </div>
-            <div>
-              <label className={labelClass}>免責事項テキスト</label>
-              <textarea
-                rows={4}
-                value={seo.disclaimer}
-                onChange={(e) =>
-                  updateSEO({ ...seo, disclaimer: e.target.value })
-                }
-                placeholder="本サイトの内容は情報提供を目的としています..."
-                className={textareaClass}
-              />
-            </div>
+          <div className="space-y-6 w-full max-w-2xl">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              全フィールド任意。空欄のまま保存するとデフォルト値が JSON-LD に反映されます。
+              出力された @graph は Google Rich Results Test で検証してください。
+            </p>
+
+            {/* ── サイト基本 ── */}
+            <fieldset className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <legend className="px-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                サイト基本
+              </legend>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>サイト URL</label>
+                  <input
+                    type="url"
+                    value={seo.site_url}
+                    onChange={(e) => updateSEO({ ...seo, site_url: e.target.value })}
+                    placeholder="https://harmony-mc.com"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>サイト名</label>
+                  <input
+                    type="text"
+                    value={seo.site_name}
+                    onChange={(e) => updateSEO({ ...seo, site_name: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>サイトロゴ URL</label>
+                  <input
+                    type="url"
+                    value={seo.site_logo_url}
+                    onChange={(e) => updateSEO({ ...seo, site_logo_url: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>OG 既定画像 URL</label>
+                  <input
+                    type="url"
+                    value={seo.og_default_image_url}
+                    onChange={(e) => updateSEO({ ...seo, og_default_image_url: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            {/* ── 著者 (Person) ── */}
+            <fieldset className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <legend className="px-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                著者 (Person)
+              </legend>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>著者名</label>
+                  <input
+                    type="text"
+                    value={seo.author_name}
+                    onChange={(e) => updateSEO({ ...seo, author_name: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>職業</label>
+                  <input
+                    type="text"
+                    value={seo.author_job_title}
+                    onChange={(e) => updateSEO({ ...seo, author_job_title: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>プロフィール URL</label>
+                  <input
+                    type="url"
+                    value={seo.author_profile_url}
+                    onChange={(e) => updateSEO({ ...seo, author_profile_url: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>著者画像 URL（任意）</label>
+                  <input
+                    type="url"
+                    value={seo.author_image_url}
+                    onChange={(e) => updateSEO({ ...seo, author_image_url: e.target.value })}
+                    placeholder="https://..."
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className={labelClass}>自己紹介（任意）</label>
+                <textarea
+                  rows={3}
+                  value={seo.author_bio}
+                  onChange={(e) => updateSEO({ ...seo, author_bio: e.target.value })}
+                  className={textareaClass}
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>
+                    sameAs（1 行に 1 URL — Twitter / Ameblo 等）
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={seo.author_same_as.join('\n')}
+                    onChange={(e) =>
+                      updateSEO({
+                        ...seo,
+                        author_same_as: e.target.value
+                          .split('\n')
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                    placeholder="https://twitter.com/...&#10;https://ameblo.jp/..."
+                    className={`${textareaClass} font-mono text-xs`}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>
+                    専門分野 (knowsAbout)（1 行 1 タグ）
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={seo.author_knows_about.join('\n')}
+                    onChange={(e) =>
+                      updateSEO({
+                        ...seo,
+                        author_knows_about: e.target.value
+                          .split('\n')
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                    placeholder="霊視&#10;前世リーディング"
+                    className={`${textareaClass} text-xs`}
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            {/* ── 発行元 (Organization) ── */}
+            <fieldset className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <legend className="px-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                発行元 (Organization)
+              </legend>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>発行元名</label>
+                  <input
+                    type="text"
+                    value={seo.publisher_name}
+                    onChange={(e) => updateSEO({ ...seo, publisher_name: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>発行元 URL</label>
+                  <input
+                    type="url"
+                    value={seo.publisher_url}
+                    onChange={(e) => updateSEO({ ...seo, publisher_url: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>発行元ロゴ URL</label>
+                  <input
+                    type="url"
+                    value={seo.publisher_logo_url}
+                    onChange={(e) => updateSEO({ ...seo, publisher_logo_url: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            {/* ── パンくず ── */}
+            <fieldset className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <legend className="px-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                パンくずリスト
+              </legend>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className={labelClass}>ホームラベル</label>
+                  <input
+                    type="text"
+                    value={seo.breadcrumb_home_label}
+                    onChange={(e) => updateSEO({ ...seo, breadcrumb_home_label: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>セクションラベル</label>
+                  <input
+                    type="text"
+                    value={seo.breadcrumb_section_label}
+                    onChange={(e) => updateSEO({ ...seo, breadcrumb_section_label: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>セクション URL</label>
+                  <input
+                    type="text"
+                    value={seo.breadcrumb_section_url}
+                    onChange={(e) => updateSEO({ ...seo, breadcrumb_section_url: e.target.value })}
+                    placeholder="/column"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            {/* ── スキーマ ON/OFF ── */}
+            <fieldset className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <legend className="px-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                出力する schema (ON/OFF)
+              </legend>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {([
+                  ['enable_article_schema', 'Article'],
+                  ['enable_faq_schema', 'FAQPage'],
+                  ['enable_breadcrumb_schema', 'BreadcrumbList'],
+                  ['enable_person_schema', 'Person'],
+                ] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={seo[key]}
+                      onChange={(e) => updateSEO({ ...seo, [key]: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            {/* ── 詳細（折りたたみ）── */}
+            <details className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <summary className="cursor-pointer text-xs font-semibold text-gray-700 dark:text-gray-200">
+                詳細: カスタム JSON-LD / 免責事項
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className={labelClass}>カスタム JSON-LD（override 用、任意）</label>
+                  <textarea
+                    rows={6}
+                    value={seo.author_jsonld}
+                    onChange={(e) => updateSEO({ ...seo, author_jsonld: e.target.value })}
+                    placeholder='{"@type": "Person", "name": "...", ...}'
+                    className={`${textareaClass} font-mono text-xs`}
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    指定があれば Person schema を完全に上書きします（互換用、通常は空のまま）
+                  </p>
+                </div>
+                <div>
+                  <label className={labelClass}>免責事項テキスト</label>
+                  <textarea
+                    rows={4}
+                    value={seo.disclaimer}
+                    onChange={(e) => updateSEO({ ...seo, disclaimer: e.target.value })}
+                    placeholder="本サイトの内容は情報提供を目的としています..."
+                    className={textareaClass}
+                  />
+                </div>
+              </div>
+            </details>
           </div>
         )}
 

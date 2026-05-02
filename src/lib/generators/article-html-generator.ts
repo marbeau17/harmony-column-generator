@@ -15,6 +15,10 @@ import {
   generatePersonSchema,
   generateBreadcrumbSchema,
 } from '@/lib/seo/structured-data';
+import {
+  DEFAULT_SEO_SETTINGS,
+  type SeoSettings,
+} from '@/lib/seo/seo-settings';
 import type { Article } from '@/types/article';
 
 // ─── 定数 ──────────────────────────────────────────────────────────────────
@@ -192,35 +196,35 @@ function buildSidebarCategoriesHtml(
 
 // ─── 構造化データ生成（JSON-LD） ──────────────────────────────────────────
 
-function buildStructuredDataScripts(article: Article, faqs: FAQItem[]): string {
+function buildStructuredDataScripts(
+  article: Article,
+  faqs: FAQItem[],
+  seoSettings?: SeoSettings,
+): string {
+  const settings = seoSettings ?? DEFAULT_SEO_SETTINGS;
   const slug = article.slug ?? article.id;
   const articleUrl = `${HUB_URL}/${slug}.html`;
 
-  // Article schema
-  const articleSchema = generateArticleSchema(article);
+  const graph: Record<string, unknown>[] = [];
 
-  // Person schema
-  const personSchema = generatePersonSchema();
-
-  // BreadcrumbList schema
-  const categoryLabel = THEME_LABELS[article.theme] ?? article.theme;
-  const breadcrumbSchema = generateBreadcrumbSchema([
-    { name: 'HOME', url: SITE_URL },
-    { name: 'コラム', url: HUB_URL },
-    { name: categoryLabel, url: `${HUB_URL}/?filter=${article.theme}` },
-    { name: article.title ?? 'コラム記事', url: articleUrl },
-  ]);
-
-  const graph: Record<string, unknown>[] = [
-    articleSchema as Record<string, unknown>,
-    personSchema as Record<string, unknown>,
-    breadcrumbSchema as Record<string, unknown>,
-  ];
-
-  // FAQPage (optional)
-  if (faqs.length > 0) {
-    const faqSchema = generateFAQSchema(faqs);
-    graph.push(faqSchema as Record<string, unknown>);
+  if (settings.enable_article_schema) {
+    graph.push(generateArticleSchema(article, settings) as Record<string, unknown>);
+  }
+  if (settings.enable_person_schema) {
+    graph.push(generatePersonSchema(settings) as Record<string, unknown>);
+  }
+  if (settings.enable_breadcrumb_schema) {
+    const categoryLabel = THEME_LABELS[article.theme] ?? article.theme;
+    const breadcrumbSchema = generateBreadcrumbSchema([
+      { name: settings.breadcrumb_home_label || 'HOME', url: settings.site_url || SITE_URL },
+      { name: settings.breadcrumb_section_label || 'コラム', url: HUB_URL },
+      { name: categoryLabel, url: `${HUB_URL}/?filter=${article.theme}` },
+      { name: article.title ?? 'コラム記事', url: articleUrl },
+    ]);
+    graph.push(breadcrumbSchema as Record<string, unknown>);
+  }
+  if (settings.enable_faq_schema && faqs.length > 0) {
+    graph.push(generateFAQSchema(faqs) as Record<string, unknown>);
   }
 
   const fullSchema = {
@@ -248,6 +252,8 @@ export interface ArticleHtmlOptions {
   heroImageAlt?: string;
   /** OG画像URL */
   ogImage?: string;
+  /** P5-18: schema.org 設定（未指定なら DEFAULT_SEO_SETTINGS で従来挙動） */
+  seoSettings?: SeoSettings;
 }
 
 // ─── メイン生成関数 ────────────────────────────────────────────────────────

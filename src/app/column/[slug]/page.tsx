@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateFullSchema } from '@/lib/seo/structured-data';
+import { getSeoSettings } from '@/lib/seo/seo-settings';
 import { generateOgpMeta } from '@/lib/seo/meta-generator';
 import type { Article, RelatedArticle as DbRelatedArticle } from '@/types/article';
 import ScrollDepthTracker from '@/components/common/ScrollDepthTracker';
@@ -276,7 +277,9 @@ export default async function ColumnArticlePage({ params }: PageProps) {
   }
 
   const relatedArticles = await getRelatedArticles(article);
-  const jsonLd = generateFullSchema(article);
+  // P5-18: settings.seo から schema.org 設定を読み込み JSON-LD に反映
+  const seoSettings = await getSeoSettings();
+  const jsonLd = generateFullSchema(article, seoSettings);
   const htmlContent = stripHeroFromBody(
     article.published_html ??
     article.stage3_final_html ??
