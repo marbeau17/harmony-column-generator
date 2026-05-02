@@ -93,3 +93,35 @@ RewriteRule ^(.*)$ /spiritual/column/$1 [R=301,L]
 3. `.htaccess` 旧パス redirect 設定
 4. Search Console で sitemap 再送信
 5. 1〜2 週間経過後、旧パス HTML を削除 (redirect は残す)
+
+## P5-44 cleanup 完了ファイル一覧 (2026-05-02)
+
+`public-urls.ts` ヘルパーへ移行済み。ハードコード `https://harmony-mc.com` / `/column/` を排除した対象は以下。
+
+| カテゴリ | ファイル | 置換内容 |
+|:---|:---|:---|
+| 自動関連記事 | `src/lib/content/auto-related.ts` | 関連記事リンクを `articleUrl(slug)` 経由に変更 |
+| OGP / meta | `src/lib/seo/meta-generator.ts` | canonical / og:url を `articleUrl()` ベースに |
+| structured-data | `src/lib/seo/structured-data.ts` | `Article.url` / `BreadcrumbList` を `articleUrl()` / `hubUrl()` 経由に |
+| HTML 生成 | `src/lib/generators/html-generator.ts` | 内部リンクを `articlePath(slug)` (相対) に変更、HUB リンクを `hubUrl()` に |
+| エクスポート | `src/app/api/export/article/route.ts` | sitemap / RSS 出力を `articleUrl()` 経由に |
+| 設定 UI | `src/app/api/seo-settings/route.ts` | `siteUrl()` から実効値返却 |
+| ダッシュボード | `src/app/dashboard/settings/page.tsx` | URL プレビュー表示を `articleUrl(sample)` に |
+| テンプレート | `templates/*.html` の URL 埋め込み箇所 | ビルド時に `articleUrl()` で動的差し替え |
+
+### 検証
+- sitemap.xml は新形式 (`https://harmony-mc.com/spiritual/column/{slug}/`) で出力されることを確認済
+- `assertConsistency()` による起動時整合チェックが本番デプロイ前 fail-fast を担保
+
+## 保持対象 (env 駆動化しない / ハードコード継続)
+
+以下は仕様上ドメイン固定または別ドメインのため、env 駆動化対象外。
+
+| 種別 | 値 | 理由 |
+|:---|:---|:---|
+| CTA 予約リンク | `https://harmony-booking.web.app/` | 予約専用の別ドメイン (Firebase Hosting)。コラム公開先と独立 |
+| 公式サイト nav | `https://harmony-mc.com/` (root) | コラム HUB ではなく公式トップへの導線。`siteUrl()` と意味的に別 |
+| 既存コラム参照 | `https://harmony-mc.com/column/` (旧パス) | 過去記事の本文中引用。301 redirect 対象のため書換不可 |
+| 外部 SNS | Instagram / YouTube 等 | 外部固定 URL |
+
+これらは grep 検出対象だが、コメントで「P5-44 保持対象」とマークし将来の自動置換から除外する。

@@ -13,6 +13,7 @@
 // ============================================================================
 
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getHubPath } from '@/lib/config/public-urls';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -85,7 +86,9 @@ export const DEFAULT_SEO_SETTINGS: SeoSettings = {
   // パンくず
   breadcrumb_home_label: 'ホーム',
   breadcrumb_section_label: 'コラム',
-  breadcrumb_section_url: '/column',
+  // P5-44: 実 FTP 配置 (NEXT_PUBLIC_HUB_PATH, default '/spiritual/column') と整合させる。
+  // DB settings.seo.breadcrumb_section_url が存在すれば mergeSeoSettings で上書きされる。
+  breadcrumb_section_url: getHubPath(),
 
   // スキーマ ON/OFF
   enable_article_schema: true,

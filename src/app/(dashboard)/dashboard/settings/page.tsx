@@ -5,6 +5,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+// P5-44: ハードコード URL を env 駆動の単一ソースに統一
+import { getSiteUrl, getHubPath } from '@/lib/config/public-urls';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -129,23 +131,23 @@ const DEFAULT_CTA: CTASettings = {
 
 const DEFAULT_SEO: SEOSettings = {
   // 既定値は src/lib/seo/seo-settings.ts の DEFAULT_SEO_SETTINGS と同期
-  site_url: 'https://harmony-mc.com',
+  site_url: getSiteUrl(), // P5-44: env 駆動
   site_name: 'Harmony スピリチュアルコラム',
-  site_logo_url: 'https://harmony-mc.com/logo.png',
-  og_default_image_url: 'https://harmony-mc.com/og-default.jpg',
+  site_logo_url: `${getSiteUrl()}/logo.png`, // P5-44: env 駆動
+  og_default_image_url: `${getSiteUrl()}/og-default.jpg`, // P5-44: env 駆動
   author_name: '小林由起子',
   author_job_title: 'スピリチュアルカウンセラー',
-  author_profile_url: 'https://harmony-mc.com/profile',
+  author_profile_url: `${getSiteUrl()}/profile`, // P5-44: env 駆動
   author_image_url: '',
   author_bio: '',
   author_same_as: [],
   author_knows_about: ['霊視', '前世リーディング', 'カルマ', 'チャクラ', 'エネルギーワーク'],
   publisher_name: 'Harmony スピリチュアルコラム',
-  publisher_url: 'https://harmony-mc.com',
-  publisher_logo_url: 'https://harmony-mc.com/logo.png',
+  publisher_url: getSiteUrl(), // P5-44: env 駆動
+  publisher_logo_url: `${getSiteUrl()}/logo.png`, // P5-44: env 駆動
   breadcrumb_home_label: 'ホーム',
   breadcrumb_section_label: 'コラム',
-  breadcrumb_section_url: '/column',
+  breadcrumb_section_url: getHubPath(), // P5-44: env 駆動
   enable_article_schema: true,
   enable_faq_schema: true,
   enable_breadcrumb_schema: true,

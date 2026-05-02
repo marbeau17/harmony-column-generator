@@ -5,6 +5,7 @@
 // 記事公開時に TF-IDF ベースの関連記事を計算し、Supabase に保存する。
 // ============================================================================
 
+import { getArticleRelativePath } from '@/lib/config/public-urls';
 import {
   selectRelatedArticles,
   type ArticleCard,
@@ -73,14 +74,14 @@ export async function computeAndSaveRelatedArticles(
   // 全公開済み記事を取得
   const allCards = await fetchPublishedArticleCards();
 
-  // ArticleCard[] 形式に変換（href を /column/{slug}/ にマッピング）
+  // ArticleCard[] 形式に変換（href を env 駆動の相対パスにマッピング）
   const candidates: ArticleCard[] = allCards.map((a) => ({
-    href: `/column/${a.slug}/`,
+    href: getArticleRelativePath(a.slug), // P5-44: env 駆動に置換
     title: a.title,
   }));
 
   // 自分自身を除外して関連記事を選定（上位3件）
-  const selfHref = `/column/${article.slug}/`;
+  const selfHref = getArticleRelativePath(article.slug); // P5-44: env 駆動に置換
   const related = selectRelatedArticles(
     article.keyword,
     candidates,
@@ -128,7 +129,7 @@ export async function updateAllRelatedArticles(): Promise<{
 
   // ArticleCard[] 形式に変換
   const candidates: ArticleCard[] = allCards.map((a) => ({
-    href: `/column/${a.slug}/`,
+    href: getArticleRelativePath(a.slug), // P5-44: env 駆動に置換
     title: a.title,
   }));
 
@@ -138,7 +139,7 @@ export async function updateAllRelatedArticles(): Promise<{
   // 各記事について関連記事を計算・保存
   for (const article of allCards) {
     try {
-      const selfHref = `/column/${article.slug}/`;
+      const selfHref = getArticleRelativePath(article.slug); // P5-44: env 駆動に置換
       const related = selectRelatedArticles(
         article.keyword,
         candidates,

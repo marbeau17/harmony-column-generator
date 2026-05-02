@@ -6,6 +6,9 @@
 // カラースキーム: #8b6f5e(ウォームブラウン), #53352b(ダークブラウン)
 // ============================================================================
 
+// P5-44: SITE_URL / hubPath を env 駆動の単一ソースに統一
+import { getSiteUrl, getHubPath } from '@/lib/config/public-urls';
+
 // ─── 入力型 ─────────────────────────────────────────────────────────────────
 
 export interface HtmlGeneratorInput {
@@ -50,8 +53,11 @@ function escAttr(s: string): string {
 // ─── サイト定数 ─────────────────────────────────────────────────────────────
 
 const SITE_NAME = 'Harmonyスピリチュアルコラム';
-const SITE_URL = 'https://harmony-mc.com';
-const BOOKING_URL = 'https://harmony-booking.web.app/';
+// P5-44: ハードコード排除 — env 駆動 (NEXT_PUBLIC_SITE_URL) の thin wrapper
+const SITE_URL = getSiteUrl();
+// P5-44: BOOKING_URL も env 駆動に (フォールバックは既存仕様の URL を維持)
+const BOOKING_URL =
+  process.env.NEXT_PUBLIC_BOOKING_URL || 'https://harmony-booking.web.app/';
 
 const COUNSELOR = {
   name: '小林由起子',
@@ -150,7 +156,8 @@ function buildDisclaimer(): string {
 
 function buildStructuredData(article: HtmlGeneratorInput['article']): string {
   const publishedAt = article.publishedAt || new Date().toISOString().split('T')[0];
-  const baseUrl = `${SITE_URL}/columns`;
+  // P5-44: 旧 `/columns/` 複数形バグを撤廃し、env の hubPath を使用
+  const baseUrl = `${SITE_URL}${getHubPath()}`;
 
   // Article
   const articleSchema = {
@@ -242,7 +249,8 @@ function buildStructuredData(article: HtmlGeneratorInput['article']): string {
 // ─── OGPメタタグ ────────────────────────────────────────────────────────────
 
 function buildOgpMeta(article: HtmlGeneratorInput['article']): string {
-  const baseUrl = `${SITE_URL}/columns`;
+  // P5-44: 旧 `/columns/` 複数形バグを撤廃し、env の hubPath を使用
+  const baseUrl = `${SITE_URL}${getHubPath()}`;
   return `
   <meta property="og:title" content="${escAttr(article.title)}"/>
   <meta property="og:type" content="article"/>
@@ -416,7 +424,8 @@ function resolveBodyImagePlaceholders(
 export function generateArticleHtml(input: HtmlGeneratorInput): string {
   const { article } = input;
   const year = new Date().getFullYear();
-  const baseUrl = `${SITE_URL}/columns`;
+  // P5-44: 旧 `/columns/` 複数形バグを撤廃し、env の hubPath を使用
+  const baseUrl = `${SITE_URL}${getHubPath()}`;
 
   // 画像URL（3枚: hero 1200x630, body 800x450, summary 800x450）
   // hero = thumbnailFilename, body & summary は imageFiles から解決

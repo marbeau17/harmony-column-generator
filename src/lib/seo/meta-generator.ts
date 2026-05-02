@@ -4,8 +4,8 @@
 // ============================================================================
 
 import type { Article } from '@/types/article';
-
-const SITE_URL = 'https://harmony-mc.com';
+// P5-44: SITE_URL ハードコードと /column/ 直書きを env 駆動に置換
+import { getSiteUrl, getArticleUrl } from '@/lib/config/public-urls';
 
 // ─── メタタイトル生成 ───────────────────────────────────────────────────────
 
@@ -197,13 +197,15 @@ interface OgpMeta {
  */
 export function generateOgpMeta(article: Article): OgpMeta {
   const slug = article.slug ?? article.id;
-  const url = `${SITE_URL}/column/${slug}`;
+  // P5-44: ハードコード URL を env 駆動 (getArticleUrl / getSiteUrl) に置換
+  const url = getArticleUrl(String(slug));
   const title = article.title ?? 'Harmony コラム';
   const description =
     article.meta_description ??
     generateMetaDescription(article.keyword, article.theme);
 
-  let image = `${SITE_URL}/og-default.jpg`;
+  // P5-44: og 画像のデフォルトもサイトルートを env から取得
+  let image = `${getSiteUrl()}/og-default.jpg`;
   if (article.image_files) {
     try {
       const files = Array.isArray(article.image_files)

@@ -8,6 +8,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 import { getStickyCtaBarCss, getStickyCtaBarHtml } from '@/lib/generators/sticky-cta-bar';
 import { logger } from '@/lib/logger';
+import { getOgImageUrl, getSiteUrl } from '@/lib/config/public-urls';
 import archiver from 'archiver';
 import { PassThrough } from 'stream';
 import fs from 'fs';
@@ -111,7 +112,8 @@ export async function POST(request: NextRequest) {
         let html = generateArticleHtml(article, {
           heroImage: 'images/hero.jpg',
           heroImageAlt: article.title ?? slug,
-          ogImage: `https://harmony-mc.com/column/${slug}/images/hero.jpg`,
+          // P5-44: ハードコード URL を env 駆動に置換
+          ogImage: getOgImageUrl(slug, 'hero'),
           hubUrl: '../index.html',
         });
         html = html.replace(
@@ -187,7 +189,8 @@ export async function POST(request: NextRequest) {
           let html = generateArticleHtml(article, {
             heroImage: 'images/hero.jpg',
             heroImageAlt: article.title ?? slug,
-            ogImage: `https://harmony-mc.com/column/${slug}/images/hero.jpg`,
+            // P5-44: ハードコード URL を env 駆動に置換
+            ogImage: getOgImageUrl(slug, 'hero'),
             hubUrl: '../index.html',
           });
           html = html.replace(/https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g, './images/$1.jpg');
@@ -284,7 +287,8 @@ function buildHubPageHtml(articles: Article[]): string {
   <style>body { background: #faf3ed; font-family: 'Noto Sans JP', sans-serif; color: #333; text-align: center; padding: 80px 16px; }</style>
 </head>
 <body>
-  <p style="margin-bottom:12px"><a href="https://harmony-mc.com/" style="color:#8b6f5e;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
+  <!-- P5-44: ハードコード URL を env 駆動に置換 -->
+  <p style="margin-bottom:12px"><a href="${getSiteUrl()}/" style="color:#8b6f5e;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
   <h1>魂の気づきコラム</h1>
   <p>「今を生きるヒント」</p>
   <p>公開済みの記事はまだありません。</p>
@@ -484,7 +488,8 @@ function buildHubPageHtml(articles: Article[]): string {
 <body>
 
   <header class="page-header">
-    <p style="margin-bottom:12px"><a href="https://harmony-mc.com/" style="color:#8b6f5e;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
+    <!-- P5-44: ハードコード URL を env 駆動に置換 -->
+    <p style="margin-bottom:12px"><a href="${getSiteUrl()}/" style="color:#8b6f5e;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
   <h1>魂の気づきコラム</h1>
     <p class="page-subtitle">「今を生きるヒント」</p>
     <p>スピリチュアルカウンセラー小林由起子が、魂の成長やヒーリング、人間関係など日々の気づきを綴るコラムです。あなたの心に寄り添うメッセージをお届けします。</p>

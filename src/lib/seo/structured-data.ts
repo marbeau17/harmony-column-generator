@@ -13,6 +13,8 @@ import {
   DEFAULT_SEO_SETTINGS,
   type SeoSettings,
 } from '@/lib/seo/seo-settings';
+// P5-44: 公開 URL 構築を env 駆動化（settings.site_url 上書きは後方互換で尊重）
+import { getArticleUrl } from '@/lib/config/public-urls';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -41,7 +43,10 @@ export function generateArticleSchema(
   const publishedDate = article.published_at ?? article.created_at;
   const modifiedDate = article.updated_at;
   const slug = article.slug ?? article.id;
-  const url = `${settings.site_url}/column/${slug}`;
+  // P5-44: settings.site_url（DB 上書き）優先、未設定なら env 駆動の getArticleUrl(slug)
+  const url = settings.site_url
+    ? `${settings.site_url}/column/${slug}`
+    : getArticleUrl(slug);
   const title = article.title ?? '';
   const description = article.meta_description ?? '';
   const imageUrl = article.image_files
@@ -151,7 +156,10 @@ export function generateFullSchema(
   settings: SeoSettings = DEFAULT_SEO_SETTINGS,
 ): string {
   const slug = article.slug ?? article.id;
-  const url = `${settings.site_url}/column/${slug}`;
+  // P5-44: settings.site_url（DB 上書き）優先、未設定なら env 駆動の getArticleUrl(slug)
+  const url = settings.site_url
+    ? `${settings.site_url}/column/${slug}`
+    : getArticleUrl(slug);
 
   const faqs = parseFaqData(article.faq_data);
 
