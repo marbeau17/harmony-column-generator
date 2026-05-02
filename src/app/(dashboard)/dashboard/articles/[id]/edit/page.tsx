@@ -241,8 +241,9 @@ export default function ArticleEditPage() {
 
       setPublishDialogOpen(false);
       setPublishSuccessOpen(true);
-    } catch {
-      alert('公開に失敗しました。もう一度お試しください。');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '公開に失敗しました';
+      toast.error(`公開失敗: ${message}`, { duration: 8000 });
     } finally {
       setPublishing(false);
     }
@@ -570,7 +571,7 @@ export default function ArticleEditPage() {
               <button
                 onClick={async () => {
                   if (charCount === 0) {
-                    alert('本文が空です。公開するには本文を入力してください。');
+                    toast.error('本文が空です。公開するには本文を入力してください。');
                     return;
                   }
                   // 公開ダイアログを開くと同時に品質チェックを実行
