@@ -14,7 +14,8 @@ import fs from 'fs';
 import path from 'path';
 import type { Article } from '@/types/article';
 
-export const maxDuration = 120;
+export const maxDuration = 300;
+export const dynamic = 'force-dynamic';
 
 // ─── Theme labels (same as static-exporter) ─────────────────────────────────
 
@@ -96,52 +97,62 @@ export async function POST(request: NextRequest) {
     passthrough.on('data', (chunk: Buffer) => chunks.push(chunk));
     archive.pipe(passthrough);
 
-    // Add each article
-    for (const article of articles) {
-      const slug = article.slug ?? article.id;
+    // P5-38: 全記事 + 全画像を並列で fetch (逐次だと 504 timeout)
+    //   45 記事 × 3 画像 = 135 fetch を直列で行うと Vercel 上限を超える。
+    //   全 fetch を Promise.all で同時投入してから archive に append する。
+    type ArticleArtifact = {
+      slug: string;
+      html: string;
+      images: { name: string; buffer: Buffer<ArrayBuffer> }[];
+    };
+    const artifacts = await Promise.all(
+      articles.map(async (article): Promise<ArticleArtifact> => {
+        const slug = article.slug ?? article.id;
+        let html = generateArticleHtml(article, {
+          heroImage: 'images/hero.jpg',
+          heroImageAlt: article.title ?? slug,
+          ogImage: `https://harmony-mc.com/column/${slug}/images/hero.jpg`,
+          hubUrl: '../index.html',
+        });
+        html = html.replace(
+          /https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g,
+          './images/$1.jpg',
+        );
+        html = html.replace('href="./css/hub.css"', 'href="../../css/style.css"');
+        html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
+        html = html.replace(/href="\/column\/([^"]+)\/"/g, 'href="../$1/index.html"');
+        html = html.replace(/src="\/column\/([^"]+)\/images\//g, 'src="../$1/images/');
+        html = html.replace(/<img[^>]*src="\.\/images\/hero\.(jpg|svg)"[^>]*style="max-width:100%[^"]*"[^>]*>/g, '');
+        html = html.replace(/<!--IMAGE:hero:[^>]*-->/g, '');
 
-      // Generate article HTML using the real generator
-      const heroImagePath = 'images/hero.jpg';
-      let html = generateArticleHtml(article, {
-        heroImage: heroImagePath,
-        heroImageAlt: article.title ?? slug,
-        ogImage: `https://harmony-mc.com/column/${slug}/images/hero.jpg`,
-        hubUrl: '../index.html',
-      });
+        const imageFiles = parseImageFiles(article.image_files);
+        const images = await Promise.all(
+          imageFiles
+            .filter((img) => img.url)
+            .map(async (img) => {
+              try {
+                const imgRes = await fetch(img.url);
+                if (!imgRes.ok) return null;
+                const buffer = Buffer.from(await imgRes.arrayBuffer());
+                const filename = img.position ? `${img.position}.jpg` : (img.filename ?? 'image.jpg');
+                return { name: `column/${slug}/images/${filename}`, buffer };
+              } catch {
+                return null;
+              }
+            }),
+        );
+        return {
+          slug,
+          html,
+          images: images.filter((i): i is { name: string; buffer: Buffer<ArrayBuffer> } => i !== null),
+        };
+      }),
+    );
 
-      // Post-process HTML: rewrite Supabase Storage URLs to local relative paths
-      html = html.replace(
-        /https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g,
-        './images/$1.jpg',
-      );
-      // Fix CSS path
-      html = html.replace('href="./css/hub.css"', 'href="../../css/style.css"');
-      // Fix JS path
-      html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
-      // Fix related article links
-      html = html.replace(/href="\/column\/([^"]+)\/"/g, 'href="../$1/index.html"');
-      // Fix related article thumbnails
-      html = html.replace(/src="\/column\/([^"]+)\/images\//g, 'src="../$1/images/');
-      // Remove duplicate hero image from body HTML
-      html = html.replace(/<img[^>]*src="\.\/images\/hero\.(jpg|svg)"[^>]*style="max-width:100%[^"]*"[^>]*>/g, '');
-      html = html.replace(/<!--IMAGE:hero:[^>]*-->/g, '');
-
-      archive.append(html, { name: `column/${slug}/index.html` });
-
-      // Download and add images
-      const imageFiles = parseImageFiles(article.image_files);
-      for (const img of imageFiles) {
-        if (!img.url) continue;
-        try {
-          const imgRes = await fetch(img.url);
-          if (imgRes.ok) {
-            const buffer = Buffer.from(await imgRes.arrayBuffer());
-            const filename = img.position ? `${img.position}.jpg` : (img.filename ?? 'image.jpg');
-            archive.append(buffer, { name: `column/${slug}/images/${filename}` });
-          }
-        } catch {
-          // Skip failed image downloads
-        }
+    for (const a of artifacts) {
+      archive.append(a.html, { name: `column/${a.slug}/index.html` });
+      for (const img of a.images) {
+        archive.append(img.buffer, { name: img.name });
       }
     }
 
