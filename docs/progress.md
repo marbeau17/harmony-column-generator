@@ -767,3 +767,121 @@ WHERE id IN (
 - 20260503 マイグレ本番適用
 - 公開承認フロー zero-gen 経路 E2E
 - 7 日観察 → 本格運用
+
+---
+
+# P5-13 〜 P5-16 — バグ D〜G 修正 + 完全生成 CLI + キーワード提案（2026-05-02）
+
+## 経緯
+記事 #71 (id=`31892969-8215-42c2-8ad7-07135edf2766`) が編集画面で「本文がありません」表示。
+診断の結果、ai_generation_log には Stage2/品質チェック完走の記録があるのに body だけ空文字に潰れていた → 隠れバグ D を発見。連鎖的にバグ E/F/G も顕在化し、合わせて P5-16 で SEO 補助のキーワード候補機能まで実装した。
+
+## P5-13: バグ D 修正（Stage2 4 形態正規化）
+**根本原因**: zero-generate-full/route.ts L293-300 の Stage2 正規化が 2 形態のみ対応。
+Gemini は同じプロンプトに対し 4 形態を返しうる:
+  1. `"<p>...</p>"` (string)
+  2. `{ "html": "<p>...</p>" }` (object_html)
+  3. `["<p>...</p>", "<p>...</p>"]` (array_html)
+  4. `[{ "html": "..." }, { "html": "..." }]` (array_object_html)
+
+3 と 4 は array (= object) なので type guard をすり抜け、`.html` も undefined → `''` に潰れる。
+記事 #71 のリラン時に `response_shape: 'array_html'` を確認 — まさに踏んだケース。
+
+### 修正
+- 共通ヘルパ `src/lib/ai/stage2-html-normalize.ts` 新設
+  (route.ts と zero-gen-stage2-onwards.ts CLI で共通利用、DRY 化)
+- route.ts: `normalizeStage2Html` へ差し替え + `maxOutputTokens=32000` 追加
+- 単体テスト 14 ケース（4 形態 × mix × null/undefined/想定外）
+
+## P5-14: 完全生成 CLI `zero-gen-publish.ts`
+Stage2 完了済記事 → Stage3 完成までを 1 コマンドで実行する CLI を追加。
+
+- 画像生成 + Storage アップロード（既存があれば skip / `--force-images` で上書き）
+- Stage3 final HTML 生成 (`generateArticleHtml`)
+- meta_description / seo_filename 計算
+- article_revisions snapshot (revision_number=2)
+- 安全装置: status / is_hub_visible / title / slug は触らない
+
+## P5-15: バグ E/F/G 一括修正
+
+### バグ E: embedding 404
+`text-embedding-004` が API から deprecated/削除済（v1 でも v1beta でも 404）。
+v1beta の `models?` 列挙で `gemini-embedding-001` (stable) を確認。
+
+- model: `text-embedding-004` → `gemini-embedding-001`
+- API_VERSIONS: `['v1','v1beta']` → `['v1beta']` のみ
+- `outputDimensionality:768` を必須付加（gemini-embedding-001 default=3072 → DB の vector(768) に合わせ縮小）
+- live test: dim=768, 516ms ✓
+
+### バグ F: persistTone (二重バグ)
+**F-1 cookies error**: `createServiceRoleClient` が `await cookies()` を必須呼び出ししていたため CLI / cron / background fetch から呼ぶと `cookies called outside request scope`。 try/catch で no-op fallback。
+**F-2 列型不一致**: `yukiko_tone_score` 列は migration で `FLOAT` として作成されているのに、persist-tone は object payload を書こうとし `invalid input syntax for type double precision` で必ず失敗。 → `tone.total` scalar のみに統一。
+
+### バグ G: edit/page.tsx 空文字フォールバック
+`a.stage3_final_html ?? a.stage2_body_html ?? ''` が空文字を素通り。
+trim 後の length>0 で判定するように修正（バグ D 系統の防衛 + 過去事故記事の救済）。
+
+### 検証
+- npx vitest run: 482/482 PASS
+- live: embedding 768dim ok, persistTone CLI ok
+
+## P5-16: キーワード候補 SEO 提案機能
+ゼロ生成フォームに「💡 候補を提案」ボタンを追加。SEO ツール (Ahrefs/SEMrush) を使わずに以下の 2 系統を統合し、最大 18 件の長尾キーワード候補を提案:
+
+1. **ペルソナ系**: `persona.search_patterns × theme + intent` から即時生成（Gemini 不要、$0）
+2. **AI 系**: Gemini 3.1 Pro に theme/persona/intent を渡して 3-5 単語の長尾 KW を 10 件提案させる（~$0.001/回、各候補に rationale 付き）
+
+### 新規ファイル
+- `src/lib/ai/prompts/keyword-suggestions.ts` — `buildPersonaCandidates` / `buildAiSuggestionPrompt` / `normalizeAiCandidates`
+- `src/app/api/articles/zero-generate/suggest-keywords/route.ts` — POST 認証 → zod 検証 → 2 系統融合 → dedupe → score 降順
+- `test/unit/keyword-suggestions.test.ts` — 15 ケース
+
+### UI
+- ボタン: テーマ+ペルソナ未選択時 disabled, tooltip 付き
+- チップグリッド: 出所バッジ「ペルソナ」緑 / 「AI」水色、rationale tooltip、クリックで追加、追加済はミュート
+- AI 失敗時は 207 partial で persona 候補のみ返す（UX 維持）
+
+### live 検証
+- persona 7 件 + AI 9 件 = 16 候補を 15s で取得 ✓
+- AI 候補例: `インナーチャイルド 癒し ワーク 初心者` / `クリスタル 癒し 効果 比較` / `チャクラ ヒーリング やり方 初心者`
+
+## 記事 #71 復旧
+| 項目 | 修復前 | 修復後 |
+|---|---|---|
+| stage2_body_html | `""` | **3,651 chars** |
+| stage3_final_html | `""` | **24,780 chars** |
+| meta_description | あり | 103 chars (再計算済) |
+| reviewed_at | null | 2026-05-01T23:50:32 |
+| hallucination_score | 100 | 85 (claims 54) |
+| yukiko_tone_score | 0.359 | 0.757 |
+| image_files | 3 枚 | 3 枚（既存保持） |
+| slug / status / is_hub_visible | (元のまま) | **温存** |
+
+## 検証
+- 型チェック: ok
+- 全テスト: 497/497 PASS（新規 29 + 既存 468）
+- live smoke: embedding 768dim, persistTone CLI, suggest-keywords AI
+
+## 関連ファイル
+- (added) src/lib/ai/stage2-html-normalize.ts
+- (added) src/lib/ai/prompts/keyword-suggestions.ts
+- (added) src/app/api/articles/zero-generate/suggest-keywords/route.ts
+- (added) scripts/ops/zero-gen-publish.ts
+- (added) test/unit/stage2-html-normalize.test.ts
+- (added) test/unit/keyword-suggestions.test.ts
+- (modified) src/app/api/articles/zero-generate-full/route.ts
+- (modified) src/lib/ai/embedding-client.ts
+- (modified) src/lib/supabase/server.ts
+- (modified) src/lib/tone/persist-tone.ts
+- (modified) src/lib/validators/zero-generate.ts
+- (modified) src/app/(dashboard)/dashboard/articles/[id]/edit/page.tsx
+- (modified) src/app/(dashboard)/dashboard/articles/new-from-scratch/page.tsx
+- (modified) test/unit/new-from-scratch-form-uuid.test.tsx
+
+## 残タスク（次サイクル）
+- 1499 source_chunks embedding 本番投入（バグ E 解決で解禁、未実行）
+- 20260503 マイグレ本番適用
+- Vercel env 追加 (HALLUCINATION_RETRY_TOKEN 等)
+- claim-extractor body 分割対応（body > 8000 chars リスク）
+- ペルソナ別 source 記事マイニング（キーワード候補強化の v2）
+- 公開承認フロー zero-gen 経路 E2E
