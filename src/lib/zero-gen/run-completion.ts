@@ -13,8 +13,14 @@
 //   6. articles UPDATE + revision_number=2 snapshot 保存
 //
 // 安全装置:
-//   - status / generation_mode / is_hub_visible / reviewed_at は触らない
+//   - generation_mode / is_hub_visible / reviewed_at は触らない
 //   - title / slug は触らない (preserve-article-content ルール)
+//
+// P5-36: validation 通過時のみ status を draft → editing に遷移させる。
+//   ゼロ生成は通常の outline → body_generating → body_review フローを
+//   bypass するため、完了後 draft のまま残ると公開できない (VALID_TRANSITIONS で
+//   draft → published は不許可)。validation passed 時点で editing 相当の品質
+//   が保証されるため、editing に置く。validation 失敗時は draft のまま。
 //
 // 失敗時: throw、async route 側で job.error にメッセージを設定
 // ============================================================================
@@ -432,6 +438,32 @@ export async function runZeroGenCompletion(args: {
       articleId,
       issues: validationIssues,
     });
+  } else {
+    // P5-36: validation 通過 → draft の場合のみ editing に遷移させる。
+    // 既に editing 以降にユーザが進めていた場合 (再生成シナリオ) は触らない。
+    const { data: cur } = await supabase
+      .from('articles')
+      .select('status')
+      .eq('id', articleId)
+      .maybeSingle();
+    if (cur?.status === 'draft') {
+      const { error: stErr } = await supabase
+        .from('articles')
+        .update({ status: 'editing' })
+        .eq('id', articleId);
+      if (stErr) {
+        logger.warn('ai', 'completion.status_advance_failed', {
+          articleId,
+          error_message: stErr.message,
+        });
+      } else {
+        logger.info('ai', 'completion.status_advanced', {
+          articleId,
+          from: 'draft',
+          to: 'editing',
+        });
+      }
+    }
   }
 
   logger.info('ai', 'done', {
