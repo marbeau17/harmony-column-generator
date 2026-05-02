@@ -10,7 +10,14 @@ import { logger } from '@/lib/logger';
 import { runDeployChecklist } from '@/lib/content/quality-checklist';
 import { runTemplateCheck } from '@/lib/content/html-template-validator';
 import { isDeployable } from '@/lib/publish-control/visibility-predicate';
+// P5-44: 公開 URL は env 駆動の単一ソースから取得 (ハードコード排除)
+import { getOgImageUrl, getHubPath } from '@/lib/config/public-urls';
 import type { Article } from '@/types/article';
+
+// P5-44: 正規表現のメタ文字をエスケープ (hubPath を regex に埋め込む用)
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 export const maxDuration = 120;
 
@@ -62,7 +69,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     let html = generateArticleHtml(article, {
       heroImage: `images/hero.jpg`,
       heroImageAlt: article.title ?? slug,
-      ogImage: `https://harmony-mc.com/column/${slug}/images/hero.jpg`,
+      // P5-44: env 駆動の og:image URL ヘルパーを使用
+      ogImage: getOgImageUrl(slug, 'hero'),
       hubUrl: '../index.html',
     });
 
@@ -70,8 +78,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     html = html.replace(/https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g, './images/$1.jpg');
     html = html.replace('href="./css/hub.css"', 'href="../../css/hub.css"');
     html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
-    html = html.replace(/href="\/column\/([^"]+)\/"/g, 'href="../$1/index.html"');
-    html = html.replace(/src="\/column\/([^"]+)\/images\//g, 'src="../$1/images/');
+    // P5-44: 関連記事リンク/サムネイルの post-process を hubPath ベースに変更
+    const hubPathPattern = escapeRegex(getHubPath());
+    html = html.replace(
+      new RegExp(`href="${hubPathPattern}/([^"]+)/"`, 'g'),
+      'href="../$1/index.html"',
+    );
+    html = html.replace(
+      new RegExp(`src="${hubPathPattern}/([^"]+)/images/`, 'g'),
+      'src="../$1/images/',
+    );
     html = html.replace(/<img[^>]*src="\.\/images\/hero\.(jpg|svg)"[^>]*style="max-width:100%[^"]*"[^>]*>/g, '');
     html = html.replace(/<!--IMAGE:hero:[^>]*-->/g, '');
 

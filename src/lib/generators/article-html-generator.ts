@@ -19,13 +19,17 @@ import {
   DEFAULT_SEO_SETTINGS,
   type SeoSettings,
 } from '@/lib/seo/seo-settings';
+// P5-44: 公開 URL は env 駆動の単一ソースから取得 (ハードコード排除)
+import { getSiteUrl, getHubUrl, getHubPath, getArticleUrl, getOgImageUrl } from '@/lib/config/public-urls';
 import type { Article } from '@/types/article';
 
 // ─── 定数 ──────────────────────────────────────────────────────────────────
 
-const SITE_URL = 'https://harmony-mc.com';
+// P5-44: env 駆動 — getSiteUrl/getHubUrl/getArticleUrl 経由で参照する。
+// これらの定数は後方互換のため残置しているが、新規利用は禁止 (ESLint で警告予定)。
+const SITE_URL = getSiteUrl();
 const BOOKING_URL = 'https://harmony-booking.web.app/';
-const HUB_URL = `${SITE_URL}/column`;
+const HUB_URL = getHubUrl();
 const GA4_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-TH2XJ24V3T';
 
 function buildGA4Tag(): string {
@@ -143,9 +147,14 @@ function buildRelatedArticlesHtml(
   return articles
     .slice(0, 3)
     .map((a) => {
-      // hrefからslugを抽出してサムネイルパスを生成
-      const slug = a.href.replace(/^\/column\//, '').replace(/\/$/, '');
-      const thumbSrc = `/column/${slug}/images/hero.jpg`;
+      // P5-44: getHubPath() は trailing slash なしで `/spiritual/column` を返す
+      const hubPath = getHubPath();
+      const escapedHubPath = hubPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const slug = a.href
+        .replace(new RegExp(`^${escapedHubPath}/`), '')
+        .replace(/^\/column\//, '') // 旧形式 fallback
+        .replace(/\/$/, '');
+      const thumbSrc = `${hubPath}/${slug}/images/hero.jpg`;
       return `<a href="${escAttr(a.href)}" class="article-related-card">
           <div class="article-related-card-thumb">
             <img src="${escAttr(thumbSrc)}" alt="${escHtml(a.title)}" loading="lazy">
@@ -203,7 +212,8 @@ function buildStructuredDataScripts(
 ): string {
   const settings = seoSettings ?? DEFAULT_SEO_SETTINGS;
   const slug = article.slug ?? article.id;
-  const articleUrl = `${HUB_URL}/${slug}.html`;
+  // P5-44: 旧 ${HUB_URL}/${slug}.html → 実 FTP 配置と整合する {slug}/ ディレクトリ形式
+  const articleUrl = getArticleUrl(slug);
 
   const graph: Record<string, unknown>[] = [];
 
@@ -272,8 +282,8 @@ export function generateArticleHtml(
 ): string {
   const slug = article.slug ?? article.id;
   const hubUrl = options.hubUrl ?? HUB_URL;
-  // canonical / OG URL は常に絶対URLを使用（hubUrl がリラティブの場合でも正しく動作）
-  const canonicalUrl = `${HUB_URL}/${slug}.html`;
+  // P5-44: canonical / OG URL は env 駆動 helper で常に絶対 URL を生成
+  const canonicalUrl = getArticleUrl(slug);
   const dateIso = article.published_at ?? article.created_at;
   const dateDisplay = formatDateJa(dateIso);
   const categoryLabel = THEME_LABELS[article.theme] ?? article.theme;

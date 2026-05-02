@@ -1,8 +1,10 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { THEME_CATEGORIES } from '@/types/article';
 import { applyPubliclyVisibleFilter } from '@/lib/publish-control/state-readers-sql';
+// P5-44: 公開 URL は env 駆動の単一ソースから取得
+import { getSiteUrl, getArticleUrl } from '@/lib/config/public-urls';
 
-const SITE_URL = 'https://harmony-mc.com';
+const SITE_URL = getSiteUrl();
 
 type SitemapEntry = {
   url: string;
@@ -42,7 +44,9 @@ export default async function sitemap(): Promise<SitemapEntry[]> {
     if (error || !data) return [...staticPages, ...categoryPages];
 
     const articlePages: SitemapEntry[] = data.map((row) => ({
-      url: `${SITE_URL}/column/${row.slug}`,
+      // P5-44: 旧 ${SITE_URL}/column/${slug} → env 駆動の getArticleUrl(slug)
+      // (= ${SITE_URL}${HUB_PATH}/${slug}/、現状デフォルトで /spiritual/column/{slug}/)
+      url: getArticleUrl(row.slug as string),
       lastModified: new Date(row.updated_at ?? row.published_at ?? new Date()),
       changeFrequency: 'monthly' as const,
       priority: 0.8,

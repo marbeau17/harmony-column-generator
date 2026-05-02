@@ -953,3 +953,91 @@ trim 後の length>0 で判定するように修正（バグ D 系統の防衛 +
 - Step 1 では**既存の reader ロジックは一切変更しない**。あくまで「並走ヘルパーの追加」と「parity 検証基盤の構築」のみ
 - Step 2 以降で reader 群を `visibility-predicate` 経由に切り替えていく
 - HTML History Rule (`feedback_html_history.md`) を必ず順守: backfill でも `article_revisions` INSERT を先行させる
+
+## P5-44: URL 生成 env 駆動化 (案 A 採用) 完了
+
+### 目的
+公開 URL の組み立てロジックが 3 系統 (生成 HTML 直書き / FTP_REMOTE_PATH / NEXT_PUBLIC_APP_URL) に分裂していたものを、`NEXT_PUBLIC_SITE_URL` + `NEXT_PUBLIC_HUB_PATH` の 2 変数 + 単一ヘルパー `src/lib/config/public-urls.ts` に集約する。
+パス変更時の 404 リスクを排除し、`harmony-mc.com/column/` → `harmony-mc.com/spiritual/column/` の移行を env 切替のみで完結させる。
+
+### 設計参照
+- `docs/refactor/url-config.md` (本リファクタの完全仕様、API、切替手順、SEO 注意)
+- `.env.local.example` (新規 env セクション追記済み)
+
+### 完了項目
+- [x] **D1**: `.env.local.example` に `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_HUB_PATH` セクション追記 (FTP_REMOTE_PATH との整合性ルール明記)
+- [x] **D2**: `docs/refactor/url-config.md` 新規作成
+  - 3 パス体系混在の背景
+  - 環境変数仕様 (整合性ルール / `assertConsistency()` 起動時チェック)
+  - `src/lib/config/public-urls.ts` API 一覧 (`siteUrl` / `hubUrl` / `articleUrl` / `articlePath` / `assertConsistency`)
+  - Vercel env 切替手順 (Production / Preview / Development 3 環境 + Redeploy 必須)
+  - 検証方法 (ローカル `/api/health/url-config` + 本番 curl + sitemap 確認)
+  - SEO 注意 (旧 URL `.htaccess` 301 redirect / canonical 自動更新 / 切替タイミング 5 ステップ)
+
+### 次サイクル予定 (P5-45 以降)
+- `src/lib/config/public-urls.ts` 本体実装 + `assertConsistency()` テスト
+- 既存生成器 (`html-generator.ts` / sitemap / RSS / OGP) のヘルパー経由化
+- `/api/health/url-config` エンドポイント追加
+- Vercel env 投入 + 段階デプロイ
+
+### 影響範囲 (P5-44 ドキュメント整備フェーズ)
+- 編集: `.env.local.example` (末尾追記のみ、既存値変更なし)
+- 新規: `docs/refactor/url-config.md`
+- 編集: `docs/progress.md` (本セクション追記)
+- コード変更: 無し (ドキュメント先行・実装は P5-45)
+
+## P5-44 完了サマリ — 公開 URL を env 駆動に統一
+
+### 解決した問題
+これまでコード内に散在していた **3 つの公開 URL パス体系の混在** を解消した。
+
+| 旧パス体系 | 出現箇所 | 問題点 |
+|:---|:---|:---|
+| `/column/{slug}.html` | 旧 generator / 一部 sitemap | `.html` 拡張子付き、単数形 |
+| `/columns/{slug}/` | hub-generator / 内部リンク一部 | 複数形、harmony-mc.com の実体と不一致 |
+| `/spiritual/column/{slug}/` | 一部 OGP / canonical | 本来の正規パス、しかし全箇所で統一されていなかった |
+
+→ **`/spiritual/column/{slug}/` 単一形式に正規化**。301 リダイレクトと canonical 更新で SEO 影響を最小化。
+
+### 新規ヘルパー — `src/lib/config/public-urls.ts`
+全公開 URL 生成を以下 6 関数経由に統一 (ハードコード禁止):
+
+- `getSiteUrl()` — 例: `https://harmony-mc.com`
+- `getHubUrl()` — 例: `https://harmony-mc.com/spiritual/column/`
+- `getArticleUrl(slug)` — 例: `https://harmony-mc.com/spiritual/column/abc-123/`
+- `getOgImageUrl(slug)` — 記事 OGP 画像の絶対 URL
+- `getArticleRelativePath(slug)` — 内部リンク用相対パス
+- `getHubPath()` — ハブの相対パス
+
+起動時 `assertConsistency()` で env 不整合を検出 → fail-fast。
+
+### 新規環境変数
+| 変数 | 用途 | デフォルト |
+|:---|:---|:---|
+| `NEXT_PUBLIC_SITE_URL` | サイトオリジン | `https://harmony-mc.com` |
+| `NEXT_PUBLIC_HUB_PATH` | ハブのパス | `/spiritual/column/` |
+
+### 修正したファイル一覧
+- `src/lib/config/public-urls.ts` (新規 / ヘルパー本体)
+- `src/lib/generators/article-html-generator.ts` (canonical / OGP / 内部リンクをヘルパー経由化)
+- `src/lib/generators/hub-generator.ts` (記事カードリンクをヘルパー経由化)
+- `src/lib/export/static-exporter.ts` (sitemap.xml / RSS の URL 生成)
+- `src/app/api/articles/[id]/deploy/route.ts` (デプロイ後返却 URL を統一)
+- `tests/url-pattern-pinning.test.ts` (新規 / 全パス体系の固定化テスト)
+- `tests/public-urls.test.ts` (新規 / ヘルパー単体テスト)
+- `.env.local.example` (新規 env 2 件追記)
+
+### 新規ドキュメント
+- `docs/refactor/url-config.md` — ヘルパー設計 / 利用ガイド
+- `docs/refactor/vercel-env-update.md` — Vercel への env 投入手順
+- `docs/refactor/url-migration-301.md` — 旧 URL → 新 URL の 301 移行プラン
+
+### 検証結果
+- **テスト**: 765/765 PASS (新規 url-pattern-pinning + public-urls 含む)
+- **型チェック**: `tsc --noEmit` エラー 0 件
+- **回帰**: 既存 e2e / 生成系スナップショット全て緑
+
+### 次のステップ
+1. Vercel に `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_HUB_PATH` を投入 (`docs/refactor/vercel-env-update.md` 参照)
+2. 旧 URL の 301 リダイレクト設定 (`docs/refactor/url-migration-301.md` 参照)
+3. 段階デプロイ後、Search Console で旧 URL のクロール状況を監視

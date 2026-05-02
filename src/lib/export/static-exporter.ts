@@ -16,7 +16,14 @@ import {
   generateAllHubPages,
 } from '@/lib/generators/hub-generator';
 import { getStickyCtaBarCss, getStickyCtaBarHtml } from '@/lib/generators/sticky-cta-bar';
+// P5-44: 公開 URL は env 駆動の単一ソースから取得 (ハードコード排除)
+import { getOgImageUrl, getHubPath, getSiteUrl } from '@/lib/config/public-urls';
 import type { Article } from '@/types/article';
+
+// P5-44: 正規表現のメタ文字をエスケープ (hubPath を regex に埋め込む用)
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
 
@@ -135,7 +142,8 @@ export async function exportArticleToOut(
   let html = generateArticleHtml(article, {
     heroImage: heroImagePath,
     heroImageAlt: article.title ?? slug,
-    ogImage: `https://harmony-mc.com/column/${slug}/images/hero.jpg`,
+    // P5-44: env 駆動の og:image URL ヘルパーを使用
+    ogImage: getOgImageUrl(slug, 'hero'),
     hubUrl: '../index.html',
   });
 
@@ -149,10 +157,19 @@ export async function exportArticleToOut(
   html = html.replace('href="./css/hub.css"', 'href="../../css/hub.css"');
   // Fix JS path
   html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
-  // Fix related article links: /column/slug/ → ../slug/index.html
-  html = html.replace(/href="\/column\/([^"]+)\/"/g, 'href="../$1/index.html"');
-  // Fix related article thumbnails: /column/slug/images/ → ../slug/images/
-  html = html.replace(/src="\/column\/([^"]+)\/images\//g, 'src="../$1/images/');
+  // P5-44: 関連記事リンク/サムネイルの post-process を hubPath ベースに変更
+  // 例: NEXT_PUBLIC_HUB_PATH=/spiritual/column のとき /spiritual/column/{slug}/ を相対化
+  const hubPathPattern = escapeRegex(getHubPath());
+  // Fix related article links: {hubPath}/slug/ → ../slug/index.html
+  html = html.replace(
+    new RegExp(`href="${hubPathPattern}/([^"]+)/"`, 'g'),
+    'href="../$1/index.html"',
+  );
+  // Fix related article thumbnails: {hubPath}/slug/images/ → ../slug/images/
+  html = html.replace(
+    new RegExp(`src="${hubPathPattern}/([^"]+)/images/`, 'g'),
+    'src="../$1/images/',
+  );
   // Remove duplicate hero image from body HTML (template already shows it)
   html = html.replace(/<img[^>]*src="\.\/images\/hero\.(jpg|svg)"[^>]*style="max-width:100%[^"]*"[^>]*>/g, '');
   // Also remove IMAGE comments
@@ -345,6 +362,8 @@ function escAttr(s: string): string {
 
 function buildHubHtml(cards: HubCard[]): string {
   const year = new Date().getFullYear();
+  // P5-44: ホームへ戻るリンクを env 駆動に統一
+  const homeUrl = `${getSiteUrl()}/`;
 
   const cardListHtml = cards
     .map(
@@ -522,7 +541,7 @@ function buildHubHtml(cards: HubCard[]): string {
 <body>
 
   <header class="page-header">
-    <p style="margin-bottom:12px"><a href="https://harmony-mc.com/" style="color:#8b6f5e;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
+    <p style="margin-bottom:12px"><a href="${homeUrl}" style="color:#8b6f5e;font-size:.85rem;text-decoration:none">← ホームへ戻る</a></p>
     <h1>魂の気づきコラム</h1>
     <p class="page-subtitle">「今を生きるヒント」</p>
     <p>スピリチュアルカウンセラー小林由起子が、魂の成長やヒーリング、人間関係など日々の気づきを綴るコラムです。あなたの心に寄り添うメッセージをお届けします。</p>

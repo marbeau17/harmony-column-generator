@@ -8,6 +8,13 @@
 
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { applyPubliclyVisibleFilter } from '@/lib/publish-control/state-readers-sql';
+// P5-44: 公開 URL は env 駆動の単一ソースから取得 (ハードコード + /columns/ 複数形バグ修正)
+import {
+  getSiteUrl,
+  getHubUrl,
+  getHubPath,
+  getArticleRelativePath,
+} from '@/lib/config/public-urls';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -35,8 +42,8 @@ export interface HubPageData {
 
 const ARTICLES_PER_PAGE = 10;
 const SITE_NAME = 'Harmonyスピリチュアルコラム';
-const SITE_URL = 'https://harmony-mc.com';
-const COLUMNS_BASE = `${SITE_URL}/columns`;
+// P5-44: SITE_URL / COLUMNS_BASE のハードコードと /columns/ 複数形バグを撤去。
+// 公開 URL は env 駆動の getSiteUrl() / getHubUrl() / getHubPath() に統一。
 const BOOKING_URL = 'https://harmony-booking.web.app/';
 const GA4_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-TH2XJ24V3T';
 
@@ -309,10 +316,8 @@ export function generateHubPage(data: HubPageData): string {
       ? `コラム一覧 | ${SITE_NAME}`
       : `コラム一覧 (${data.currentPage}ページ目) | ${SITE_NAME}`;
 
-  const canonicalPath =
-    data.currentPage === 1
-      ? `${COLUMNS_BASE}/`
-      : `${COLUMNS_BASE}/page/${data.currentPage}/`;
+  // P5-44: env 駆動 getHubUrl() に置換 (page 1 / page 2+ 対応)
+  const canonicalPath = getHubUrl(data.currentPage);
 
   const html = `<!DOCTYPE html>
 <html lang="ja">
@@ -341,7 +346,8 @@ export function generateHubPage(data: HubPageData): string {
     name: pageTitle,
     url: canonicalPath,
     description: 'スピリチュアルカウンセラー小林由起子によるコラム一覧',
-    publisher: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL },
+    // P5-44: SITE_URL ハードコード → getSiteUrl()
+    publisher: { '@type': 'Organization', name: SITE_NAME, url: getSiteUrl() },
   })}</script>
 
   <style>${getHubCSS()}
@@ -350,8 +356,9 @@ export function generateHubPage(data: HubPageData): string {
 <body>
   <div id="sticky-nav">
     <div class="nav-inner">
-      <a href="${escAttr(SITE_URL)}"><i class="fa-solid fa-home"></i> ホーム</a>
-      <a href="${escAttr(COLUMNS_BASE)}/"><i class="fa-solid fa-book-open"></i> コラム一覧</a>
+      <!-- P5-44: SITE_URL / COLUMNS_BASE ハードコード → env 駆動ヘルパー -->
+      <a href="${escAttr(getSiteUrl())}"><i class="fa-solid fa-home"></i> ホーム</a>
+      <a href="${escAttr(getHubUrl(1))}"><i class="fa-solid fa-book-open"></i> コラム一覧</a>
       <a href="${escAttr(BOOKING_URL)}"><i class="fa-solid fa-calendar-check"></i> セッション予約</a>
       <a href="${escAttr(BOOKING_URL)}"><i class="fa-solid fa-envelope"></i> 無料相談</a>
     </div>
@@ -471,8 +478,9 @@ export async function buildArticleCards(): Promise<HubArticleCard[]> {
       date: dateStr,
       theme,
       categoryLabel: getThemeLabel(theme),
-      thumbnailUrl: `/spiritual/column/${slug}/images/hero.jpg`,
-      articleUrl: `/spiritual/column/${slug}/index.html`,
+      // P5-44: /spiritual/column/ ハードコード → env 駆動ヘルパーで生成
+      thumbnailUrl: `${getHubPath()}/${slug}/images/hero.jpg`,
+      articleUrl: getArticleRelativePath(slug),
     };
   });
 }
