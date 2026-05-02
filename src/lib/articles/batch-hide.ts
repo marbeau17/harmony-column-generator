@@ -151,6 +151,8 @@ export async function batchHideSourceArticles(
     const tStart = now().toISOString();
 
     // 1) DB UPDATE: visibility 列のみ
+    // P5-43 Step 3: reviewed_at は audit のみ、batch-hide では touch しない
+    // (reviewed_by も同様に audit 履歴を保持するため null クリアしない)
     const { error: updErr } = await supabase
       .from('articles')
       // guard-approved: visibility-only flip for batch-hide-source
@@ -158,9 +160,6 @@ export async function batchHideSourceArticles(
         is_hub_visible: false,
         visibility_state: 'unpublished',
         visibility_updated_at: tStart,
-        // 既存 visibility API と整合: 非公開化時は reviewed_at をクリア
-        reviewed_at: null,
-        reviewed_by: null,
       })
       .eq('id', target.id);
 

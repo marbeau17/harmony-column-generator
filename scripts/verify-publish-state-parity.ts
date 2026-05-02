@@ -1,10 +1,15 @@
 /**
- * P5-43 Step 2 準備: reviewed_at と visibility_state の parity を検証。
+ * P5-43 Step 2/3 parity 検証: reviewed_at と visibility_state の整合性を確認。
  *
  * 不変条件 (Step 2 移行のための前提):
  *   (reviewed_at IS NOT NULL) === (visibility_state IN ('live', 'live_hub_stale'))
  *
- * 差異がある行を全て報告。0 件なら Step 2 を安全に進められる。
+ * Step 3 後の追加判定 (writers migration 完了後):
+ *   - `visibility_state='pending_review'` の記事が増える (writer が直接付与)
+ *   - これらは reviewed_at=null かつ非 public なので integrity OK
+ *   - 単に「Step 3 で writer 経路統一済み」を示す指標として pending_review 件数を集計に追加
+ *
+ * 差異がある行を全て報告。blocker 0 件なら Step 2/3 を安全に進められる。
  *
  * 使い方: tsx scripts/verify-publish-state-parity.ts
  */
@@ -122,6 +127,14 @@ function printSamples(label: string, rows: Mismatch[]) {
   for (const [k, v] of [...visibilityBreakdown.entries()].sort((a, b) => b[1] - a[1])) {
     console.log(`  ${k}: ${v}`);
   }
+
+  // Step 3 後の指標: writer 経路統一により pending_review が増える想定。
+  // reviewed_at=null かつ非 public なので integrity 上 OK。
+  const pendingReviewCount = visibilityBreakdown.get('pending_review') ?? 0;
+  console.log(
+    `\n=== Step 3 指標 ===\n  pending_review 件数: ${pendingReviewCount} ` +
+      `(writer 経路統一後の正常状態。reviewed_at=null & 非 public なので integrity OK)`,
+  );
 
   console.log('\n=== Parity 検証結果 ===');
   console.log(`A1. reviewed=true & visibility ∈ {idle,unpublished,failed}: ${categoryA1_drift.length} 件 (audit drift / 許容)`);

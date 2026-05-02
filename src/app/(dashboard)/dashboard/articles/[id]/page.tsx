@@ -715,26 +715,45 @@ export default function ArticleDetailPage() {
             </div>
             <button
               onClick={async () => {
-                const isReviewed = !!(article as Record<string, unknown>).reviewed_at;
+                // P5-43 Step 3 (writers migration): PUT /api/articles/[id] による
+                // reviewed_at 直接更新を廃止し、新 review API へ切替。
+                // 状態判定は visibility_state ベース (isPubliclyVisible)、
+                // approve/reject は publish-control state-machine が遷移可否を保証する。
+                const reviewed = isPubliclyVisible(article as { visibility_state?: string | null });
+                const action = reviewed ? 'reject' : 'approve';
+                // ULID (Crockford base32 / 26 chars) — PublishButton.tsx と同一実装
+                const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+                const encodeCrockford = (num: number, len: number): string => {
+                  let s = '';
+                  for (let i = 0; i < len; i++) {
+                    s = CROCKFORD[num % 32] + s;
+                    num = Math.floor(num / 32);
+                  }
+                  return s;
+                };
+                const ulid = (): string => {
+                  const t = encodeCrockford(Date.now(), 10);
+                  const r = Array.from({ length: 16 }, () =>
+                    CROCKFORD.charAt(Math.floor(Math.random() * 32)),
+                  ).join('');
+                  return (t + r).slice(0, 26);
+                };
                 try {
-                  const res = await fetch(`/api/articles/${articleId}`, {
-                    method: 'PUT',
+                  const res = await fetch(`/api/articles/${articleId}/review`, {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(isReviewed
-                      ? { reviewed_at: null, reviewed_by: null }
-                      : { reviewed_at: new Date().toISOString(), reviewed_by: '小林由起子' }
-                    ),
+                    body: JSON.stringify({ action, requestId: ulid() }),
                   });
                   if (res.ok) await fetchArticle();
                 } catch { /* ignore */ }
               }}
               className={`rounded-lg px-4 py-2 text-xs font-medium flex items-center gap-2 ${
-                (article as Record<string, unknown>).reviewed_at
+                isPubliclyVisible(article as { visibility_state?: string | null })
                   ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   : 'bg-emerald-600 text-white hover:bg-emerald-700'
               }`}
             >
-              {(article as Record<string, unknown>).reviewed_at ? '確認を取消' : '✅ 確認済みにする'}
+              {isPubliclyVisible(article as { visibility_state?: string | null }) ? '確認を取消' : '✅ 確認済みにする'}
             </button>
           </div>
         </section>

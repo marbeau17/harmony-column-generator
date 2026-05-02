@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { ulid } from '@/lib/publish-control/ulid';
 
 export type PublishButtonState = 'live' | 'hidden' | 'deploying' | 'hub_stale' | 'failed';
 
@@ -42,25 +43,8 @@ const LABEL: Record<PublishButtonState, { icon: string; text: string; cls: strin
   },
 };
 
-// P5-39: Crockford's base32 (I/L/O/U 除外) で 26 文字 ULID を生成。
-// バックエンド検証 isValidRequestId は /^[0-9A-HJKMNP-TV-Z]{26}$/i なので、
-// タイムスタンプ部も同じ alphabet でエンコードしないと 400 を返してしまう。
-const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-function encodeCrockford(num: number, len: number): string {
-  let s = '';
-  for (let i = 0; i < len; i++) {
-    s = CROCKFORD[num % 32] + s;
-    num = Math.floor(num / 32);
-  }
-  return s;
-}
-function ulid(): string {
-  const t = encodeCrockford(Date.now(), 10);
-  const r = Array.from({ length: 16 }, () =>
-    CROCKFORD.charAt(Math.floor(Math.random() * 32)),
-  ).join('');
-  return (t + r).slice(0, 26);
-}
+// P5-39 / P5-43 Step 3: ULID 生成は src/lib/publish-control/ulid.ts に共通化済み。
+// （バックエンド isValidRequestId が要求する Crockford alphabet を遵守）
 
 export default function PublishButton({ articleId, articleTitle, initialState, onChanged }: Props) {
   const [state, setState] = useState<PublishButtonState>(initialState);

@@ -149,21 +149,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     // Success path — flip DB state.
-    // Also mirror reviewed_at so the existing hub-generator query (status='published'
-    // AND reviewed_at IS NOT NULL) stays consistent until the query is migrated in a
-    // follow-up step. See SPEC §3.2.
+    // P5-43 Step 3: review 操作は /api/articles/[id]/review に分離。
+    // 本ルートでは visibility_state / is_hub_visible / visibility_updated_at の
+    // 更新のみを担い、reviewed_at / reviewed_by は触らない（writers migration）。
     const patch: Record<string, unknown> = {
       is_hub_visible: body.visible,
       visibility_state: body.visible ? 'live' : 'unpublished',
       visibility_updated_at: new Date().toISOString(),
     };
-    if (body.visible) {
-      patch['reviewed_at'] = new Date().toISOString();
-      patch['reviewed_by'] = user.email ?? 'publish-control-v2';
-    } else {
-      patch['reviewed_at'] = null;
-      patch['reviewed_by'] = null;
-    }
 
     const { error: updErr } = await service
       .from('articles')

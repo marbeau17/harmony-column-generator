@@ -225,9 +225,10 @@ describe('visibility API — 状態遷移・ULID 検証・冪等性のピン留�
       expect(flip).not.toBeNull();
       expect(flip!.is_hub_visible).toBe(true);
       expect(flip!.visibility_state).toBe('live');
-      // reviewed_at もミラー反映される（SPEC §3.2）
-      expect(flip!.reviewed_at).toBeTruthy();
-      expect(flip!.reviewed_by).toBe('tester@example.com');
+      // P5-43 Step 3: visibility ルートは reviewed_at / reviewed_by を触らない
+      // （review 操作は /api/articles/[id]/review に分離）
+      expect(Object.prototype.hasOwnProperty.call(flip!, 'reviewed_at')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(flip!, 'reviewed_by')).toBe(false);
     });
 
     it('publish_events に action="publish" で INSERT される', async () => {
@@ -265,9 +266,10 @@ describe('visibility API — 状態遷移・ULID 検証・冪等性のピン留�
       expect(flip).not.toBeNull();
       expect(flip!.is_hub_visible).toBe(false);
       expect(flip!.visibility_state).toBe('unpublished');
-      // 非公開化時は reviewed_at / reviewed_by を null にクリア
-      expect(flip!.reviewed_at).toBeNull();
-      expect(flip!.reviewed_by).toBeNull();
+      // P5-43 Step 3: 非公開化時も reviewed_at / reviewed_by には触らない
+      // （review 操作は /api/articles/[id]/review に分離）
+      expect(Object.prototype.hasOwnProperty.call(flip!, 'reviewed_at')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(flip!, 'reviewed_by')).toBe(false);
     });
 
     it('publish_events に action="unpublish" で INSERT される', async () => {

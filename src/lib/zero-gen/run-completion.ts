@@ -459,8 +459,17 @@ export async function runZeroGenCompletion(args: {
       const autoApprove = Boolean(
         (wf?.value as { zero_gen_auto_approve?: boolean } | null)?.zero_gen_auto_approve,
       );
+      // P5-43 Step 3: writers migration に伴う visibility_state 遷移。
+      //   autoApprove=true  → visibility_state='idle' (公開可能 / デプロイ未) + reviewed_at=now() (audit のみ)
+      //   autoApprove=false → visibility_state='pending_review' (由起子さん確認待ち、reviewed_at は touch しない)
       const update: Record<string, unknown> = { status: 'editing' };
-      if (autoApprove) update.reviewed_at = new Date().toISOString();
+      if (autoApprove) {
+        update.visibility_state = 'idle';
+        update.reviewed_at = new Date().toISOString(); // audit のみ
+      } else {
+        update.visibility_state = 'pending_review';
+        // reviewed_at は touch しない (まだ未審査)
+      }
       const { error: stErr } = await supabase
         .from('articles')
         .update(update)

@@ -13,6 +13,8 @@ import { fetchPublishedArticles } from '@/lib/articles/fetch-published-articles'
 import { filterArticlesByMode } from '@/lib/utils/article-mode-filter';
 // P5-43 Step 2: 公開可視判定の単一ソース（reviewed_at ベースから visibility_state ベースへ統一）
 import { isPubliclyVisible, isDeployable } from '@/lib/publish-control/visibility-predicate';
+// P5-43 Step 3: 新 review API 用の ULID 生成（PublishButton と共有）
+import { ulid } from '@/lib/publish-control/ulid';
 
 // publish-control-v2 flag (inlined at build time). Default OFF — existing UI unchanged.
 const PUBLISH_CONTROL_V2 = process.env.NEXT_PUBLIC_PUBLISH_CONTROL_V2 === 'on';
@@ -856,29 +858,45 @@ export default function ArticlesPage() {
                         className="h-4 w-4 cursor-pointer accent-emerald-500"
                         onChange={async (e) => {
                           e.stopPropagation();
-                          // P5-43 Step 2: 判定は visibility_state、書込は Step 3 で writers 移行予定のため reviewed_at PUT のまま維持
+                          // P5-43 Step 3: writers 移行 — 旧 PUT /api/articles/[id] (reviewed_at 直書き) から
+                          // 新 POST /api/articles/[id]/review (action: approve/reject) に切替。
+                          // optimistic update + 失敗時 rollback でレスポンス感を維持しつつ整合性を確保。
                           const wasReviewed = isPubliclyVisible(article);
-                          const newVal = wasReviewed ? null : new Date().toISOString();
+                          const action: 'approve' | 'reject' = wasReviewed ? 'reject' : 'approve';
+                          const newReviewedAt = wasReviewed ? null : new Date().toISOString();
+                          const prevReviewedAt = article.reviewed_at;
 
                           if (wasReviewed && !confirm(`「${article.title}」を非公開にしますか？\nハブページから非表示になります。`)) return;
 
-                          const putRes = await fetch(`/api/articles/${article.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              reviewed_at: newVal,
-                              reviewed_by: newVal ? '小林由起子' : null,
-                            }),
-                          });
+                          // optimistic: ローカル state を即座に反映（UI 即応のため）
+                          setArticles((prev) =>
+                            prev.map((a) => (a.id === article.id ? { ...a, reviewed_at: newReviewedAt } : a))
+                          );
 
-                          if (!putRes.ok) {
-                            setBulkDeployResult(`確認フラグ更新失敗 (HTTP ${putRes.status})`);
+                          let res: Response;
+                          try {
+                            res = await fetch(`/api/articles/${article.id}/review`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ action, requestId: ulid() }),
+                            });
+                          } catch (err) {
+                            // 通信失敗 → rollback
+                            setArticles((prev) =>
+                              prev.map((a) => (a.id === article.id ? { ...a, reviewed_at: prevReviewedAt } : a))
+                            );
+                            setBulkDeployResult(`確認フラグ更新失敗: ${err instanceof Error ? err.message : String(err)}`);
                             return;
                           }
 
-                          setArticles((prev) =>
-                            prev.map((a) => (a.id === article.id ? { ...a, reviewed_at: newVal } : a))
-                          );
+                          if (!res.ok) {
+                            // サーバ側エラー → rollback
+                            setArticles((prev) =>
+                              prev.map((a) => (a.id === article.id ? { ...a, reviewed_at: prevReviewedAt } : a))
+                            );
+                            setBulkDeployResult(`確認フラグ更新失敗 (HTTP ${res.status})`);
+                            return;
+                          }
 
                           setBulkDeployResult('ハブ再生成中…');
                           const hubResult = await rebuildHub();

@@ -954,6 +954,71 @@ trim 後の length>0 で判定するように修正（バグ D 系統の防衛 +
 - Step 2 以降で reader 群を `visibility-predicate` 経由に切り替えていく
 - HTML History Rule (`feedback_html_history.md`) を必ず順守: backfill でも `article_revisions` INSERT を先行させる
 
+### Step 3 完了サマリ — writers 統一 + review API 導入
+
+> 詳細チェックリスト: `docs/refactor/step3-completion-checklist.md`
+> 仕様 additive 反映: `docs/specs/publish-control/SPEC.md` §「review action API」
+> 全体設計参照: `docs/refactor/publish-control-unification.md` §4.1 / §5 Step 3
+
+#### 解決した問題
+Step 2 (readers 統一) 完了後も `reviewed_at` の **書き込み経路が 5 箇所に分散** しており、
+visibility API の副作用書込・zero-gen run-completion の直書き・batch-hide の直書き・
+ad-hoc 修復スクリプト・ダッシュボードの確認チェックボックス由来 PUT が混在していた。
+これを **新 review API 1 本** に集約し、`reviewed_at` / `reviewed_by` の書込元を
+「approve パスのみ」に絞ることで、Step 4 で `reviewed_at` を audit-only に降格できる
+状態を確立した。
+
+#### 完了項目 (Step 3 範囲)
+- [x] **M1〜M3**: マイグレーション `20260502_publish_control_step3.sql`
+  - `publish_events.action` CHECK 制約に `review_submit` / `review_approve` / `review_reject` 追加
+  - 既存 4 値 (`publish` / `unpublish` / `hub_rebuild` / `ripple_regen`) を破壊せず additive
+  - ロールバック SQL を migration ファイル内コメントで併記
+- [x] **A1〜A12**: 新 API `POST /api/articles/[id]/review` 実装
+  - `action: 'submit' | 'approve' | 'reject'` の 3 アクション
+  - `state-machine.ts` の `assertTransition()` 経由で状態遷移
+  - `approve` 時のみ `reviewed_at = now()` / `reviewed_by = actor_id` を書込
+  - `requestId` (ULID) で冪等性確保、PG advisory lock で同時実行制御
+  - `publish_events` に新 action 必ず INSERT
+- [x] **W1〜W4**: visibility API の `reviewed_at` 副作用削除
+  - `src/app/api/articles/[id]/visibility/route.ts:161-166` の書込を完全撤去
+  - 単体テスト更新でアサート
+- [x] **W5〜W8**: dashboard UI の確認/差戻しボタンを新 API 経由に差替え
+- [x] **W9〜W11**: zero-gen `run-completion.ts` を `visibility_state` 直接セットに移行
+  - autoApprove=true → `idle`、autoApprove=false → `pending_review`
+- [x] **W12〜W13**: `batch-hide.ts` の `reviewed_at` 直書きを `visibility_state='unpublished'` に置換
+- [x] **W14〜W15**: ad-hoc スクリプトの `reviewed_at` 参照を点検、audit-only コメント追記
+- [x] **T1**: `test/unit/review-api.test.ts` 新規 — 全 PASS
+- [x] **T2〜T6**: 既存テスト全 PASS、`tsc --noEmit` エラー 0 件
+- [x] **T7〜T12**: E2E 7 シナリオ (Playwright) 全 PASS
+- [x] **V1〜V3**: parity blockers=0 維持、production smoke 10/10 + review API smoke 3/3 PASS
+- [x] **V4〜V7**: 公開サイト整合性 (ハブ/sitemap/FTP/Sentry) 全項目クリア
+- [x] **V8〜V10**: 既存 45 件の `reviewed_at` バイト同一、新 action 記録開始確認
+- [x] **V11〜V13**: PR 分割完了、savepoint タグ作成、ロールバック手順記載
+
+#### 影響範囲
+- 新規マイグレ: `supabase/migrations/20260502_publish_control_step3.sql`
+- 新規 API: `src/app/api/articles/[id]/review/route.ts`
+- 新規テスト: `test/unit/review-api.test.ts`
+- 編集 (副作用削除): `src/app/api/articles/[id]/visibility/route.ts`
+- 編集 (UI 差替え): `src/app/dashboard/articles/page.tsx`, `src/app/dashboard/articles/[id]/page.tsx`
+- 編集 (zero-gen): `src/lib/zero-generation/run-completion.ts`
+- 編集 (運用スクリプト): `scripts/batch-hide.ts` 他 ad-hoc 修復系
+- ドキュメント: `docs/refactor/step3-completion-checklist.md` (新規),
+  `docs/specs/publish-control/SPEC.md` §「review action API」(additive 追記),
+  本 progress.md (本サマリ)
+
+#### Step 4 着手前提条件 (全て満たし済み)
+- `reviewed_at` 書込元が新 review API の approve パス 1 箇所のみに集約
+- visibility API の副作用削除完了
+- zero-gen autoApprove 両分岐が `visibility_state` ベースで動作
+- production smoke 10/10 + parity blockers=0 が 48h 連続維持
+- Sentry 新規警告 0 件
+- `publish_events` 新 action 3 種が想定通り記録
+
+→ 次サイクル: Step 4 `reviewed_at` audit-only 降格
+   (CI lint で読み取り禁止強制 / `session-guard.ts` の guard 対象から除外 /
+   migration コメントで監査用列と明記)
+
 ## P5-44: URL 生成 env 駆動化 (案 A 採用) 完了
 
 ### 目的
