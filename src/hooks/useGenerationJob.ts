@@ -94,6 +94,25 @@ export function useGenerationJob() {
     es.addEventListener('message', (event) => {
       try {
         const data = JSON.parse(event.data) as Partial<GenerationJobState>;
+
+        // P5-23: SSE が "job not found" を返したら stale job_id とみなして
+        //        localStorage を完全クリア (toast 抑止 + 状態リセット)
+        if (
+          data.stage === 'failed' &&
+          (data.error === 'job not found' || data.error === 'progress stream error')
+        ) {
+          console.warn('[useGenerationJob] stale job_id detected, clearing', {
+            error: data.error,
+          });
+          es.close();
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem(STORAGE_KEY);
+            window.dispatchEvent(new Event(SYNC_EVENT));
+          }
+          setJob(null);
+          return;
+        }
+
         setJob((prev) => {
           if (!prev) return prev;
           const updated: GenerationJobState = {

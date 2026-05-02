@@ -83,6 +83,33 @@ export function useGenerationJobs() {
       es.addEventListener('message', (event) => {
         try {
           const data = JSON.parse(event.data) as Partial<GenerationJobState>;
+
+          // P5-23: stale job_id を検知して該当 job のみリストから除外
+          if (
+            data.stage === 'failed' &&
+            (data.error === 'job not found' || data.error === 'progress stream error')
+          ) {
+            console.warn('[useGenerationJobs] stale job_id removed', {
+              job_id: j.job_id,
+              error: data.error,
+            });
+            es.close();
+            esMap.delete(j.job_id);
+            setJobs((prev) => {
+              const filtered = prev.filter((p) => p.job_id !== j.job_id);
+              if (typeof window !== 'undefined') {
+                if (filtered.length === 0) {
+                  localStorage.removeItem(STORAGE_KEY);
+                } else {
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+                }
+                window.dispatchEvent(new Event(SYNC_EVENT));
+              }
+              return filtered;
+            });
+            return;
+          }
+
           setJobs((prev) => {
             const updated = prev.map((p) =>
               p.job_id === j.job_id
