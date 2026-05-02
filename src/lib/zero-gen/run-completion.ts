@@ -52,6 +52,72 @@ function mimeToExt(mime: string): string {
   return m[mime] ?? 'webp';
 }
 
+/**
+ * stage2_body_html に残った IMAGE プレースホルダを <img> タグに置換する。
+ * edit/page.tsx の handleApplyImages と同じ多段階パターンを採用。
+ *
+ * Phase 1: 位置名付き (IMAGE:hero / IMAGE:body / IMAGE:summary)
+ * Phase 2: 位置情報なし (順序割当 fallback)
+ */
+function replaceImagePlaceholders(
+  bodyHtml: string,
+  imageFiles: ImageFileRow[],
+): { html: string; phase1: number; phase2: number } {
+  if (!bodyHtml || imageFiles.length === 0) {
+    return { html: bodyHtml, phase1: 0, phase2: 0 };
+  }
+  const imgTagFor = (img: ImageFileRow) =>
+    `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+
+  let html = bodyHtml;
+  // Phase 1
+  const matched = new Set<string>();
+  let phase1Count = 0;
+  for (const img of imageFiles) {
+    const tag = imgTagFor(img);
+    const patterns = [
+      new RegExp(`<p>\\s*IMAGE:${img.position}[^<]*<\\/p>`, 'g'),
+      new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)?`, 'g'),
+      new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
+      new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
+    ];
+    for (const p of patterns) {
+      const before = html;
+      html = html.replace(p, tag);
+      if (before !== html) {
+        matched.add(img.position);
+        phase1Count += (before.match(p) || []).length;
+      }
+    }
+  }
+
+  // Phase 2: position 情報なしの残骸を順序で割当
+  const orderedPositions = ['hero', 'body', 'summary'];
+  const unmatched = orderedPositions.filter((p) => !matched.has(p));
+  const imageByPos = new Map(imageFiles.map((f) => [f.position, f]));
+  let phase2Count = 0;
+  if (unmatched.length > 0) {
+    const fallbackPatterns: RegExp[] = [
+      /(?:<!--\s*)?IMAGE[：:]\s*[^<>\n]*?-->/g,
+      /<p[^>]*>\s*IMAGE[：:]\s*[^<]*<\/p>/g,
+      /(?<![A-Za-z_])IMAGE[：:]\s*[^\n<]{1,200}/g,
+    ];
+    let unmatchedIdx = 0;
+    for (const fp of fallbackPatterns) {
+      if (unmatchedIdx >= unmatched.length) break;
+      html = html.replace(fp, (match) => {
+        if (unmatchedIdx >= unmatched.length) return match;
+        const pos = unmatched[unmatchedIdx];
+        const img = imageByPos.get(pos);
+        unmatchedIdx++;
+        phase2Count++;
+        return img ? imgTagFor(img) : match;
+      });
+    }
+  }
+  return { html, phase1: phase1Count, phase2: phase2Count };
+}
+
 function normalizePromptsToArray(raw: unknown, themeName: string): PromptItem[] {
   if (Array.isArray(raw)) {
     return (raw as Record<string, unknown>[])
@@ -191,7 +257,20 @@ export async function runZeroGenCompletion(args: {
     if (newImageFiles.length > 0) imageFiles = newImageFiles;
   }
 
-  // 3. meta_description / seo_filename
+  // 3. P5-26: 画像 placeholder を stage2_body_html 内で <img> タグに置換
+  //    (Stage2 では IMAGE:body / IMAGE:summary 等の placeholder が残るため)
+  const originalBody = (article.stage2_body_html as string) ?? '';
+  const replaced = replaceImagePlaceholders(originalBody, imageFiles);
+  const updatedBodyHtml = replaced.html;
+  logger.info('ai', 'image_placeholders.replaced', {
+    articleId,
+    phase1: replaced.phase1,
+    phase2: replaced.phase2,
+    body_chars_before: originalBody.length,
+    body_chars_after: updatedBodyHtml.length,
+  });
+
+  // 4. meta_description / seo_filename
   const metaDescription =
     (article.meta_description as string | null) ??
     generateMetaDescription(
@@ -202,10 +281,11 @@ export async function runZeroGenCompletion(args: {
     (article.seo_filename as string | null) ??
     generateSlug((article.title as string) ?? '');
 
-  // 4. Stage3 final HTML
+  // 5. Stage3 final HTML — placeholder 置換済 body で生成
   onProgress?.('stage3');
   const articleForHtml = {
     ...article,
+    stage2_body_html: updatedBodyHtml, // ← 置換済を使用
     image_files: imageFiles,
     image_prompts: prompts,
     meta_description: metaDescription,
@@ -216,11 +296,12 @@ export async function runZeroGenCompletion(args: {
     heroImageAlt: imageFiles.find((f) => f.position === 'hero')?.alt,
   });
 
-  // 5. articles UPDATE
+  // 6. articles UPDATE — stage2 も更新 (placeholder 解決済 body)
   onProgress?.('persist');
   const { error: updErr } = await supabase
     .from('articles')
     .update({
+      stage2_body_html: updatedBodyHtml, // ← 置換済を保存
       image_files: imageFiles,
       image_prompts: prompts,
       meta_description: metaDescription,
