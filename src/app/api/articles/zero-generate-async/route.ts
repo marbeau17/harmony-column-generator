@@ -28,6 +28,7 @@ import {
   updateJobState,
 } from '@/lib/jobs/zero-gen-job-store';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { runZeroGenCompletion } from '@/lib/zero-gen/run-completion';
 import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
@@ -152,16 +153,78 @@ async function runAsyncPipeline(args: {
     }
 
     const json = (await res.json()) as ZeroGenerateFullJsonResponse;
+
+    // P5-24: Stage2 完了 → 画像 + Stage3 + meta を自動実行 (公開準備状態まで)
+    if (!json.article_id) {
+      await safeUpdate({
+        stage: 'failed',
+        progress: 1.0,
+        eta_seconds: 0,
+        error: 'article_id が返されませんでした',
+      });
+      return;
+    }
+    await safeUpdate({
+      stage: 'finalizing',
+      progress: 0.85,
+      eta_seconds: 90,
+      article_id: json.article_id,
+    });
+    let completionPartial = false;
+    let completionError: string | null = null;
+    try {
+      const r = await runZeroGenCompletion({
+        articleId: json.article_id,
+        onProgress: (stage) => {
+          // 'image_prompts' (~ 0.87) / 'image_gen' (~ 0.9) / 'stage3' (~ 0.97) / 'persist' (~ 0.99)
+          const stageProgressMap: Record<string, number> = {
+            image_prompts: 0.87,
+            image_gen: 0.9,
+            stage3: 0.97,
+            persist: 0.99,
+          };
+          const p = stageProgressMap[stage];
+          if (p !== undefined) {
+            void safeUpdate({ progress: p }).catch(() => {});
+          }
+        },
+      });
+      completionPartial = r.partial;
+      logger.info('api', 'zero-generate-async.completion.ok', {
+        job_id: jobId,
+        article_id: json.article_id,
+        images_count: r.imageFilesCount,
+        stage3_chars: r.stage3HtmlChars,
+        partial: r.partial,
+      });
+    } catch (e) {
+      completionError = (e as Error).message;
+      logger.error('api', 'zero-generate-async.completion.failed', {
+        job_id: jobId,
+        article_id: json.article_id,
+        error: completionError,
+      });
+    }
+
     await safeUpdate({
       stage: 'done',
       progress: 1.0,
       eta_seconds: 0,
       article_id: json.article_id,
+      // 仕上げが部分的に失敗していた場合は error にメッセージを付ける
+      // (記事自体は draft で残っており、後から手動補正可能)
+      error: completionError
+        ? `画像/Stage3 仕上げ失敗: ${completionError}`
+        : completionPartial
+          ? '画像の一部生成に失敗。記事は作成済'
+          : undefined,
     });
     logger.info('api', 'zero-generate-async.done', {
       job_id: jobId,
       article_id: json.article_id,
       partial: json.partial_success,
+      completion_partial: completionPartial,
+      completion_error: completionError,
       elapsed_ms: Date.now() - t0,
     });
   } catch (e) {

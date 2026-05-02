@@ -21,6 +21,7 @@ export type GenerationJobStage =
   | 'stage1'
   | 'stage2'
   | 'hallucination'
+  | 'finalizing'
   | 'done'
   | 'failed';
 

@@ -24,6 +24,7 @@ export type JobStage =
   | 'stage1'
   | 'stage2'
   | 'hallucination'
+  | 'finalizing'
   | 'done'
   | 'failed';
 

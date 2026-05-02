@@ -22,6 +22,7 @@ const STAGE_LABEL: Record<GenerationJobStage, string> = {
   stage1: 'Stage 1: 構成生成中',
   stage2: 'Stage 2: 本文生成中',
   hallucination: 'Stage 3: ハルシネーション検証中',
+  finalizing: 'Stage 4: 画像生成 + 仕上げ中',
   done: '生成完了',
   failed: '生成失敗',
 };
@@ -31,6 +32,7 @@ const STAGE_BADGE: Record<GenerationJobStage, string> = {
   stage1: '🚧 構成中',
   stage2: '✏️ 本文中',
   hallucination: '🧪 検証中',
+  finalizing: '🎨 仕上げ中',
   done: '✅ 完了',
   failed: '❌ 失敗',
 };
