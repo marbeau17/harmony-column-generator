@@ -90,9 +90,78 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // stage1_outline が必要
   const outline = article.stage1_outline as Record<string, unknown> | null;
-  if (!outline || !outline.headings) {
+  if (!outline) {
     return NextResponse.json(
       { error: '構成案（stage1_outline）が未生成です。先に構成案を生成してください。' },
+      { status: 409 },
+    );
+  }
+
+  // P5-24: zero-gen 経由の記事 (generation_mode='zero') では outline.image_prompts に
+  // 既に画像プロンプト 3 件が入っているため、Gemini を再呼出せずそのまま articles.image_prompts へ
+  // 正規化コピーする (高速 + 無料 + Stage1 で生成済の整合性保持)。
+  const outlineImagePrompts = outline.image_prompts;
+  if (
+    Array.isArray(outlineImagePrompts) &&
+    outlineImagePrompts.length > 0
+  ) {
+    type OutlinePromptItem = Record<string, unknown>;
+    const normalized = (outlineImagePrompts as OutlinePromptItem[])
+      .map((p, idx) => {
+        const position =
+          typeof p.position === 'string'
+            ? p.position
+            : typeof p.slot === 'string'
+              ? p.slot
+              : typeof p.section_id === 'string'
+                ? p.section_id
+                : ['hero', 'body', 'summary'][idx] ?? `pos${idx}`;
+        const prompt = typeof p.prompt === 'string' ? p.prompt : '';
+        const altTextJa =
+          typeof p.alt_text_ja === 'string'
+            ? p.alt_text_ja
+            : typeof p.heading_text === 'string'
+              ? (p.heading_text as string)
+              : `${article.theme ?? '記事'}のイメージ — ${position}`;
+        return prompt
+          ? { position, prompt, alt_text_ja: altTextJa, negative_prompt: '' }
+          : null;
+      })
+      .filter((x): x is { position: string; prompt: string; alt_text_ja: string; negative_prompt: string } => x !== null);
+
+    if (normalized.length > 0) {
+      logger.info('ai', 'image_prompts.copied_from_outline', {
+        articleId,
+        count: normalized.length,
+      });
+      const { error: updateErr } = await supabase
+        .from('articles')
+        .update({
+          image_prompts: normalized,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', articleId);
+      if (updateErr) {
+        return NextResponse.json(
+          { error: `DB UPDATE 失敗: ${updateErr.message}` },
+          { status: 500 },
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        imagePrompts: normalized,
+        source: 'outline',
+      });
+    }
+  }
+
+  // 古い source-base 記事は headings 形式を持つので、その場合のみ Gemini で再生成
+  if (!outline.headings) {
+    return NextResponse.json(
+      {
+        error:
+          '構成案に画像プロンプトと見出し情報の両方がありません。記事を再生成してください。',
+      },
       { status: 409 },
     );
   }
