@@ -92,9 +92,24 @@ function getThemeLabel(theme: string): string {
 
 /**
  * HTMLタグを除去してプレーンテキストを取得
+ *
+ * P5-49: 旧実装は <script>/<style>/<head> の中身が text として残り、
+ *   抜粋に "window.dataLayer = ... gtag(){dataLayer.push..." が混入していた。
+ *   タグを剥がす前に script/style/head ブロックごと除去する。
  */
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, '').trim();
+  return html
+    // フル HTML ドキュメント (stage3_final_html) なら head ごと除去
+    .replace(/<head[\s\S]*?<\/head>/gi, '')
+    // script / style ブロックを中身ごと除去
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
+    // HTML コメント除去
+    .replace(/<!--[\s\S]*?-->/g, '')
+    // 残りタグ除去
+    .replace(/<[^>]*>/g, '')
+    .trim();
 }
 
 /**
@@ -450,7 +465,9 @@ export async function buildArticleCards(): Promise<HubArticleCard[]> {
   }
 
   return data.map((row) => {
-    const bodyHtml = (row.stage3_final_html || row.stage2_body_html || '') as string;
+    // P5-49: 抜粋は stage2 (本文のみ) を優先。stage3 は head/script を含むフル HTML。
+    //        stage2 が無い場合のみ stage3 を使い、stripHtml が script/style を除去する。
+    const bodyHtml = (row.stage2_body_html || row.stage3_final_html || '') as string;
     const theme = (row.theme || 'introduction') as string;
     const slug = (row.slug || row.seo_filename || row.id) as string;
     const htmlFilename = (row.seo_filename || `${slug}.html`) as string;
