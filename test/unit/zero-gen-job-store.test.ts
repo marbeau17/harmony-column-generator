@@ -1,247 +1,198 @@
 // ============================================================================
 // test/unit/zero-gen-job-store.test.ts
+// Supabase 共有ストア化後 (P5-22) の zero-gen-job-store ユニットテスト。
 //
-// zero-gen-job-store の単体テスト
-//   - createJobState / updateJobState / getJobState / clearJobState
-//   - in-memory + ファイル fallback の整合性
-//   - 同一 job_id への並行 update が race にならず最後の状態に収束すること
-//
-// 注意:
-//   - 各テストは独立した job_id (UUID 風) を使い干渉を回避
-//   - tmp/zero-gen-jobs/ 配下に書き出されるため終了時に clearJobState を呼ぶ
+// 仕組み: createServiceRoleClient をモックし、in-memory の擬似テーブルで
+// upsert/select/delete を実装。これで Supabase 接続なしに store の挙動を検証。
 // ============================================================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { promises as fs } from 'fs';
-import path from 'path';
-import os from 'os';
-import {
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// ── 擬似テーブル ────────────────────────────────────────────────────────────
+// テスト中の generation_jobs 行を保持。各テスト先頭でリセット。
+let table: Map<string, Record<string, unknown>> = new Map();
+
+const mockUpsert = vi.fn(async (
+  payload: Record<string, unknown>,
+  _opts: { onConflict?: string } = {},
+) => {
+  const id = payload.id as string;
+  const existing = table.get(id) ?? {
+    id,
+    user_id: null,
+    stage: 'queued',
+    progress: 0,
+    eta_seconds: 0,
+    error: null,
+    article_id: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const merged = { ...existing, ...payload };
+  table.set(id, merged);
+  return { data: merged, error: null };
+});
+
+const mockSelectEq = vi.fn(async (id: string) => {
+  const row = table.get(id);
+  return { data: row ?? null, error: null };
+});
+
+const mockDeleteEq = vi.fn(async (id: string) => {
+  table.delete(id);
+  return { data: null, error: null };
+});
+
+// chainable builder
+function buildQuery() {
+  return {
+    upsert: (payload: Record<string, unknown>, opts?: { onConflict?: string }) => {
+      const promise = mockUpsert(payload, opts ?? {});
+      return Object.assign(promise, {
+        select: () => ({
+          single: async () => promise,
+        }),
+      });
+    },
+    select: (_cols?: string) => ({
+      eq: (_col: string, val: string) => ({
+        maybeSingle: () => mockSelectEq(val),
+      }),
+    }),
+    delete: () => ({
+      eq: (_col: string, val: string) => mockDeleteEq(val),
+    }),
+  };
+}
+
+vi.mock('@/lib/supabase/server', () => ({
+  createServiceRoleClient: async () => ({
+    from: (_table: string) => buildQuery(),
+  }),
+}));
+
+// import after mock
+const {
   createJobState,
   updateJobState,
   getJobState,
   clearJobState,
   __resetMemStoreForTests,
-  type JobState,
-} from '@/lib/jobs/zero-gen-job-store';
-
-// store と同じディレクトリ解決ロジックを使う
-const TEST_JOBS_DIR =
-  process.env.BLOGAUTO_JOBS_DIR ?? path.join(os.tmpdir(), 'blogauto-zero-gen-jobs');
-
-// テスト用のユニークな job_id 生成（UUID 形式に近い）
-function makeJobId(tag: string): string {
-  // 仕様の UUID チェックには通らなくても store 自体は動くので tag を埋め込む
-  const rand = Math.random().toString(16).slice(2, 14).padEnd(12, '0');
-  return `00000000-0000-4000-8000-${rand}${tag.slice(0, 0)}`;
-}
-
-const usedJobIds: string[] = [];
-
-function trackJobId(id: string): string {
-  usedJobIds.push(id);
-  return id;
-}
+} = await import('@/lib/jobs/zero-gen-job-store');
 
 beforeEach(() => {
+  table = new Map();
   __resetMemStoreForTests();
-});
-
-afterEach(async () => {
-  for (const id of usedJobIds.splice(0)) {
-    await clearJobState(id);
-  }
-  __resetMemStoreForTests();
+  mockUpsert.mockClear();
+  mockSelectEq.mockClear();
+  mockDeleteEq.mockClear();
 });
 
 describe('createJobState', () => {
-  it('新規ジョブを queued / progress=0 で作成する', async () => {
-    const jobId = trackJobId(makeJobId('a'));
-    const state = await createJobState(jobId);
-
+  it('queued 状態で初期化される', async () => {
+    const state = await createJobState('aaaa1111-1111-1111-1111-111111111111');
     expect(state.stage).toBe('queued');
     expect(state.progress).toBe(0);
     expect(state.eta_seconds).toBe(0);
-    expect(state.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('ファイルに書き出される', async () => {
-    const jobId = trackJobId(makeJobId('b'));
-    await createJobState(jobId);
-
-    const file = path.join(TEST_JOBS_DIR, `${jobId}.json`);
-    const raw = await fs.readFile(file, 'utf8');
-    const parsed = JSON.parse(raw) as JobState;
-    expect(parsed.stage).toBe('queued');
-  });
-
-  it('jobId が空なら例外', async () => {
-    await expect(createJobState('')).rejects.toThrow();
+  it('upsert がコールされる', async () => {
+    await createJobState('aaaa2222-2222-2222-2222-222222222222');
+    expect(mockUpsert).toHaveBeenCalledOnce();
   });
 });
 
 describe('updateJobState', () => {
-  it('部分更新: stage を stage1 に進める', async () => {
-    const jobId = trackJobId(makeJobId('c'));
-    await createJobState(jobId);
-    const updated = await updateJobState(jobId, {
-      stage: 'stage1',
-      progress: 0.1,
-      eta_seconds: 30,
+  it('部分更新が反映される', async () => {
+    await createJobState('bbbb1111-1111-1111-1111-111111111111');
+    const updated = await updateJobState('bbbb1111-1111-1111-1111-111111111111', {
+      stage: 'stage2',
+      progress: 0.4,
+      eta_seconds: 50,
     });
-
-    expect(updated.stage).toBe('stage1');
-    expect(updated.progress).toBe(0.1);
-    expect(updated.eta_seconds).toBe(30);
+    expect(updated.stage).toBe('stage2');
+    expect(updated.progress).toBe(0.4);
+    expect(updated.eta_seconds).toBe(50);
   });
 
-  it('progress を 0..1 にクランプする (>1)', async () => {
-    const jobId = trackJobId(makeJobId('d'));
-    await createJobState(jobId);
-    const updated = await updateJobState(jobId, { progress: 5 });
-    expect(updated.progress).toBe(1);
+  it('progress が 0..1 にクランプされる', async () => {
+    const upper = await updateJobState('cccc1111-1111-1111-1111-111111111111', {
+      progress: 5,
+    });
+    expect(upper.progress).toBe(1);
+    const lower = await updateJobState('cccc2222-2222-2222-2222-222222222222', {
+      progress: -3,
+    });
+    expect(lower.progress).toBe(0);
   });
 
-  it('progress を 0..1 にクランプする (<0)', async () => {
-    const jobId = trackJobId(makeJobId('e'));
-    await createJobState(jobId);
-    const updated = await updateJobState(jobId, { progress: -2 });
-    expect(updated.progress).toBe(0);
+  it('eta_seconds 負値は 0', async () => {
+    const r = await updateJobState('dddd1111-1111-1111-1111-111111111111', {
+      eta_seconds: -10,
+    });
+    expect(r.eta_seconds).toBe(0);
   });
 
-  it('eta_seconds の負値は 0 に丸める', async () => {
-    const jobId = trackJobId(makeJobId('f'));
-    await createJobState(jobId);
-    const updated = await updateJobState(jobId, { eta_seconds: -10 });
-    expect(updated.eta_seconds).toBe(0);
-  });
-
-  it('error / article_id を保存できる', async () => {
-    const jobId = trackJobId(makeJobId('g'));
-    await createJobState(jobId);
-    const updated = await updateJobState(jobId, {
+  it('error / article_id を渡すと反映', async () => {
+    const r = await updateJobState('eeee1111-1111-1111-1111-111111111111', {
       stage: 'done',
-      progress: 1,
-      article_id: 'article-xyz',
+      article_id: 'aaaa',
     });
-    expect(updated.article_id).toBe('article-xyz');
-    expect(updated.stage).toBe('done');
-
-    const failed = await updateJobState(jobId, {
+    expect(r.article_id).toBe('aaaa');
+    const f = await updateJobState('ffff1111-1111-1111-1111-111111111111', {
       stage: 'failed',
-      error: 'something broke',
+      error: 'oops',
     });
-    expect(failed.error).toBe('something broke');
-  });
-
-  it('createJobState を呼ばずに update しても新規作成される', async () => {
-    const jobId = trackJobId(makeJobId('h'));
-    const state = await updateJobState(jobId, { stage: 'stage2', progress: 0.4 });
-    expect(state.stage).toBe('stage2');
-    expect(state.progress).toBe(0.4);
-  });
-
-  it('updated_at が更新ごとに変化する', async () => {
-    const jobId = trackJobId(makeJobId('i'));
-    const s1 = await createJobState(jobId);
-    // setTimeout で1ms以上ずらす（同一ms内だと文字列が一致しうる）
-    await new Promise((r) => setTimeout(r, 5));
-    const s2 = await updateJobState(jobId, { progress: 0.2 });
-    expect(s2.updated_at).not.toBe(s1.updated_at);
+    expect(f.error).toBe('oops');
   });
 });
 
 describe('getJobState', () => {
-  it('存在しない job_id は null', async () => {
-    const result = await getJobState(makeJobId('z'));
-    expect(result).toBeNull();
+  it('存在しない id は null', async () => {
+    const r = await getJobState('99999999-9999-4999-8999-999999999999');
+    expect(r).toBeNull();
   });
 
-  it('in-memory に無くてもファイルから復元できる', async () => {
-    const jobId = trackJobId(makeJobId('j'));
-    await createJobState(jobId);
-    await updateJobState(jobId, { stage: 'stage2', progress: 0.5 });
-
-    // メモリだけクリア（ファイルは残る）
-    __resetMemStoreForTests();
-
-    const restored = await getJobState(jobId);
-    expect(restored).not.toBeNull();
-    expect(restored?.stage).toBe('stage2');
-    expect(restored?.progress).toBe(0.5);
+  it('作成した job が取得できる', async () => {
+    await createJobState('11111111-1111-1111-1111-111111111111');
+    const r = await getJobState('11111111-1111-1111-1111-111111111111');
+    expect(r?.stage).toBe('queued');
   });
 
-  it('空文字は null', async () => {
-    expect(await getJobState('')).toBeNull();
+  it('memCache hit 時は Supabase 呼出を行わない', async () => {
+    await createJobState('22222222-2222-2222-2222-222222222222');
+    mockSelectEq.mockClear();
+    // 直後の get はキャッシュ hit
+    await getJobState('22222222-2222-2222-2222-222222222222');
+    expect(mockSelectEq).not.toHaveBeenCalled();
   });
 });
 
 describe('clearJobState', () => {
-  it('メモリとファイルを削除する', async () => {
-    const jobId = makeJobId('k'); // tracker に入れない（自前で消す）
-    await createJobState(jobId);
-    await clearJobState(jobId);
-
-    expect(await getJobState(jobId)).toBeNull();
-
-    const file = path.join(TEST_JOBS_DIR, `${jobId}.json`);
-    await expect(fs.access(file)).rejects.toBeTruthy();
-  });
-
-  it('存在しない job_id でも例外を投げない', async () => {
-    await expect(clearJobState(makeJobId('nope'))).resolves.toBeUndefined();
+  it('Supabase delete + memCache クリア', async () => {
+    await createJobState('33333333-3333-3333-3333-333333333333');
+    await clearJobState('33333333-3333-3333-3333-333333333333');
+    expect(mockDeleteEq).toHaveBeenCalledOnce();
+    const after = await getJobState('33333333-3333-3333-3333-333333333333');
+    expect(after).toBeNull();
   });
 });
 
-describe('並行アクセス (race condition 回避)', () => {
-  it('同一 job_id に対する 50 並行 update が最後の状態に収束する', async () => {
-    const jobId = trackJobId(makeJobId('p'));
-    await createJobState(jobId);
-
-    const N = 50;
-    const updates = Array.from({ length: N }, (_, i) =>
-      updateJobState(jobId, {
-        stage: 'stage1',
-        progress: (i + 1) / N,
-        eta_seconds: N - i,
-      }),
-    );
-
-    const results = await Promise.all(updates);
-
-    // すべて promise が解決すること
-    expect(results).toHaveLength(N);
-
-    // 最終的な状態は in-memory に最後にセットされた値（promise 解決順とは独立）
-    const finalState = await getJobState(jobId);
-    expect(finalState).not.toBeNull();
-    expect(finalState?.stage).toBe('stage1');
-    expect(finalState?.progress).toBeGreaterThan(0);
-    expect(finalState?.progress).toBeLessThanOrEqual(1);
-
-    // ファイル側も読めて、JSON が壊れていないこと（直列キューで rename 原子性が守られる）
-    const file = path.join(TEST_JOBS_DIR, `${jobId}.json`);
-    const raw = await fs.readFile(file, 'utf8');
-    const parsed = JSON.parse(raw) as JobState;
-    expect(parsed.stage).toBe('stage1');
-    expect(parsed.progress).toBeGreaterThan(0);
-    expect(parsed.progress).toBeLessThanOrEqual(1);
+describe('境界 / 異常系', () => {
+  it('jobId 空文字で createJobState は throw', async () => {
+    await expect(createJobState('')).rejects.toThrow(/jobId is required/);
   });
 
-  it('複数 job_id への並行 update は互いに干渉しない', async () => {
-    const ids = Array.from({ length: 5 }, (_, i) => trackJobId(makeJobId(`q${i}`)));
-    await Promise.all(ids.map((id) => createJobState(id)));
+  it('jobId 空文字で updateJobState は throw', async () => {
+    await expect(updateJobState('', { stage: 'done' })).rejects.toThrow(/jobId is required/);
+  });
 
-    await Promise.all(
-      ids.flatMap((id, idx) => [
-        updateJobState(id, { stage: 'stage1', progress: 0.1 * (idx + 1) }),
-        updateJobState(id, { stage: 'stage2', progress: 0.2 * (idx + 1) }),
-      ]),
-    );
+  it('jobId 空文字で getJobState は null', async () => {
+    expect(await getJobState('')).toBeNull();
+  });
 
-    const states = await Promise.all(ids.map((id) => getJobState(id)));
-    for (const s of states) {
-      expect(s).not.toBeNull();
-      expect(['stage1', 'stage2']).toContain(s!.stage);
-    }
+  it('jobId 空文字で clearJobState は no-op', async () => {
+    await clearJobState('');
+    expect(mockDeleteEq).not.toHaveBeenCalled();
   });
 });

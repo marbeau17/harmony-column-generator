@@ -1,32 +1,21 @@
 // ============================================================================
 // src/lib/jobs/zero-gen-job-store.ts
 //
-// ゼロ生成ジョブの進捗状態ストア
+// ゼロ生成ジョブの進捗状態ストア (P5-22 — Supabase 共有ストアへ移行)
 //
-// 役割:
-//   - createJobState(job_id)               : 新規ジョブを 'queued' で作成
-//   - updateJobState(job_id, partial)      : 状態を部分更新（マージ）
-//   - getJobState(job_id)                  : 現在の状態を取得（無ければ null）
-//   - clearJobState(job_id)                : メモリ + ファイルを削除
+// 旧設計: os.tmpdir() (Vercel `/tmp`) に書き出し
+//   問題: Vercel function instance 間で /tmp は共有されないため
+//        async POST instance ≠ SSE GET instance だと "job not found" 404
 //
-// 永続戦略:
-//   - 同一 process 内: in-memory Map が真実の値（高速・原子的）
-//   - cross-process / 再起動耐性: tmp/zero-gen-jobs/{job_id}.json に書き出し、
-//     in-memory に無い場合のみファイルから読込
+// 新設計: Supabase テーブル `generation_jobs` を真実のソースに
+//   - すべての instance から共通参照可能
+//   - 同一 process 内 in-memory cache (TTL 60s) を併用して I/O を最小化
+//   - service role で UPSERT/SELECT (RLS 影響なし)
 //
-// 並行制御:
-//   - 各 job_id ごとに直列キューを保持（同時に書き込まれても最後の状態に収束）
-//   - getJobState は in-memory snapshot を即返し、I/O を待たない
-//
-// 注意:
-//   - 仕様: { stage, progress (0-1), eta_seconds, error?, article_id? }
-//   - stage 値: 'queued' | 'stage1' | 'stage2' | 'hallucination' | 'done' | 'failed'
-//   - tmp/ ディレクトリは無ければ作る
+// マイグレ: supabase/migrations/20260502020000_generation_jobs.sql
 // ============================================================================
 
-import { promises as fs } from 'fs';
-import path from 'path';
-import os from 'os';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -41,190 +30,197 @@ export type JobStage =
 export interface JobState {
   stage: JobStage;
   progress: number;        // 0.0 - 1.0
-  eta_seconds: number;     // 残り推定秒
+  eta_seconds: number;
   error?: string;
   article_id?: string;
-  updated_at: string;      // ISO8601（SSE 側で diff 検出用）
+  updated_at: string;      // ISO8601
 }
 
-// ─── 内部ストレージ ─────────────────────────────────────────────────────────
-
-const memStore: Map<string, JobState> = new Map();
-// job_id ごとの直列化チェーン
-const writeQueue: Map<string, Promise<void>> = new Map();
-
-function getJobsDir(): string {
-  // Vercel の本番関数では process.cwd() は read-only。
-  // os.tmpdir() を使い、dev (/var/folders/.../T) / Vercel (/tmp) の両環境で書込可能にする。
-  // `BLOGAUTO_JOBS_DIR` 環境変数で override 可能（テスト用）。
-  if (process.env.BLOGAUTO_JOBS_DIR) return process.env.BLOGAUTO_JOBS_DIR;
-  return path.join(os.tmpdir(), 'blogauto-zero-gen-jobs');
+interface JobRow {
+  id: string;
+  user_id: string | null;
+  stage: JobStage;
+  progress: number;
+  eta_seconds: number;
+  error: string | null;
+  article_id: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-function getJobFile(jobId: string): string {
-  return path.join(getJobsDir(), `${jobId}.json`);
-}
+// ─── 内部キャッシュ (per-process、TTL 60s) ──────────────────────────────────
 
-async function ensureDir(): Promise<void> {
-  await fs.mkdir(getJobsDir(), { recursive: true });
-}
+const CACHE_TTL_MS = 60_000;
+const memCache: Map<string, { state: JobState; cachedAt: number }> = new Map();
 
-async function writeFile(jobId: string, state: JobState): Promise<void> {
-  // Vercel function 環境で fs 書込が失敗しても (本来は /tmp で動くはずだが念のため)
-  // route 側に 500 を返さないよう、内部でエラーを握りつぶす。in-memory store が
-  // 同一 process 内では truth source なので fs は補助的役割。
-  try {
-    await ensureDir();
-    const tmp = getJobFile(jobId) + '.tmp';
-    const final = getJobFile(jobId);
-    await fs.writeFile(tmp, JSON.stringify(state, null, 2), 'utf8');
-    // rename は POSIX で原子的（同一 FS）
-    await fs.rename(tmp, final);
-  } catch (err) {
-    // EROFS / EACCES / ENOSPC 等で fs 書込失敗時はログだけ出して継続
-    console.warn('[zero-gen-job-store.writeFile.failed]', {
-      jobId,
-      error_message: (err as Error).message,
-    });
-  }
-}
-
-async function readFileIfExists(jobId: string): Promise<JobState | null> {
-  try {
-    const raw = await fs.readFile(getJobFile(jobId), 'utf8');
-    const parsed = JSON.parse(raw) as JobState;
-    return parsed;
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === 'ENOENT') return null;
-    // 破損 JSON 等は null 扱い（後続の updateJobState でリセット可能）
+function cacheGet(jobId: string): JobState | null {
+  const entry = memCache.get(jobId);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > CACHE_TTL_MS) {
+    memCache.delete(jobId);
     return null;
   }
+  return entry.state;
 }
 
-/**
- * job_id 単位で直列化された書き込みを行う。
- * 並行 update を最後の状態に収束させる（race 防止）。
- */
-function enqueueWrite(jobId: string, state: JobState): Promise<void> {
-  const prev = writeQueue.get(jobId) ?? Promise.resolve();
-  const next = prev
-    .catch(() => undefined) // 前段失敗でも後続は走らせる
-    .then(() => writeFile(jobId, state));
-  writeQueue.set(jobId, next);
-  // キューの掃除（自身が末尾なら削除）
-  void next.finally(() => {
-    if (writeQueue.get(jobId) === next) {
-      writeQueue.delete(jobId);
-    }
-  });
-  return next;
+function cacheSet(jobId: string, state: JobState): void {
+  memCache.set(jobId, { state, cachedAt: Date.now() });
+}
+
+function cacheDelete(jobId: string): void {
+  memCache.delete(jobId);
+}
+
+// ─── 行 → JobState 変換 ────────────────────────────────────────────────────
+
+function rowToState(row: JobRow): JobState {
+  const out: JobState = {
+    stage: row.stage,
+    progress: typeof row.progress === 'number' ? row.progress : Number(row.progress),
+    eta_seconds: row.eta_seconds,
+    updated_at: row.updated_at,
+  };
+  if (row.error) out.error = row.error;
+  if (row.article_id) out.article_id = row.article_id;
+  return out;
 }
 
 // ─── 公開 API ───────────────────────────────────────────────────────────────
 
 /**
- * 新規ジョブ状態を作成する。既存があっても 'queued' で上書き初期化。
+ * 新規ジョブ状態を作成する。既存があっても 'queued' で上書き初期化 (UPSERT)。
  */
 export async function createJobState(jobId: string): Promise<JobState> {
   if (!jobId) throw new Error('jobId is required');
+  const supabase = await createServiceRoleClient();
+  const initial = {
+    id: jobId,
+    stage: 'queued' as JobStage,
+    progress: 0,
+    eta_seconds: 0,
+    error: null,
+    article_id: null,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase
+    .from('generation_jobs')
+    .upsert(initial, { onConflict: 'id' });
+  if (error) {
+    console.warn('[zero-gen-job-store.create.failed]', {
+      jobId,
+      error_message: error.message,
+    });
+    throw new Error(`createJobState failed: ${error.message}`);
+  }
   const state: JobState = {
     stage: 'queued',
     progress: 0,
     eta_seconds: 0,
-    updated_at: new Date().toISOString(),
+    updated_at: initial.updated_at,
   };
-  memStore.set(jobId, state);
-  await enqueueWrite(jobId, state);
+  cacheSet(jobId, state);
   return state;
 }
 
 /**
- * ジョブ状態を部分更新（マージ）。updated_at は自動更新。
- * 既存が無ければ 'queued' を起点に作成してからマージする。
+ * ジョブ状態を部分更新 (UPDATE)。updated_at は自動更新。
+ * 行が無い場合は INSERT で作成 (UPSERT)。
  */
 export async function updateJobState(
   jobId: string,
   partial: Partial<Omit<JobState, 'updated_at'>>,
 ): Promise<JobState> {
   if (!jobId) throw new Error('jobId is required');
+  const supabase = await createServiceRoleClient();
 
-  // 現状取得（mem 優先、無ければファイル）
-  let current = memStore.get(jobId);
-  if (!current) {
-    const fromDisk = await readFileIfExists(jobId);
-    current = fromDisk ?? {
-      stage: 'queued',
-      progress: 0,
-      eta_seconds: 0,
-      updated_at: new Date().toISOString(),
-    };
-  }
-
-  const merged: JobState = {
-    ...current,
-    ...partial,
+  const updateFields: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
-
-  // progress を 0..1 にクランプ
-  if (typeof merged.progress === 'number') {
-    if (Number.isNaN(merged.progress)) merged.progress = 0;
-    merged.progress = Math.max(0, Math.min(1, merged.progress));
+  if (partial.stage !== undefined) updateFields.stage = partial.stage;
+  if (partial.progress !== undefined) {
+    let p = partial.progress;
+    if (typeof p === 'number' && Number.isNaN(p)) p = 0;
+    if (typeof p === 'number') p = Math.max(0, Math.min(1, p));
+    updateFields.progress = p;
   }
-  if (typeof merged.eta_seconds === 'number' && merged.eta_seconds < 0) {
-    merged.eta_seconds = 0;
+  if (partial.eta_seconds !== undefined) {
+    updateFields.eta_seconds = Math.max(0, partial.eta_seconds);
+  }
+  if (partial.error !== undefined) updateFields.error = partial.error;
+  if (partial.article_id !== undefined) updateFields.article_id = partial.article_id;
+
+  // UPSERT — 行が無ければ id だけで INSERT (defaults で初期化)
+  const upsertPayload = {
+    id: jobId,
+    ...updateFields,
+  };
+  const { data, error } = await supabase
+    .from('generation_jobs')
+    .upsert(upsertPayload, { onConflict: 'id' })
+    .select()
+    .single();
+
+  if (error || !data) {
+    console.warn('[zero-gen-job-store.update.failed]', {
+      jobId,
+      error_message: error?.message ?? 'no data returned',
+    });
+    throw new Error(`updateJobState failed: ${error?.message ?? 'no data'}`);
   }
 
-  memStore.set(jobId, merged);
-  await enqueueWrite(jobId, merged);
-  return merged;
+  const state = rowToState(data as JobRow);
+  cacheSet(jobId, state);
+  return state;
 }
 
 /**
- * 現在の状態を取得。
- *   - in-memory にあれば即返す
- *   - 無ければファイルを読み、見つかれば in-memory にも復元する
- *   - 全く存在しなければ null
+ * 現在の状態を取得。memCache hit なら即返、miss なら Supabase から SELECT。
  */
 export async function getJobState(jobId: string): Promise<JobState | null> {
   if (!jobId) return null;
-  const mem = memStore.get(jobId);
-  if (mem) return mem;
-  const disk = await readFileIfExists(jobId);
-  if (disk) memStore.set(jobId, disk);
-  return disk;
+  const cached = cacheGet(jobId);
+  if (cached) return cached;
+  const supabase = await createServiceRoleClient();
+  const { data, error } = await supabase
+    .from('generation_jobs')
+    .select('*')
+    .eq('id', jobId)
+    .maybeSingle();
+  if (error) {
+    console.warn('[zero-gen-job-store.get.failed]', {
+      jobId,
+      error_message: error.message,
+    });
+    return null;
+  }
+  if (!data) return null;
+  const state = rowToState(data as JobRow);
+  cacheSet(jobId, state);
+  return state;
 }
 
 /**
- * メモリとファイルの両方からジョブ状態を削除する。
+ * 行を削除。Supabase + memCache 両方からクリア。
  */
 export async function clearJobState(jobId: string): Promise<void> {
   if (!jobId) return;
-  memStore.delete(jobId);
-  // 書き込みキューが残っていれば完了を待つ（直後の rm との競合回避）
-  const pending = writeQueue.get(jobId);
-  if (pending) {
-    try {
-      await pending;
-    } catch {
-      // ignore
-    }
-  }
-  try {
-    await fs.unlink(getJobFile(jobId));
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code !== 'ENOENT') {
-      // 想定外のエラーは投げ直さない（クリーンアップは best-effort）
-    }
+  cacheDelete(jobId);
+  const supabase = await createServiceRoleClient();
+  const { error } = await supabase
+    .from('generation_jobs')
+    .delete()
+    .eq('id', jobId);
+  if (error) {
+    console.warn('[zero-gen-job-store.clear.failed]', {
+      jobId,
+      error_message: error.message,
+    });
   }
 }
 
 /**
- * テスト用: in-memory ストアを完全クリア（ファイルは触らない）
+ * テスト用: in-memory キャッシュをクリア (Supabase 行は触らない)
  */
 export function __resetMemStoreForTests(): void {
-  memStore.clear();
-  writeQueue.clear();
+  memCache.clear();
 }
