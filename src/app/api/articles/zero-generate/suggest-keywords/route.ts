@@ -37,6 +37,10 @@ const MAX_CANDIDATES = 18;
 const AI_TEMPERATURE = 0.6;
 const AI_MAX_OUTPUT_TOKENS = 2000;
 
+// mode=fast: ペルソナ系のみ即時返却（Gemini なし、~200ms）
+// mode=full (default): ペルソナ系 + AI 系（~15s）
+type SuggestMode = 'fast' | 'full';
+
 interface ThemeRow {
   id: string;
   name: string;
@@ -78,12 +82,15 @@ export async function POST(request: NextRequest) {
     );
   }
   const { theme_id, persona_id, intent, exclude = [] } = parsed.data;
+  const mode: SuggestMode =
+    request.nextUrl.searchParams.get('mode') === 'fast' ? 'fast' : 'full';
 
   console.log('[suggest-kw.begin]', {
     theme_id,
     persona_id,
     intent: intent ?? null,
     exclude_count: exclude.length,
+    mode,
   });
 
   // 3. theme + persona 取得
@@ -128,11 +135,13 @@ export async function POST(request: NextRequest) {
     intent,
   });
 
-  // 5. AI 候補（1 呼出、失敗時は partial）
+  // 5. AI 候補（mode=fast の場合は skip）
   let aiCandidates: KeywordSuggestion[] = [];
   let aiOk = true;
   let aiErrorMessage: string | null = null;
-  try {
+  if (mode === 'fast') {
+    console.log('[suggest-kw.ai.skipped]', { reason: 'mode=fast' });
+  } else try {
     const { system, user: userPrompt } = buildAiSuggestionPrompt({
       theme: { name: theme.name, category: theme.category },
       persona,

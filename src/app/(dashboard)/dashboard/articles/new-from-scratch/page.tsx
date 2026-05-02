@@ -50,6 +50,9 @@ interface PersonaOption {
   id: string;
   name: string;
   age_range: string | null;
+  description: string | null;
+  search_patterns: string[];
+  tone_guide: string | null;
 }
 
 const MAX_KEYWORDS = 8;
@@ -389,59 +392,105 @@ export default function NewFromScratchPage() {
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
 
-  const fetchSuggestions = useCallback(async () => {
-    if (!themeId) {
-      toast.error('まずテーマを選択してください');
-      return;
-    }
-    if (!personaId) {
-      toast.error('まずペルソナを選択してください');
-      return;
-    }
-    setSuggestLoading(true);
-    setSuggestError(null);
-    try {
-      const res = await fetch('/api/articles/zero-generate/suggest-keywords', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          theme_id: themeId,
-          persona_id: personaId,
-          intent: intent || undefined,
-          exclude: keywords,
-        }),
-      });
-      if (!res.ok && res.status !== 207) {
-        const errBody = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        throw new Error(errBody.error ?? `HTTP ${res.status}`);
+  // mode=fast (persona only, ~200ms) と mode=full (persona + AI, ~15s) を分けて 2 段階取得。
+  // テーマ + ペルソナが選択された瞬間に自動 fetch する（ボタン不要）。
+  const fetchSuggestions = useCallback(
+    async (opts?: { manual?: boolean }) => {
+      if (!themeId || !personaId) {
+        if (opts?.manual) {
+          toast.error('テーマとペルソナを選択してください');
+        }
+        return;
       }
-      const json = (await res.json()) as {
-        candidates?: Array<{
-          keyword: string;
-          source: 'persona' | 'ai';
-          rationale: string;
-        }>;
-        partial_success?: boolean;
+      setSuggestLoading(true);
+      setSuggestError(null);
+      const reqBody = {
+        theme_id: themeId,
+        persona_id: personaId,
+        intent: intent || undefined,
+        exclude: [], // suggestions は全件返し、UI で added 状態をミュート
       };
-      const got = json.candidates ?? [];
-      setSuggestions(got);
-      if (got.length === 0) {
-        toast('候補が見つかりませんでした', { icon: '🤔' });
-      } else if (json.partial_success) {
-        toast.success(`${got.length}件の候補（AI 一部失敗）`, { icon: '⚠️' });
-      } else {
-        toast.success(`${got.length}件の候補を提案しました`);
+      // Phase 1: persona のみ即時表示
+      try {
+        const fastRes = await fetch(
+          '/api/articles/zero-generate/suggest-keywords?mode=fast',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reqBody),
+          },
+        );
+        if (fastRes.ok || fastRes.status === 207) {
+          const j = (await fastRes.json()) as {
+            candidates?: Array<{
+              keyword: string;
+              source: 'persona' | 'ai';
+              rationale: string;
+            }>;
+          };
+          setSuggestions(j.candidates ?? []);
+        }
+      } catch {
+        // 静かに次の Phase へ
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '候補の取得に失敗しました';
-      setSuggestError(msg);
-      toast.error(msg);
-    } finally {
-      setSuggestLoading(false);
+      // Phase 2: AI 候補を append（時間がかかるが UI はもう操作可能）
+      try {
+        const fullRes = await fetch('/api/articles/zero-generate/suggest-keywords', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reqBody),
+        });
+        if (!fullRes.ok && fullRes.status !== 207) {
+          const errBody = (await fullRes.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(errBody.error ?? `HTTP ${fullRes.status}`);
+        }
+        const json = (await fullRes.json()) as {
+          candidates?: Array<{
+            keyword: string;
+            source: 'persona' | 'ai';
+            rationale: string;
+          }>;
+          partial_success?: boolean;
+        };
+        const got = json.candidates ?? [];
+        setSuggestions(got);
+        if (opts?.manual) {
+          if (got.length === 0) {
+            toast('候補が見つかりませんでした', { icon: '🤔' });
+          } else if (json.partial_success) {
+            toast.success(`${got.length}件の候補（AI 一部失敗）`, { icon: '⚠️' });
+          } else {
+            toast.success(`${got.length}件の候補を更新しました`);
+          }
+        }
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : '候補の取得に失敗しました';
+        setSuggestError(msg);
+        if (opts?.manual) toast.error(msg);
+      } finally {
+        setSuggestLoading(false);
+      }
+    },
+    [themeId, personaId, intent],
+  );
+
+  // テーマ + ペルソナ + 意図が決まったら自動的に候補を取得する（500ms debounce）。
+  // 過去の fetch を上書きしないよう setTimeout で hold + cleanup。
+  useEffect(() => {
+    if (!themeId || !personaId) {
+      // どちらか未選択 → 候補をクリア（古い候補が残らないように）
+      setSuggestions([]);
+      return;
     }
-  }, [themeId, personaId, intent, keywords]);
+    const t = window.setTimeout(() => {
+      fetchSuggestions({ manual: false });
+    }, 500);
+    return () => window.clearTimeout(t);
+    // intent も含めて再取得（intent によって長尾が変わる）
+  }, [themeId, personaId, intent, fetchSuggestions]);
 
   // 既に追加済の候補は表示時にミュート（クリックは無効）。
   const isSuggestionAdded = useCallback(
@@ -792,9 +841,23 @@ export default function NewFromScratchPage() {
                       ? '利用可能なペルソナがありません'
                       : '選択してください'}
                   </option>
-                  {personas.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                  {personas.map((p) => {
+                    // 役割表示: 「和子 — 60-69 / 写経・神社仏閣 / 穏やかで慈愛に満ちた語り口」
+                    // 旧 API レスポンス互換のため optional chain で defensive に。
+                    const ageLabel = p.age_range ?? '';
+                    const patterns = Array.isArray(p.search_patterns)
+                      ? p.search_patterns
+                      : [];
+                    const interests = patterns.length > 0 ? patterns.join('・') : '';
+                    const tone = p.tone_guide ?? '';
+                    const parts = [ageLabel, interests, tone].filter(Boolean);
+                    const role = parts.length > 0 ? ` — ${parts.join(' / ')}` : '';
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.name}{role}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -812,18 +875,17 @@ export default function NewFromScratchPage() {
                   </label>
                   <button
                     type="button"
-                    onClick={fetchSuggestions}
+                    onClick={() => fetchSuggestions({ manual: true })}
                     disabled={
                       generating ||
                       suggestLoading ||
                       !themeId ||
-                      !personaId ||
-                      keywords.length >= MAX_KEYWORDS
+                      !personaId
                     }
                     title={
                       !themeId || !personaId
-                        ? 'テーマとペルソナを選択するとキーワード候補を提案できます'
-                        : 'AI + ペルソナの検索パターンから候補を提案'
+                        ? 'テーマとペルソナを選択すると候補が自動表示されます'
+                        : '候補を再取得（AI 提案を更新）'
                     }
                     className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800
                       transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50
@@ -834,7 +896,7 @@ export default function NewFromScratchPage() {
                     ) : (
                       <Lightbulb className="h-3.5 w-3.5" />
                     )}
-                    {suggestLoading ? '提案中…' : '候補を提案'}
+                    {suggestLoading ? '取得中…' : '更新'}
                   </button>
                 </div>
                 <div
