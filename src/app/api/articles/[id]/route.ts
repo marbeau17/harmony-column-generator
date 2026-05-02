@@ -11,6 +11,7 @@ import {
   deleteArticle,
 } from '@/lib/db/articles';
 import { updateArticleSchema, validate } from '@/lib/validators/article';
+import { validateArticleContentPayload } from '@/lib/validators/article-content';
 import { logger } from '@/lib/logger';
 
 type RouteParams = { params: { id: string } };
@@ -82,6 +83,25 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (!result.success) {
       return NextResponse.json(
         { error: 'バリデーションエラー', details: result.error.flatten() },
+        { status: 400 },
+      );
+    }
+
+    // P5-32: stage2/stage3 契約検証 (Layer 4)
+    // template 混入 / body のみで stage3 上書き等を save 時に reject
+    const contentCheck = validateArticleContentPayload(
+      result.data as Record<string, unknown>,
+    );
+    if (!contentCheck.ok) {
+      logger.warn('api', 'updateArticle.content_violation', {
+        articleId: id,
+        issues: contentCheck.issues,
+      });
+      return NextResponse.json(
+        {
+          error: '記事内容の契約違反が検出されました',
+          details: { issues: contentCheck.issues },
+        },
         { status: 400 },
       );
     }
