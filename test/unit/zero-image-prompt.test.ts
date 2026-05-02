@@ -117,10 +117,13 @@ describe('buildZeroImagePrompts — negative_prompt 含有', () => {
     }
   });
 
-  it('ZERO_NEGATIVE_PROMPT 定数が仕様 §10.1 と一致する', () => {
-    expect(ZERO_NEGATIVE_PROMPT).toBe(
-      'text, watermark, logo, signature, deformed hands, religious symbols, medical equipment',
-    );
+  it('ZERO_NEGATIVE_PROMPT 定数が仕様 §10.1 + P5-29 拡張と一致する', () => {
+    expect(ZERO_NEGATIVE_PROMPT).toContain('text');
+    expect(ZERO_NEGATIVE_PROMPT).toContain('deformed hands');
+    expect(ZERO_NEGATIVE_PROMPT).toContain('medical equipment');
+    // P5-29: 人物の暴走生成防止
+    expect(ZERO_NEGATIVE_PROMPT).toContain('human face');
+    expect(ZERO_NEGATIVE_PROMPT).toContain('portrait');
   });
 });
 

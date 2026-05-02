@@ -125,13 +125,13 @@ export default function ArticleEditPage() {
         setMetaDescription(a.meta_description ?? '');
         setKeyword(a.keyword ?? '');
         setTheme(a.theme ?? '');
-        // Use stage3_final_html > stage2_body_html, replace image placeholders.
-        // バグG (2026-05-02): `??` は空文字を fallback しないため、generation 失敗で
-        // 空文字保存された記事 (バグD 系統) が「本文がありません」表示になっていた。
-        // 空文字も明示的にスキップするよう変更。
-        const stage3 = (a.stage3_final_html ?? '').trim();
+        // P5-30: edit view は stage2_body_html のみ使用。
+        // stage3_final_html は FTP エクスポート用の完全 HTML (header/sidebar/footer
+        // 含む 30K chars) で、編集には不適。P5-24 で stage3 が自動生成される
+        // ようになって以降、edit view が template を本文として表示する不具合が
+        // 発生していた。stage3 は publish 時に必要に応じて regenerate する。
         const stage2 = (a.stage2_body_html ?? '').trim();
-        let html = stage3.length > 0 ? a.stage3_final_html! : (stage2.length > 0 ? a.stage2_body_html! : '');
+        let html = stage2.length > 0 ? a.stage2_body_html! : '';
         // Replace <!--IMAGE:position:filename--> placeholders with actual images
         const imageFiles = a.image_files as { position: string; url: string; alt: string }[] | null;
         if (imageFiles && Array.isArray(imageFiles)) {
@@ -163,6 +163,10 @@ export default function ArticleEditPage() {
   }, [articleId]);
 
   // ─── Auto-save data ─────────────────────────────────────────────────────
+  // P5-30: 編集された本文は stage2_body_html に保存。
+  // stage3_final_html は FTP 用の完全 HTML テンプレートを保持するため、
+  // ここで上書きすると template が壊れる。stage3 は publish 時の deploy step で
+  // 必要に応じて regenerate する設計に変更。
   const autoSaveData = article
     ? {
         title: title || undefined,
@@ -170,7 +174,7 @@ export default function ArticleEditPage() {
         meta_description: metaDescription || undefined,
         keyword,
         theme,
-        stage3_final_html: bodyHtml,
+        stage2_body_html: bodyHtml,
       }
     : null;
 
@@ -448,10 +452,9 @@ export default function ArticleEditPage() {
                       setMetaDescription(a.meta_description ?? '');
                       setKeyword(a.keyword ?? '');
                       setTheme(a.theme ?? '');
-                      // 空文字も skip (バグG 同様)
-                      const s3 = (a.stage3_final_html ?? '').trim();
+                      // P5-30: stage2 のみ使用 (stage3 はテンプレート込みで edit に不適)
                       const s2 = (a.stage2_body_html ?? '').trim();
-                      setBodyHtml(s3.length > 0 ? a.stage3_final_html! : (s2.length > 0 ? a.stage2_body_html! : ''));
+                      setBodyHtml(s2.length > 0 ? a.stage2_body_html! : '');
                     } catch (err: unknown) {
                       setError(err instanceof Error ? err.message : '不明なエラー');
                     } finally {
