@@ -86,23 +86,31 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === href;
-    // 「記事作成」(new-choice) は new / new-from-scratch / new-choice すべてでアクティブにする
+    // 「記事作成」(new-choice) は new / new-from-scratch / batch-zero-generate / new-choice すべてでアクティブにする
     if (href === '/dashboard/articles/new-choice') {
       return (
         pathname === '/dashboard/articles/new-choice' ||
         pathname === '/dashboard/articles/new' ||
         pathname.startsWith('/dashboard/articles/new/') ||
         pathname === '/dashboard/articles/new-from-scratch' ||
-        pathname.startsWith('/dashboard/articles/new-from-scratch/')
+        pathname.startsWith('/dashboard/articles/new-from-scratch/') ||
+        pathname === '/dashboard/articles/batch-zero-generate' ||
+        pathname.startsWith('/dashboard/articles/batch-zero-generate/')
       );
     }
     if (href === '/dashboard/articles') {
-      // 記事一覧は new / new-choice / new-from-scratch を含めない
+      // 記事一覧は new / new-choice / new-from-scratch / batch-zero-generate を含めない
       if (pathname === '/dashboard/articles/new') return false;
       if (pathname === '/dashboard/articles/new-choice') return false;
       if (
         pathname === '/dashboard/articles/new-from-scratch' ||
         pathname.startsWith('/dashboard/articles/new-from-scratch/')
+      ) {
+        return false;
+      }
+      if (
+        pathname === '/dashboard/articles/batch-zero-generate' ||
+        pathname.startsWith('/dashboard/articles/batch-zero-generate/')
       ) {
         return false;
       }
