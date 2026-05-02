@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { applyPubliclyVisibleFilter } from '@/lib/publish-control/state-readers-sql';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -424,11 +425,13 @@ export function generateAllHubPages(
 export async function buildArticleCards(): Promise<HubArticleCard[]> {
   const supabase = await createServiceRoleClient();
 
-  const { data, error } = await supabase
+  // P5-43 Step 2 (設計 §4.2): reviewed_at ベースから visibility_state ベースへ移行
+  // ハブページに掲載するのは公開可視状態 (live / live_hub_stale) の記事のみ
+  const baseQuery = supabase
     .from('articles')
     .select('id, title, slug, seo_filename, meta_description, stage2_body_html, stage3_final_html, theme, published_at, image_files')
-    .eq('status', 'published')
-    .not('reviewed_at', 'is', null)
+    .eq('status', 'published');
+  const { data, error } = await applyPubliclyVisibleFilter(baseQuery)
     .order('published_at', { ascending: false });
 
   if (error) {

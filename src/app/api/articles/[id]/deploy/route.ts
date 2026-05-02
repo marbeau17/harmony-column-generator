@@ -9,6 +9,7 @@ import { getFtpConfig, uploadToFtp } from '@/lib/deploy/ftp-uploader';
 import { logger } from '@/lib/logger';
 import { runDeployChecklist } from '@/lib/content/quality-checklist';
 import { runTemplateCheck } from '@/lib/content/html-template-validator';
+import { isDeployable } from '@/lib/publish-control/visibility-predicate';
 import type { Article } from '@/types/article';
 
 export const maxDuration = 120;
@@ -38,11 +39,22 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const article = articleData as unknown as Article;
     const slug = article.slug ?? article.id;
 
-    // 由起子さん確認ゲート
-    if (!article.reviewed_at) {
-      logger.warn('api', 'deploy.reviewGate', { articleId, slug, reviewed_at: article.reviewed_at });
+    // P5-43 Step 2: 由起子さん確認ゲート + visibility_state ベース判定 (§6.1)
+    // visibility_state ∈ {idle, failed, live_hub_stale, unpublished} のみ deploy 可能
+    // {draft, pending_review, deploying, live} は deploy 不可
+    if (!isDeployable(article)) {
+      const isPendingReview = article.visibility_state === 'pending_review';
+      logger.warn('api', 'deploy.notDeployable', {
+        articleId,
+        slug,
+        visibility_state: article.visibility_state,
+        reviewed_at: article.reviewed_at,
+      });
       return NextResponse.json({
-        error: `由起子さんの確認が完了していません（${slug}）。記事詳細ページで「由起子さん確認」を実行してからデプロイしてください。`,
+        error: isPendingReview
+          ? `由起子さんの確認が完了していません（${slug}）。記事詳細ページで「由起子さん確認」を実行してからデプロイしてください。`
+          : `この記事はデプロイできない状態です（visibility_state=${article.visibility_state ?? 'null'}）`,
+        code: isPendingReview ? 'PENDING_REVIEW' : 'NOT_DEPLOYABLE',
       }, { status: 422 });
     }
 

@@ -6,6 +6,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { applyPubliclyVisibleFilter } from '@/lib/publish-control/state-readers-sql';
 import { generateFullSchema } from '@/lib/seo/structured-data';
 import { getSeoSettings } from '@/lib/seo/seo-settings';
 import { generateOgpMeta } from '@/lib/seo/meta-generator';
@@ -24,13 +25,14 @@ const SITE_URL = 'https://harmony-mc.com';
 async function getArticleBySlug(slug: string): Promise<Article | null> {
   const supabase = await createServiceRoleClient();
 
-  const { data, error } = await supabase
+  // P5-43 Step 2: reviewed_at フィルタを visibility_state ベースに置換。
+  // 公開対象 (live / live_hub_stale) でない場合は null を返し、呼び出し元で 404 表示する。
+  const baseQuery = supabase
     .from('articles')
     .select('*')
     .eq('slug', slug)
-    .eq('status', 'published')
-    .not('reviewed_at', 'is', null)  // 由起子さん確認済みのみ表示
-    .maybeSingle();
+    .eq('status', 'published');
+  const { data, error } = await applyPubliclyVisibleFilter(baseQuery).maybeSingle();
 
   if (error || !data) return null;
   return data as Article;

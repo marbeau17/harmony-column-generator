@@ -6,6 +6,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { applyPubliclyVisibleFilter } from '@/lib/publish-control/state-readers-sql';
 import type { Article, ThemeCategory } from '@/types/article';
 import StickyCtaBar from '@/components/common/StickyCtaBar';
 
@@ -70,15 +71,15 @@ async function getPublishedArticles(
     const from = (page - 1) * PER_PAGE;
     const to = from + PER_PAGE - 1;
 
-    let query = supabase
+    // P5-43 Step 2: reviewed_at IS NOT NULL から visibility_state ベース (live / live_hub_stale) へ置換
+    const baseQuery = supabase
       .from('articles')
       .select(
         'id, title, slug, keyword, theme, meta_description, image_files, published_at',
         { count: 'exact' },
       )
-      .eq('status', 'published')
-      .not('reviewed_at', 'is', null)  // 由起子さん確認済みのみ表示
-      .order('published_at', { ascending: false });
+      .eq('status', 'published');
+    let query = applyPubliclyVisibleFilter(baseQuery).order('published_at', { ascending: false });
 
     if (theme !== 'all') {
       query = query.eq('theme', theme);

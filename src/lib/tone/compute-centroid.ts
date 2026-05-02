@@ -4,7 +4,10 @@
 //
 // spec §7.2 文体 centroid 計算
 // ----------------------------------------------------------------------------
-// - reviewed_at IS NOT NULL の articles を集める（=由起子さんがレビュー済の正例）
+// - visibility_state IN ('live','live_hub_stale') の articles を集める
+//   （= 公開対象 = 事実上の由起子さん承認済み正例）
+//   ※ P5-43 Step 2 / 設計 §6.1: 旧 reviewed_at IS NOT NULL から移行。
+//     reviewed_at は state 判断に使わず audit 列として残置（select には残すが where では使わない）。
 // - 各記事の本文を text-embedding-004 で 768 次元 embedding に変換
 // - 全記事の平均ベクトルを取り、L2 正規化して centroid とする
 // - 文字 4-gram の出現頻度ハッシュも併せて生成（後段の文体スコアで併用）
@@ -17,6 +20,7 @@
 
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { generateEmbedding } from '@/lib/ai/gemini-client';
+import { applyPubliclyVisibleFilter } from '@/lib/publish-control/state-readers-sql';
 
 /** centroid 計算結果 */
 export interface YukikoCentroidResult {
@@ -106,18 +110,27 @@ function averageAndNormalize(vectors: number[][]): number[] {
 /**
  * 由起子さん文体 centroid を計算する。
  *
- * 1. articles テーブルから reviewed_at IS NOT NULL の記事を全件取得
+ * 1. articles テーブルから「公開対象 (visibility_state IN ('live','live_hub_stale'))」の記事を全件取得
  * 2. 各記事の本文（stage3_final_html を優先、無ければ stage2_body_html）を抽出
  * 3. HTML 除去後のテキストを embedding（task_type=CLUSTERING）
  * 4. 平均ベクトルを L2 正規化して返す。同時に 4-gram hash も合成して返す。
+ *
+ * P5-43 Step 2: 抽出条件を reviewed_at IS NOT NULL から visibility_state ベースへ移行。
+ * 設計 §6.1（centroid 抽出の意味変化リスク）に従い、reviewed_at は state 判断に使わず
+ * audit 列として残置（select には残すが where では使わない）。
+ *
+ * 将来検証フック: 設計 §6.1 の dryrun (旧/新 cosine 差分 < 0.01) は
+ * 本コミットでは未実施。Step 3 リリース前にバッチ比較スクリプトで担保する想定。
  */
 export async function computeYukikoCentroid(): Promise<YukikoCentroidResult> {
   const supabase = await createServiceRoleClient();
 
-  const { data, error } = await supabase
+  // P5-43 Step 2 / 設計 §6.1: 公開対象 (live / live_hub_stale) の記事のみを正例として採用。
+  // 旧条件 .not('reviewed_at','is',null) との抽出セット差は将来 dryrun で cosine 差分 < 0.01 を検証する。
+  const baseQuery = supabase
     .from('articles')
-    .select('id, stage3_final_html, stage2_body_html, reviewed_at')
-    .not('reviewed_at', 'is', null);
+    .select('id, stage3_final_html, stage2_body_html, reviewed_at, visibility_state');
+  const { data, error } = await applyPubliclyVisibleFilter(baseQuery);
 
   if (error) {
     throw new Error(`computeYukikoCentroid: list articles failed: ${error.message}`);
@@ -128,11 +141,12 @@ export async function computeYukikoCentroid(): Promise<YukikoCentroidResult> {
     stage3_final_html: string | null;
     stage2_body_html: string | null;
     reviewed_at: string | null;
+    visibility_state: string | null;
   }>;
 
   if (rows.length === 0) {
     throw new Error(
-      'computeYukikoCentroid: no reviewed articles found (reviewed_at IS NOT NULL = 0)',
+      "computeYukikoCentroid: no publicly visible articles found (visibility_state IN ('live','live_hub_stale') = 0)",
     );
   }
 

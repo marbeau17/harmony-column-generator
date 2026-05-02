@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { THEME_CATEGORIES } from '@/types/article';
+import { applyPubliclyVisibleFilter } from '@/lib/publish-control/state-readers-sql';
 
 const SITE_URL = 'https://harmony-mc.com';
 
@@ -29,12 +30,13 @@ export default async function sitemap(): Promise<SitemapEntry[]> {
 
   try {
     const supabase = await createServiceRoleClient();
-    const { data, error } = await supabase
+    // P5-43 Step 2: reviewed_at から visibility_state ベース判定に統一 (§4.2)
+    const baseQuery = supabase
       .from('articles')
       .select('slug, published_at, updated_at')
       .eq('status', 'published')
-      .not('slug', 'is', null)
-      .not('reviewed_at', 'is', null)  // 由起子さん確認済みのみ
+      .not('slug', 'is', null);
+    const { data, error } = await applyPubliclyVisibleFilter(baseQuery)
       .order('published_at', { ascending: false });
 
     if (error || !data) return [...staticPages, ...categoryPages];

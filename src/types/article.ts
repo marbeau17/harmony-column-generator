@@ -137,6 +137,10 @@ export interface Article {
   published_at: string | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  // P5-43 publish-control v2: visibility_state ベースの公開制御
+  visibility_state?: string | null;
+  is_hub_visible?: boolean | null;
+  visibility_updated_at?: string | null;
   created_at: string;
   updated_at: string;
 }
