@@ -10,6 +10,8 @@ import { useParams, useRouter } from 'next/navigation';
 import type { Article, ArticleStatus } from '@/types/article';
 import StatusBadge from '@/components/common/StatusBadge';
 import GenerationModeBadge from '@/components/articles/GenerationModeBadge';
+// P5-43 Step 2: 公開判定を visibility_state ベースに統一
+import { isPubliclyVisible } from '@/lib/publish-control/visibility-predicate';
 
 // ─── ステータスラベル ──────────────────────────────────────────────────────────
 
@@ -701,9 +703,10 @@ export default function ArticleDetailPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">由起子さん確認</h2>
-              {(article as Record<string, unknown>).reviewed_at ? (
+              {/* P5-43 Step 2: 「公開中」表示判定を visibility_state ベース (isPubliclyVisible) に変更。日時表示は audit 目的で reviewed_at をそのまま表示 */}
+              {isPubliclyVisible(article as { visibility_state?: string | null }) ? (
                 <p className="text-xs text-emerald-600 mt-1">
-                  ✅ 確認済み（{new Date(String((article as Record<string, unknown>).reviewed_at)).toLocaleDateString('ja-JP')}）
+                  ✅ 確認済み（{(article as Record<string, unknown>).reviewed_at ? new Date(String((article as Record<string, unknown>).reviewed_at)).toLocaleDateString('ja-JP') : '—'}）
                   {(article as Record<string, unknown>).reviewed_by && ` by ${(article as Record<string, unknown>).reviewed_by}`}
                 </p>
               ) : (

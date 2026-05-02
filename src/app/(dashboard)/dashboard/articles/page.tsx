@@ -11,6 +11,8 @@ import GenerationModeBadge from '@/components/articles/GenerationModeBadge';
 import { rebuildHub, formatHubRebuildResult } from '@/lib/deploy/hub-rebuild-client';
 import { fetchPublishedArticles } from '@/lib/articles/fetch-published-articles';
 import { filterArticlesByMode } from '@/lib/utils/article-mode-filter';
+// P5-43 Step 2: 公開可視判定の単一ソース（reviewed_at ベースから visibility_state ベースへ統一）
+import { isPubliclyVisible, isDeployable } from '@/lib/publish-control/visibility-predicate';
 
 // publish-control-v2 flag (inlined at build time). Default OFF — existing UI unchanged.
 const PUBLISH_CONTROL_V2 = process.env.NEXT_PUBLIC_PUBLISH_CONTROL_V2 === 'on';
@@ -25,6 +27,8 @@ interface ArticleItem {
   status: string;
   updated_at: string;
   reviewed_at: string | null;
+  // P5-43 Step 2: visibility_state を ArticleItem に追加（公開可視判定の正本）
+  visibility_state?: string | null;
   hallucination_score?: number | null;
   yukiko_tone_score?: number | null;
   generation_mode?: string | null;
@@ -138,8 +142,9 @@ export default function ArticlesPage() {
         return;
       }
       const freshArticles = fetchResult.articles as unknown as ArticleItem[];
-      const reviewed = freshArticles.filter((a) => a.reviewed_at);
-      const skipped = freshArticles.filter((a) => !a.reviewed_at);
+      // P5-43 Step 2: 一括デプロイ対象は visibility_state が deploy 可能な記事のみ
+      const reviewed = freshArticles.filter((a) => isDeployable(a));
+      const skipped = freshArticles.filter((a) => !isDeployable(a));
 
       let success = 0;
       let failed = 0;
@@ -250,12 +255,14 @@ export default function ArticlesPage() {
   // ── Sort ────────────────────────────────────────────────────────────────
 
   const sortedArticles = useMemo(() => {
-    // Apply review filter
+    // P5-43 Step 2: 一覧フィルタを reviewed_at ベース → visibility_state ベースへ移行
+    //   reviewFilter='reviewed'   → 公開中（live / live_hub_stale）
+    //   reviewFilter='unreviewed' → 非公開（上記以外: draft/pending_review/idle/deploying/unpublished/failed）
     let filtered = articles;
     if (reviewFilter === 'reviewed') {
-      filtered = articles.filter((a) => a.reviewed_at != null);
+      filtered = articles.filter((a) => isPubliclyVisible(a));
     } else if (reviewFilter === 'unreviewed') {
-      filtered = articles.filter((a) => a.reviewed_at == null);
+      filtered = articles.filter((a) => !isPubliclyVisible(a));
     }
 
     // Apply mode filter (null/未設定 は legacy source 扱い)
@@ -572,11 +579,12 @@ export default function ArticlesPage() {
           {/* Review filter separator */}
           <span className="hidden sm:inline-flex items-center text-brand-300">|</span>
 
-          {/* Review filter buttons */}
+          {/* P5-43 Step 2: ラベルを reviewed_at 基準（確認済み/未確認）から
+              visibility_state 基準（公開中/非公開）へ変更 */}
           {([
-            { value: 'all' as const, label: '確認: 全て' },
-            { value: 'reviewed' as const, label: '確認済み' },
-            { value: 'unreviewed' as const, label: '未確認' },
+            { value: 'all' as const, label: '公開: 全て' },
+            { value: 'reviewed' as const, label: '公開中' },
+            { value: 'unreviewed' as const, label: '非公開' },
           ]).map((rf) => (
             <button
               key={rf.value}
@@ -760,8 +768,9 @@ export default function ArticlesPage() {
                   <td className="px-4 py-3">
                     <div className="font-medium text-brand-800 truncate max-w-md flex items-center gap-1.5">
                       {article.title || '(タイトル未設定)'}
-                      {Boolean(article.reviewed_at) && (
-                        <span title="由起子さん確認済み" className="text-emerald-500 flex-shrink-0">✅</span>
+                      {/* P5-43 Step 2: 公開中バッジを reviewed_at から visibility_state ベースへ */}
+                      {isPubliclyVisible(article) && (
+                        <span title="公開中" className="text-emerald-500 flex-shrink-0">✅</span>
                       )}
                     </div>
                     {article.keyword && (
@@ -790,27 +799,68 @@ export default function ArticlesPage() {
                       <PublishButton
                         articleId={article.id}
                         articleTitle={article.title ?? '(無題)'}
-                        initialState={(article.reviewed_at ? 'live' : 'hidden') as PublishButtonState}
+                        // P5-43 Step 2: 初期 state を visibility_state から導出（reviewed_at 経路廃止）
+                        initialState={(() => {
+                          switch (article.visibility_state) {
+                            case 'live':
+                              return 'live';
+                            case 'live_hub_stale':
+                              return 'hub_stale';
+                            case 'deploying':
+                              return 'deploying';
+                            case 'failed':
+                              return 'failed';
+                            default:
+                              return 'hidden';
+                          }
+                        })() as PublishButtonState}
                         onChanged={(next) => {
+                          // P5-43 Step 2: ローカル state を visibility_state ベースで更新
+                          //   live      → visibility_state='live'
+                          //   hub_stale → visibility_state='live_hub_stale'
+                          //   deploying → visibility_state='deploying'
+                          //   failed    → visibility_state='failed'
+                          //   hidden    → visibility_state='unpublished'
+                          const nextVisibility =
+                            next === 'live'
+                              ? 'live'
+                              : next === 'hub_stale'
+                                ? 'live_hub_stale'
+                                : next === 'deploying'
+                                  ? 'deploying'
+                                  : next === 'failed'
+                                    ? 'failed'
+                                    : 'unpublished';
                           const reviewedAt =
                             next === 'live' || next === 'hub_stale' ? new Date().toISOString() : null;
                           setArticles((prev) =>
-                            prev.map((a) => (a.id === article.id ? { ...a, reviewed_at: reviewedAt } : a)),
+                            prev.map((a) =>
+                              a.id === article.id
+                                ? { ...a, visibility_state: nextVisibility, reviewed_at: reviewedAt }
+                                : a,
+                            ),
                           );
                         }}
                       />
                     ) : (
                       <input
                         type="checkbox"
-                        checked={Boolean(article.reviewed_at)}
-                        title={article.reviewed_at ? `確認済み (${new Date(article.reviewed_at).toLocaleDateString('ja-JP')})` : '未確認 — クリックで確認'}
+                        // P5-43 Step 2: 公開中表示は visibility_state ベース
+                        checked={isPubliclyVisible(article)}
+                        // P5-43 Step 2: title 属性も visibility_state ベース表示（reviewed_at は補助情報として残す）
+                        title={
+                          isPubliclyVisible(article)
+                            ? `公開中${article.reviewed_at ? ` (${new Date(article.reviewed_at).toLocaleDateString('ja-JP')})` : ''}`
+                            : '非公開 — クリックで公開'
+                        }
                         className="h-4 w-4 cursor-pointer accent-emerald-500"
                         onChange={async (e) => {
                           e.stopPropagation();
-                          const wasReviewed = Boolean(article.reviewed_at);
+                          // P5-43 Step 2: 判定は visibility_state、書込は Step 3 で writers 移行予定のため reviewed_at PUT のまま維持
+                          const wasReviewed = isPubliclyVisible(article);
                           const newVal = wasReviewed ? null : new Date().toISOString();
 
-                          if (wasReviewed && !confirm(`「${article.title}」の確認を取り消しますか？\nハブページから非表示になります。`)) return;
+                          if (wasReviewed && !confirm(`「${article.title}」を非公開にしますか？\nハブページから非表示になります。`)) return;
 
                           const putRes = await fetch(`/api/articles/${article.id}`, {
                             method: 'PUT',
