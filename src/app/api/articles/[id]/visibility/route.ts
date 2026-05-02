@@ -67,7 +67,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const { data: article, error: fetchErr } = await service
     .from('articles')
     // guard-approved: read-only select of publish-control columns
-    .select('id, status, stage3_final_html, stage2_body_html, slug, seo_filename, title, is_hub_visible, visibility_state, visibility_updated_at')
+    .select('id, status, stage3_final_html, stage2_body_html, slug, seo_filename, title, is_hub_visible, visibility_state, visibility_updated_at, published_at')
     .eq('id', articleId)
     .maybeSingle();
   if (fetchErr || !article) {
@@ -157,6 +157,45 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       visibility_state: body.visible ? 'live' : 'unpublished',
       visibility_updated_at: new Date().toISOString(),
     };
+
+    // P5-47: 公開試行時、status='editing' なら 'published' に自動遷移し、
+    //        slug が未設定なら title から auto-generate する。
+    //        これで一覧ページの PublishButton から end-to-end で公開できる
+    //        (従来は editor の handlePublish フローを通る必要があった)。
+    if (body.visible && article.status === 'editing') {
+      patch.status = 'published';
+      if (!article.published_at) {
+        patch.published_at = new Date().toISOString();
+      }
+      if (!article.slug && article.title) {
+        const { generateSlug } = await import('@/lib/seo/meta-generator');
+        let candidate = generateSlug(article.title);
+        // 衝突チェック
+        const { data: collisions } = await service
+          .from('articles')
+          .select('id, slug')
+          .eq('slug', candidate)
+          .neq('id', articleId);
+        if (collisions && collisions.length > 0) {
+          let i = 2;
+          while (i < 50) {
+            const c = `${candidate}-${i}`;
+            const { data: c2 } = await service
+              .from('articles')
+              .select('id')
+              .eq('slug', c)
+              .neq('id', articleId)
+              .maybeSingle();
+            if (!c2) {
+              candidate = c;
+              break;
+            }
+            i++;
+          }
+        }
+        patch.slug = candidate;
+      }
+    }
 
     const { error: updErr } = await service
       .from('articles')

@@ -69,10 +69,15 @@ describe('guards.checkVisibilityGuard', () => {
     expect(checkVisibilityGuard(base).ok).toBe(true);
   });
 
-  it('blocks publishing when status != published', () => {
+  it('blocks publishing when status not in {editing, published} (P5-47)', () => {
     const r = checkVisibilityGuard({ ...base, status: 'draft' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('NOT_PUBLISHED');
+    if (!r.ok) expect(r.code).toBe('NOT_PUBLISHABLE');
+  });
+
+  it('allows publishing when status=editing (P5-47: visibility/route が published に自動遷移)', () => {
+    const r = checkVisibilityGuard({ ...base, status: 'editing' });
+    expect(r.ok).toBe(true);
   });
 
   it('blocks publishing when no stage3 html', () => {
