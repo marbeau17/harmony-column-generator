@@ -84,7 +84,15 @@ function printSamples(label: string, rows: Mismatch[]) {
 
   console.log(`総記事数: ${all.length}`);
 
-  const categoryA: Mismatch[] = []; // reviewed=true, visibility 非public
+  // 不整合 A をさらに分類:
+  //   A1 (audit drift): reviewed_at 残存だが visibility_state が unpublished/idle で
+  //                     historical audit として正しく非公開扱い → Step 2 影響なし
+  //   A2 (blocker): visibility_state が new ノード (draft, pending_review) など
+  //                 上記以外。Step 2 で readers が変わると挙動変化する可能性あり
+  const ACCEPTABLE_NON_PUBLIC = new Set(['unpublished', 'idle', 'failed']);
+
+  const categoryA1_drift: Mismatch[] = []; // historical audit, OK to ignore
+  const categoryA2_blocker: Mismatch[] = []; // genuine blocker
   const categoryB: Mismatch[] = []; // reviewed=false, visibility=public
 
   // visibility_state ごとの内訳も集計 (デバッグ補助)
@@ -99,7 +107,12 @@ function printSamples(label: string, rows: Mismatch[]) {
     visibilityBreakdown.set(key, (visibilityBreakdown.get(key) ?? 0) + 1);
 
     if (reviewed && !isPublicVisibility) {
-      categoryA.push(r);
+      const vs = r.visibility_state ?? '';
+      if (ACCEPTABLE_NON_PUBLIC.has(vs)) {
+        categoryA1_drift.push(r);
+      } else {
+        categoryA2_blocker.push(r);
+      }
     } else if (!reviewed && isPublicVisibility) {
       categoryB.push(r);
     }
@@ -110,21 +123,21 @@ function printSamples(label: string, rows: Mismatch[]) {
     console.log(`  ${k}: ${v}`);
   }
 
-  const totalMismatch = categoryA.length + categoryB.length;
-
   console.log('\n=== Parity 検証結果 ===');
-  console.log(`差異総数: ${totalMismatch}`);
-  console.log(`  A. reviewed=true & visibility 非public: ${categoryA.length}`);
-  console.log(`  B. reviewed=false & visibility=public: ${categoryB.length}`);
+  console.log(`A1. reviewed=true & visibility ∈ {idle,unpublished,failed}: ${categoryA1_drift.length} 件 (audit drift / 許容)`);
+  console.log(`A2. reviewed=true & visibility ∈ {draft,pending_review,deploying,他}: ${categoryA2_blocker.length} 件 (Step 2 blocker)`);
+  console.log(`B.  reviewed=false & visibility=public: ${categoryB.length} 件 (Step 2 blocker)`);
 
-  printSamples('A. reviewed_at セット済 / visibility_state 非public (Step 2 で消える可能性)', categoryA);
-  printSamples('B. reviewed_at null / visibility_state public (理論上ありえない、要調査)', categoryB);
+  printSamples('A1. audit drift (Step 2 影響なし)', categoryA1_drift);
+  printSamples('A2. Step 2 blocker (要対処)', categoryA2_blocker);
+  printSamples('B.  Step 2 blocker — 未審査なのに public (要対処)', categoryB);
 
-  if (totalMismatch === 0) {
-    console.log('\n[OK] parity 一致。Step 2 を安全に進められます。');
+  const blockers = categoryA2_blocker.length + categoryB.length;
+  if (blockers === 0) {
+    console.log(`\n[OK] Step 2 移行可能。audit drift ${categoryA1_drift.length} 件は historical 履歴で許容。`);
     process.exit(0);
   } else {
-    console.log('\n[NG] parity 不一致あり。Step 2 移行前に解消が必要です。');
+    console.log(`\n[NG] Step 2 ブロッカー ${blockers} 件あり。移行前に解消が必要です。`);
     process.exit(1);
   }
 })();
