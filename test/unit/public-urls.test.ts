@@ -40,7 +40,7 @@ describe('public-urls helper', () => {
   describe('getHubPath', () => {
     it('env 未設定なら default パスを返す', () => {
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
-      expect(getHubPath()).toBe('/column');
+      expect(getHubPath()).toBe('/spiritual/column');
     });
 
     it('先頭スラッシュ無しでも自動付与される', () => {
@@ -59,14 +59,14 @@ describe('public-urls helper', () => {
     it('default 値で page 1 のハブ URL を返す', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
-      expect(getHubUrl()).toBe('https://harmony-mc.com/column/');
+      expect(getHubUrl()).toBe('https://harmony-mc.com/spiritual/column/');
     });
 
     it('page 2 以降は /page/{N}/ が付く', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
-      expect(getHubUrl(2)).toBe('https://harmony-mc.com/column/page/2/');
-      expect(getHubUrl(7)).toBe('https://harmony-mc.com/column/page/7/');
+      expect(getHubUrl(2)).toBe('https://harmony-mc.com/spiritual/column/page/2/');
+      expect(getHubUrl(7)).toBe('https://harmony-mc.com/spiritual/column/page/7/');
     });
 
     it('カスタム env でも組み立てが正しい', () => {
@@ -83,7 +83,7 @@ describe('public-urls helper', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
       expect(getArticleUrl('hello-world')).toBe(
-        'https://harmony-mc.com/column/hello-world/'
+        'https://harmony-mc.com/spiritual/column/hello-world/'
       );
     });
 
@@ -100,7 +100,7 @@ describe('public-urls helper', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
       expect(getOgImageUrl('hello-world')).toBe(
-        'https://harmony-mc.com/column/hello-world/images/hero.jpg'
+        'https://harmony-mc.com/spiritual/column/hello-world/images/hero.jpg'
       );
     });
 
@@ -108,10 +108,10 @@ describe('public-urls helper', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
       expect(getOgImageUrl('hello-world', 'body')).toBe(
-        'https://harmony-mc.com/column/hello-world/images/body.jpg'
+        'https://harmony-mc.com/spiritual/column/hello-world/images/body.jpg'
       );
       expect(getOgImageUrl('hello-world', 'summary')).toBe(
-        'https://harmony-mc.com/column/hello-world/images/summary.jpg'
+        'https://harmony-mc.com/spiritual/column/hello-world/images/summary.jpg'
       );
     });
   });
@@ -120,7 +120,7 @@ describe('public-urls helper', () => {
   describe('getArticleRelativePath', () => {
     it('default ハブパスを使った相対パスを返す', () => {
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
-      expect(getArticleRelativePath('hello-world')).toBe('/column/hello-world/');
+      expect(getArticleRelativePath('hello-world')).toBe('/spiritual/column/hello-world/');
     });
 
     it('カスタムハブパスでも相対パスが組み立たる', () => {

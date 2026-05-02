@@ -100,7 +100,7 @@ describe('URL pattern pinning (P5-44 regression guard)', () => {
     it('case 1: canonical link は /column/{slug}/ 形式 (trailing slash 必須)', () => {
       const html = generateArticleHtml(makeArticle({ slug: 'test-slug' }));
       expect(html).toContain(
-        '<link rel="canonical" href="https://harmony-mc.com/column/test-slug/"',
+        '<link rel="canonical" href="https://harmony-mc.com/spiritual/column/test-slug/"',
       );
     });
 
@@ -115,7 +115,7 @@ describe('URL pattern pinning (P5-44 regression guard)', () => {
       const match = html.match(/<link rel="canonical" href="([^"]+)"/);
       expect(match).not.toBeNull();
       const canonicalUrl = match?.[1] ?? '';
-      expect(canonicalUrl).toBe('https://harmony-mc.com/column/test-slug/');
+      expect(canonicalUrl).toBe('https://harmony-mc.com/spiritual/column/test-slug/');
       // 旧 /columns/ 複数形バグの再発防止
       expect(canonicalUrl).not.toContain('/columns/');
       // 旧 .html 拡張子形式の再発防止
@@ -125,16 +125,16 @@ describe('URL pattern pinning (P5-44 regression guard)', () => {
     it('case 4: og:url は canonical と同一 (新形式)', () => {
       const html = generateArticleHtml(makeArticle({ slug: 'test-slug' }));
       expect(html).toContain(
-        '<meta property="og:url" content="https://harmony-mc.com/column/test-slug/"',
+        '<meta property="og:url" content="https://harmony-mc.com/spiritual/column/test-slug/"',
       );
     });
 
     it('case 5: og:image は新形式の /images/{position}.jpg を指す', () => {
       const html = generateArticleHtml(makeArticle({ slug: 'test-slug' }), {
-        ogImage: 'https://harmony-mc.com/column/test-slug/images/hero.jpg',
+        ogImage: 'https://harmony-mc.com/spiritual/column/test-slug/images/hero.jpg',
       });
       expect(html).toContain(
-        '<meta property="og:image" content="https://harmony-mc.com/column/test-slug/images/hero.jpg"',
+        '<meta property="og:image" content="https://harmony-mc.com/spiritual/column/test-slug/images/hero.jpg"',
       );
       // P5-45: /column/ 配下統一後は /columns/ 複数形バグ + .html 拡張子の再発防止のみ
       expect(html).not.toContain('/columns/test-slug/');
@@ -147,7 +147,7 @@ describe('URL pattern pinning (P5-44 regression guard)', () => {
     it('case 6: page 1 の canonical は /column/ (単数形 + trailing slash)', () => {
       const html = generateHubPage(makeHubData({ currentPage: 1 }));
       expect(html).toContain(
-        '<link rel="canonical" href="https://harmony-mc.com/column/"',
+        '<link rel="canonical" href="https://harmony-mc.com/spiritual/column/"',
       );
     });
 
@@ -165,7 +165,7 @@ describe('URL pattern pinning (P5-44 regression guard)', () => {
     it('case 8: page 2 以降の canonical は /column/page/{N}/ 形式', () => {
       const html = generateHubPage(makeHubData({ currentPage: 2 }));
       expect(html).toContain(
-        '<link rel="canonical" href="https://harmony-mc.com/column/page/2/"',
+        '<link rel="canonical" href="https://harmony-mc.com/spiritual/column/page/2/"',
       );
       // 旧 /columns/ 形式に戻っていない
       expect(html).not.toContain('/columns/page/');

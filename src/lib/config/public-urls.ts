@@ -3,7 +3,7 @@
  *
  * 環境変数:
  *   NEXT_PUBLIC_SITE_URL  : サイトホスト (default: https://harmony-mc.com)
- *   NEXT_PUBLIC_HUB_PATH  : ハブベースパス (default: /column)
+ *   NEXT_PUBLIC_HUB_PATH  : ハブベースパス (default: /spiritual/column)
  *                           実 FTP 配置と一致させる必要あり (FTP_REMOTE_PATH と同期)
  *
  * URL pattern:
@@ -13,10 +13,7 @@
  *   og:image       : {SITE_URL}{HUB_PATH}/{slug}/images/{position}.jpg
  *   sitemap        : 同上 (記事は canonical と同じ)
  *
- * P5-45 (2026-05-03): default を /spiritual/column → /column に変更。
- *   FTP root の /column/ ディレクトリを公開先として採用。WordPress (root) の
- *   .htaccess catch-all は実ファイル/ディレクトリ存在時はバイパスされるので、
- *   /column/{slug}/index.html を物理配置すれば直接 200 で配信される。
+ * 公開先: /spiritual/column (FTP root の既存配置、58 記事が稼働済)
  */
 
 export function getSiteUrl(): string {
@@ -24,7 +21,7 @@ export function getSiteUrl(): string {
 }
 
 export function getHubPath(): string {
-  const raw = process.env.NEXT_PUBLIC_HUB_PATH || '/column';
+  const raw = process.env.NEXT_PUBLIC_HUB_PATH || '/spiritual/column';
   // 先頭 / 必須、末尾 / 不要 にノーマライズ
   const normalized = raw.startsWith('/') ? raw : `/${raw}`;
   return normalized.replace(/\/+$/, '');

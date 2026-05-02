@@ -80,7 +80,7 @@ describe('generateArticleHtml() related thumbnail URL pinning (P5-44)', () => {
       }),
     );
     expect(html).toContain(
-      '<img src="/column/related-slug-1/images/hero.jpg" alt="関連記事1"',
+      '<img src="/spiritual/column/related-slug-1/images/hero.jpg" alt="関連記事1"',
     );
   });
 
@@ -111,9 +111,9 @@ describe('generateArticleHtml() related thumbnail URL pinning (P5-44)', () => {
     );
 
     // すべての関連記事 thumb が hubPath 込みの新形式で並んでいる
-    expect(html).toContain('src="/column/related-slug-1/images/hero.jpg"');
-    expect(html).toContain('src="/column/related-slug-2/images/hero.jpg"');
-    expect(html).toContain('src="/column/related-slug-3/images/hero.jpg"');
+    expect(html).toContain('src="/spiritual/column/related-slug-1/images/hero.jpg"');
+    expect(html).toContain('src="/spiritual/column/related-slug-2/images/hero.jpg"');
+    expect(html).toContain('src="/spiritual/column/related-slug-3/images/hero.jpg"');
 
     // 出現順が related_articles 配列順と一致 (related-1 → related-2 → related-3)
     const idx1 = html.indexOf('/column/related-slug-1/images/hero.jpg');
@@ -139,7 +139,7 @@ describe('generateArticleHtml() related thumbnail URL pinning (P5-44)', () => {
 
     // 新形式の thumb URL が出力されている
     expect(html).toContain(
-      '<img src="/column/legacy-slug/images/hero.jpg" alt="旧形式リンクの関連記事"',
+      '<img src="/spiritual/column/legacy-slug/images/hero.jpg" alt="旧形式リンクの関連記事"',
     );
     // P5-45: 複数形 / .html 拡張子バグの再発防止
     expect(html).not.toContain('/columns/legacy-slug/');

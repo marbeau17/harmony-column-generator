@@ -100,7 +100,7 @@ describe('hub-generator URL pattern pinning (P5-44 後 regression guard)', () =>
   it('case 3: page=1 では canonical が /column/ (trailing slash 必須)', () => {
     const html = generateHubPage(makeHubData({ currentPage: 1 }));
     expect(html).toContain(
-      '<link rel="canonical" href="https://harmony-mc.com/column/"',
+      '<link rel="canonical" href="https://harmony-mc.com/spiritual/column/"',
     );
   });
 
@@ -108,7 +108,7 @@ describe('hub-generator URL pattern pinning (P5-44 後 regression guard)', () =>
   it('case 4: page=2 では canonical が /column/page/2/ 形式', () => {
     const html = generateHubPage(makeHubData({ currentPage: 2 }));
     expect(html).toContain(
-      '<link rel="canonical" href="https://harmony-mc.com/column/page/2/"',
+      '<link rel="canonical" href="https://harmony-mc.com/spiritual/column/page/2/"',
     );
     // 旧 /columns/page/ 形式に戻っていない
     expect(html).not.toContain('/columns/page/');
@@ -143,7 +143,7 @@ describe('hub-generator URL pattern pinning (P5-44 後 regression guard)', () =>
   it('case 6: ナビゲーション「コラム一覧」リンクが /column/ を指す', () => {
     const html = generateHubPage(makeHubData({ currentPage: 1 }));
     // sticky-nav 内の「コラム一覧」リンク
-    expect(html).toContain('href="https://harmony-mc.com/column/"');
+    expect(html).toContain('href="https://harmony-mc.com/spiritual/column/"');
     // 旧 /columns/ 複数形に戻っていない
     expect(html).not.toContain('href="https://harmony-mc.com/columns/"');
   });
@@ -152,7 +152,7 @@ describe('hub-generator URL pattern pinning (P5-44 後 regression guard)', () =>
   it('case 7: og:url が canonical と同一の新形式を指す (page=1)', () => {
     const html = generateHubPage(makeHubData({ currentPage: 1 }));
     expect(html).toContain(
-      '<meta property="og:url" content="https://harmony-mc.com/column/"',
+      '<meta property="og:url" content="https://harmony-mc.com/spiritual/column/"',
     );
     // 旧形式が混入していない
     const ogMatch = html.match(/<meta property="og:url" content="([^"]+)"/);

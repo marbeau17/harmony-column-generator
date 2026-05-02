@@ -3,7 +3,7 @@
  *
  * 目的:
  *   - `src/app/sitemap.ts` が出力する記事 URL が新規約
- *     `{SITE_URL}{HUB_PATH}/{slug}` (= 既定で `https://harmony-mc.com/column/{slug}`)
+ *     `{SITE_URL}{HUB_PATH}/{slug}` (= 既定で `https://harmony-mc.com/spiritual/column/{slug}`)
  *     になっていることを保証する。
  *   - 旧形式 `{SITE_URL}/column/{slug}` (`/spiritual` 抜け) が再発した場合に
  *     必ず失敗するよう、ホスト直後 `/column/` の混入を完全排除でアサート。
@@ -96,7 +96,7 @@ describe('sitemap.ts 記事 URL パターン pin (P5-44)', () => {
     expect(articleEntries.length).toBe(mocks.fixture.length);
 
     for (const f of mocks.fixture) {
-      const expected = `https://harmony-mc.com/column/${f.slug}/`;
+      const expected = `https://harmony-mc.com/spiritual/column/${f.slug}/`;
       expect(entries.map((e) => e.url)).toContain(expected);
     }
   });
@@ -106,7 +106,7 @@ describe('sitemap.ts 記事 URL パターン pin (P5-44)', () => {
     const entries = await sitemap();
 
     for (const f of mocks.fixture) {
-      const badHtml = `https://harmony-mc.com/column/${f.slug}.html`;
+      const badHtml = `https://harmony-mc.com/spiritual/column/${f.slug}.html`;
       const badPlural = `https://harmony-mc.com/columns/${f.slug}/`;
       for (const entry of entries) {
         expect(entry.url).not.toBe(badHtml);
@@ -125,7 +125,7 @@ describe('sitemap.ts 記事 URL パターン pin (P5-44)', () => {
     const articleEntry = entries.find((e) => e.url.includes(slug));
     expect(articleEntry).toBeDefined();
     expect(articleEntry!.url).toBe(
-      `https://harmony-mc.com/column/${slug}/`,
+      `https://harmony-mc.com/spiritual/column/${slug}/`,
     );
     // .html 拡張子 / /columns/ 複数形が無いこと
     expect(articleEntry!.url).not.toContain('.html');
