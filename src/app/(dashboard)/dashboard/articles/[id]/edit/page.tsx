@@ -15,6 +15,7 @@ import PreviewPane from '@/components/editor/PreviewPane';
 import type { Article } from '@/types/article';
 import QualityFixMenu from '@/components/articles/QualityFixMenu';
 import type { CheckItem } from '@/lib/content/quality-checklist';
+import toast from 'react-hot-toast';
 
 // ─── Theme labels ───────────────────────────────────────────────────────────
 
@@ -317,59 +318,96 @@ export default function ArticleEditPage() {
   const handleApplyImages = useCallback(async () => {
     try {
       const res = await fetch(`/api/articles/${articleId}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        toast.error('記事の取得に失敗しました');
+        return;
+      }
       const json = await res.json();
       const a = json.data as Article;
       setArticle(a);
 
-      // Replace placeholders in current body HTML
       let html = bodyHtml;
-      const imageFiles = a.image_files as { position: string; url: string; alt: string }[] | null;
+      const imageFiles = a.image_files as
+        | { position: string; url: string; alt: string }[]
+        | null;
 
-      console.log('[handleApplyImages] bodyHtml (first 500 chars):', html.slice(0, 500));
-      console.log('[handleApplyImages] image_files:', JSON.stringify(imageFiles, null, 2));
+      if (!imageFiles || !Array.isArray(imageFiles) || imageFiles.length === 0) {
+        toast.error('この記事には画像が登録されていません');
+        return;
+      }
 
-      if (imageFiles && Array.isArray(imageFiles)) {
-        let totalReplacements = 0;
-        for (const img of imageFiles) {
-          const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+      const imgTagFor = (img: { url: string; alt: string }) =>
+        `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
 
-          // Patterns ordered most-aggressive first (TipTap strips HTML comments)
-          const patterns = [
-            // 1. <p> wrapping IMAGE text (TipTap wraps bare text in <p> tags)
-            new RegExp(`<p>\\s*IMAGE:${img.position}[^<]*<\\/p>`, 'g'),
-            // 2. Bare IMAGE text with optional :filename suffix
-            new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)?`, 'g'),
-            // 3. Original HTML comment format: <!--IMAGE:body:filename-->
-            new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
-            // 4. Comment wrapped in div
-            new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
-          ];
-
-          for (const pattern of patterns) {
-            const before = html;
-            html = html.replace(pattern, imgTag);
-            if (before !== html) {
-              const matches = (before.match(pattern) || []).length;
-              console.log(`[handleApplyImages] Pattern ${pattern.source} matched ${matches} time(s) for position "${img.position}"`);
-              totalReplacements += matches;
-            }
+      // ── Phase 1: 位置名付きパターン (旧形式 IMAGE:hero / IMAGE:body) ─────
+      const matchedPositions = new Set<string>();
+      let phase1Replacements = 0;
+      for (const img of imageFiles) {
+        const tag = imgTagFor(img);
+        const patterns = [
+          new RegExp(`<p>\\s*IMAGE:${img.position}[^<]*<\\/p>`, 'g'),
+          new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)?`, 'g'),
+          new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
+          new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
+        ];
+        for (const p of patterns) {
+          const before = html;
+          html = html.replace(p, tag);
+          if (before !== html) {
+            matchedPositions.add(img.position);
+            phase1Replacements += (before.match(p) || []).length;
           }
         }
-        console.log(`[handleApplyImages] Total replacements made: ${totalReplacements}`);
-        if (totalReplacements === 0) {
-          console.warn('[handleApplyImages] No replacements made! Searching for IMAGE occurrences in HTML...');
-          const imageOccurrences = html.match(/IMAGE:[a-z_]+/gi);
-          console.warn('[handleApplyImages] Found IMAGE patterns in HTML:', imageOccurrences);
-          // Dump a larger chunk to help debug
-          console.warn('[handleApplyImages] Full HTML length:', html.length, '| first 2000 chars:', html.slice(0, 2000));
+      }
+
+      // ── Phase 2: 位置情報なし IMAGE プレースホルダの順序割当 fallback ────
+      // 例: <!--IMAGE: 縁側で温かいお茶を-->  / IMAGE: 説明文-->  / <p>IMAGE: ...</p>
+      // バグ (2026-05-02): 位置名なしの残骸が残っている記事で「画像を反映」が無反応だった
+      const orderedPositions = ['hero', 'body', 'summary'];
+      const unmatched = orderedPositions.filter((p) => !matchedPositions.has(p));
+      const imageByPos = new Map(imageFiles.map((f) => [f.position, f]));
+      let phase2Replacements = 0;
+
+      if (unmatched.length > 0) {
+        // 3 種類の loose パターンを document 順で消費
+        const fallbackPatterns: RegExp[] = [
+          /(?:<!--\s*)?IMAGE[：:]\s*[^<>\n]*?-->/g, // HTML コメント形式 (最優先)
+          /<p[^>]*>\s*IMAGE[：:]\s*[^<]*<\/p>/g, // <p> 包み (TipTap)
+          /(?<![A-Za-z_])IMAGE[：:]\s*[^\n<]{1,200}/g, // bare text 末尾
+        ];
+        let unmatchedIdx = 0;
+        for (const fp of fallbackPatterns) {
+          if (unmatchedIdx >= unmatched.length) break;
+          html = html.replace(fp, (match) => {
+            if (unmatchedIdx >= unmatched.length) return match;
+            const pos = unmatched[unmatchedIdx];
+            const img = imageByPos.get(pos);
+            unmatchedIdx++;
+            phase2Replacements++;
+            return img ? imgTagFor(img) : match;
+          });
         }
+      }
+
+      const total = phase1Replacements + phase2Replacements;
+      if (total === 0) {
+        const imageOccurrences = html.match(/IMAGE[：:][^\n<]{0,100}/gi);
+        console.warn('[handleApplyImages] no replacements; remaining IMAGE patterns:', imageOccurrences);
+        toast.error('画像プレースホルダが見つかりませんでした');
       } else {
-        console.warn('[handleApplyImages] No image_files found on article');
+        console.log('[handleApplyImages] replacements:', {
+          phase1: phase1Replacements,
+          phase2: phase2Replacements,
+          matchedPositions: Array.from(matchedPositions),
+        });
+        toast.success(
+          `画像を反映しました（位置名一致 ${phase1Replacements} 件 / 順序割当 ${phase2Replacements} 件）`,
+        );
       }
       setBodyHtml(html);
     } catch (err) {
       console.error('[handleApplyImages] Error:', err);
+      toast.error('画像反映に失敗しました');
     }
   }, [articleId, bodyHtml]);
 
