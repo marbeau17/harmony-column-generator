@@ -122,8 +122,13 @@ export default function ArticleEditPage() {
         setMetaDescription(a.meta_description ?? '');
         setKeyword(a.keyword ?? '');
         setTheme(a.theme ?? '');
-        // Use stage3_final_html > stage2_body_html, replace image placeholders
-        let html = a.stage3_final_html ?? a.stage2_body_html ?? '';
+        // Use stage3_final_html > stage2_body_html, replace image placeholders.
+        // バグG (2026-05-02): `??` は空文字を fallback しないため、generation 失敗で
+        // 空文字保存された記事 (バグD 系統) が「本文がありません」表示になっていた。
+        // 空文字も明示的にスキップするよう変更。
+        const stage3 = (a.stage3_final_html ?? '').trim();
+        const stage2 = (a.stage2_body_html ?? '').trim();
+        let html = stage3.length > 0 ? a.stage3_final_html! : (stage2.length > 0 ? a.stage2_body_html! : '');
         // Replace <!--IMAGE:position:filename--> placeholders with actual images
         const imageFiles = a.image_files as { position: string; url: string; alt: string }[] | null;
         if (imageFiles && Array.isArray(imageFiles)) {
@@ -402,7 +407,10 @@ export default function ArticleEditPage() {
                       setMetaDescription(a.meta_description ?? '');
                       setKeyword(a.keyword ?? '');
                       setTheme(a.theme ?? '');
-                      setBodyHtml(a.stage3_final_html ?? a.stage2_body_html ?? '');
+                      // 空文字も skip (バグG 同様)
+                      const s3 = (a.stage3_final_html ?? '').trim();
+                      const s2 = (a.stage2_body_html ?? '').trim();
+                      setBodyHtml(s3.length > 0 ? a.stage3_final_html! : (s2.length > 0 ? a.stage2_body_html! : ''));
                     } catch (err: unknown) {
                       setError(err instanceof Error ? err.message : '不明なエラー');
                     } finally {

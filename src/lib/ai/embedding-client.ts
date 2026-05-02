@@ -1,13 +1,17 @@
 // ============================================================================
 // src/lib/ai/embedding-client.ts
-// Gemini text-embedding-004 用の薄いクライアント
+// Gemini Embedding 用の薄いクライアント
 //
 // gemini-client.ts はテキスト/画像生成専用で、本ファイルが embedding を担当。
 // gemini-client.ts の既存メソッド（callGemini, generateText, generateJson,
 // generateImage, estimateTokens）には触れない。
+//
+// バグE (2026-05-02): text-embedding-004 が API から deprecated/削除されたため、
+// gemini-embedding-001 (v1beta) + outputDimensionality:768 で 768 dim を維持する。
+// (既存 source_chunks.embedding vector(768) と互換)
 // ============================================================================
 
-/** Gemini text-embedding-004 の task_type */
+/** Gemini Embedding の task_type */
 export type EmbeddingTaskType =
   | 'RETRIEVAL_DOCUMENT'
   | 'RETRIEVAL_QUERY'
@@ -18,7 +22,7 @@ export type EmbeddingTaskType =
   | 'FACT_VERIFICATION';
 
 export interface GenerateEmbeddingOptions {
-  /** モデル名（デフォルト text-embedding-004） */
+  /** モデル名（デフォルト gemini-embedding-001） */
   model?: string;
   /** タイムアウト ms（デフォルト 60_000） */
   timeoutMs?: number;
@@ -28,17 +32,15 @@ export interface GenerateEmbeddingOptions {
   maxRetries?: number;
   /** 任意のタイトル（task_type=RETRIEVAL_DOCUMENT のときのみ Gemini API が利用） */
   title?: string;
+  /** 出力次元数（gemini-embedding-001 default=3072。DB は 768 で揃えるためデフォルト 768） */
+  outputDimensionality?: number;
 }
 
-const EMBEDDING_MODEL_DEFAULT = 'text-embedding-004';
+const EMBEDDING_MODEL_DEFAULT = 'gemini-embedding-001';
 const EMBEDDING_DIMENSIONS = 768;
 const BASE_HOST = 'https://generativelanguage.googleapis.com';
-/**
- * Gemini API のバージョンフォールバック順。
- * `text-embedding-004` は v1 エンドポイントに存在するため v1 を優先し、
- * 404 が返る環境では v1beta にフォールバックする。
- */
-const API_VERSIONS = ['v1', 'v1beta'] as const;
+// gemini-embedding-001 は v1beta のみ提供。v1 endpoint にはモデルが存在せず 404。
+const API_VERSIONS = ['v1beta'] as const;
 type ApiVersion = (typeof API_VERSIONS)[number];
 
 const RETRY_BASE_DELAY_MS = 1000;
@@ -94,10 +96,13 @@ export async function generateEmbedding(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
 
+  const outputDim = options.outputDimensionality ?? EMBEDDING_DIMENSIONS;
   const requestBody: Record<string, unknown> = {
     model: `models/${model}`,
     content: { parts: [{ text }] },
     taskType,
+    // gemini-embedding-001 は default 3072 dim を返すため、DB 互換性のため明示縮小
+    outputDimensionality: outputDim,
   };
   if (options.title && taskType === 'RETRIEVAL_DOCUMENT') {
     requestBody.title = options.title;
@@ -133,7 +138,7 @@ export async function generateEmbedding(
         url: maskedUrl,
         content_chars: text.length,
         task_type: taskType,
-        output_dim: EMBEDDING_DIMENSIONS,
+        output_dim: outputDim,
         attempt,
       });
 
@@ -191,9 +196,9 @@ export async function generateEmbedding(
             `Gemini Embedding returned no values (${apiVersion}): ${JSON.stringify(data).substring(0, 300)}`,
           );
         }
-        if (values.length !== EMBEDDING_DIMENSIONS) {
+        if (values.length !== outputDim) {
           console.warn('[gemini.embed.unexpected_dims]', {
-            expected: EMBEDDING_DIMENSIONS,
+            expected: outputDim,
             got: values.length,
             model,
             api_version: apiVersion,
