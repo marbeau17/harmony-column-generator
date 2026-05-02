@@ -31,6 +31,7 @@ interface ArticleRow {
   id: string;
   title: string | null;
   status: string;
+  keyword: string | null;
   stage2_body_html: string | null;
   stage3_final_html: string | null;
   quality_overrides: QualityOverride[] | null;
@@ -87,7 +88,7 @@ export async function POST(
   const serviceClient = await createServiceRoleClient();
   const { data: article, error: aErr } = await serviceClient
     .from('articles')
-    .select('id, title, status, stage2_body_html, stage3_final_html, quality_overrides')
+    .select('id, title, status, keyword, stage2_body_html, stage3_final_html, quality_overrides')
     .eq('id', articleId)
     .maybeSingle();
   if (aErr || !article) {
@@ -161,9 +162,21 @@ export async function POST(
         });
       }
 
+      // P5-28: keyword 自動補正時は articles.keyword から自動抽出 (FE が知らなくて済む)
+      const enrichedParams = { ...req.auto_fix_params! };
+      if (
+        enrichedParams.fix_type === 'keyword' &&
+        (!enrichedParams.keywords || enrichedParams.keywords.length === 0) &&
+        row.keyword
+      ) {
+        enrichedParams.keywords = row.keyword
+          .split(/[,、]/)
+          .map((s) => s.trim())
+          .filter((s) => s.length >= 2);
+      }
       const { after_html, cost_estimate } = await runAutoFix({
         bodyHtml: beforeHtml,
-        params: req.auto_fix_params!,
+        params: enrichedParams,
       });
 
       // articles UPDATE

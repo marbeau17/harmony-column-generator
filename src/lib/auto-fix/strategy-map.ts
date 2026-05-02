@@ -1,54 +1,102 @@
 // ============================================================================
 // src/lib/auto-fix/strategy-map.ts
-// CheckItem.id → 既定/許可される修復戦略のマッピング (P5-19)
+// CheckItem.id → 既定/許可される修復戦略のマッピング (P5-19, P5-28 改訂)
+//
+// quality-checklist.ts で実際に発行される ID と一致させる:
+//   error_patterns / image_placeholders / banned_book / medical / ai_patterns
+//   literary / soul_count / love_count / content_length / keyword_density
+//   cta_count / cta_urls / title_banned / title_length / h2_structure
+//   meta_description / double_quotes / abstract_expressions / soft_endings
+//   metaphors / broken_links
 //
 // 仕様書: docs/auto-fix-spec.md §2.2
 // ============================================================================
 
 import type { AutoFixType, FixStrategy } from './types';
 
-/** 各 check_item に対する許可された戦略 + 既定戦略 + auto-fix 種別 */
 export interface StrategyMapEntry {
-  /** UI に出すボタンの順番 (左→右、既定が先頭) */
   allowed: FixStrategy[];
-  /** auto-fix の種別 (auto-fix が allowed の場合のみ意味あり) */
   auto_fix_type?: AutoFixType;
-  /** 当該 item を auto-fix で修復する際の、Gemini に渡すパラメータ取得関数名 (UI 側ヒント) */
   needs?: ('keywords' | 'detected_phrase' | 'target_value' | 'current_value' | 'claim_idx' | 'chapter_idx')[];
 }
 
-/**
- * デフォルトマッピング表。
- * 未登録の check_item_id は `manual-edit` のみ許可される (安全側 fallback)。
- */
 export const STRATEGY_MAP: Record<string, StrategyMapEntry> = {
-  // ─── 文体 ─────────────────────────────────────────────────
-  soft_ending_ratio: {
-    allowed: ['auto-fix', 'manual-edit', 'ignore-warn'],
-    auto_fix_type: 'suffix',
-    needs: ['target_value', 'current_value'],
-  },
-  abstract_spiritual: {
-    allowed: ['auto-fix', 'manual-edit', 'ignore-warn'],
-    auto_fix_type: 'abstract',
-    needs: ['detected_phrase'],
-  },
-
-  // ─── SEO ─────────────────────────────────────────────────
-  keyword_occurrence: {
-    allowed: ['auto-fix', 'regen-chapter', 'manual-edit'],
+  // ─── キーワード ────────────────────────────────────────────
+  keyword_density: {
+    allowed: ['auto-fix', 'regen-chapter', 'manual-edit', 'ignore-warn'],
     auto_fix_type: 'keyword',
     needs: ['keywords'],
   },
 
+  // ─── 文体 ─────────────────────────────────────────────────
+  soft_endings: {
+    allowed: ['auto-fix', 'manual-edit', 'ignore-warn'],
+    auto_fix_type: 'suffix',
+    needs: ['target_value', 'current_value'],
+  },
+  abstract_expressions: {
+    allowed: ['auto-fix', 'manual-edit', 'ignore-warn'],
+    auto_fix_type: 'abstract',
+    needs: ['detected_phrase'],
+  },
+  metaphors: {
+    allowed: ['manual-edit', 'ignore-warn'],
+  },
+  literary: {
+    allowed: ['manual-edit', 'ignore-warn'],
+  },
+  double_quotes: {
+    allowed: ['manual-edit', 'ignore-warn'],
+  },
+
   // ─── コンテンツ ─────────────────────────────────────────
-  body_length: {
-    allowed: ['auto-fix', 'regen-chapter', 'manual-edit'],
+  content_length: {
+    allowed: ['auto-fix', 'regen-chapter', 'manual-edit', 'ignore-warn'],
     auto_fix_type: 'length',
     needs: ['target_value', 'current_value'],
   },
+  h2_structure: {
+    allowed: ['regen-chapter', 'manual-edit', 'ignore-warn'],
+  },
+  meta_description: {
+    allowed: ['manual-edit', 'ignore-warn'],
+  },
 
-  // ─── ハルシネーション ──────────────────────────────────
+  // ─── 画像 ───────────────────────────────────────────────
+  image_placeholders: {
+    // P5-26 で run-completion 内自動置換、編集画面で「画像を反映」もある
+    allowed: ['manual-edit', 'ignore-warn'],
+  },
+
+  // ─── CTA ────────────────────────────────────────────────
+  cta_count: {
+    allowed: ['regen-chapter', 'manual-edit', 'ignore-warn'],
+  },
+  cta_urls: {
+    allowed: ['manual-edit', 'ignore-warn'],
+  },
+
+  // ─── タイトル ──────────────────────────────────────────
+  title_banned: {
+    allowed: ['manual-edit'],
+  },
+  title_length: {
+    allowed: ['manual-edit', 'ignore-warn'],
+  },
+
+  // ─── 安全禁止 (auto-fix 不可、危険) ─────────────────────
+  banned_book: { allowed: ['manual-edit'] },
+  medical: { allowed: ['manual-edit'] },
+  ai_patterns: { allowed: ['manual-edit', 'ignore-warn'] },
+  error_patterns: {
+    // AI 生成残骸 / IMAGE プレースホルダ等
+    allowed: ['manual-edit', 'ignore-warn'],
+  },
+  soul_count: { allowed: ['manual-edit', 'ignore-warn'] },
+  love_count: { allowed: ['manual-edit', 'ignore-warn'] },
+  broken_links: { allowed: ['manual-edit', 'ignore-warn'] },
+
+  // ─── ハルシネーション (新形式・後方互換) ─────────────────
   hallucination_critical: {
     allowed: ['regen-chapter', 'manual-edit'],
     needs: ['chapter_idx'],
@@ -58,22 +106,10 @@ export const STRATEGY_MAP: Record<string, StrategyMapEntry> = {
     auto_fix_type: 'claim',
     needs: ['claim_idx'],
   },
-
-  // ─── トーン ─────────────────────────────────────────────
   tone_low: {
-    allowed: ['auto-fix', 'regen-full', 'manual-edit'],
+    allowed: ['auto-fix', 'regen-full', 'manual-edit', 'ignore-warn'],
     auto_fix_type: 'tone',
   },
-
-  // ─── 安全禁止 (auto-fix 不可、危険) ─────────────────────
-  book_expression: { allowed: ['manual-edit'] },
-  ai_pattern: { allowed: ['manual-edit', 'ignore-warn'] },
-  medical_expression: { allowed: ['manual-edit'] },
-
-  // ─── 画像/CTA ──────────────────────────────────────────
-  image_placeholder: { allowed: ['manual-edit'] },
-  cta_url_invalid: { allowed: ['manual-edit'] },
-  cta_count: { allowed: ['regen-chapter', 'manual-edit'] },
 };
 
 /** 既定 fallback (未登録 id) */
@@ -81,18 +117,10 @@ export const DEFAULT_STRATEGY: StrategyMapEntry = {
   allowed: ['manual-edit', 'ignore-warn'],
 };
 
-/**
- * check_item_id に対する戦略マップを取得する。
- * 未登録なら DEFAULT_STRATEGY を返す。
- */
 export function getStrategyFor(checkItemId: string): StrategyMapEntry {
   return STRATEGY_MAP[checkItemId] ?? DEFAULT_STRATEGY;
 }
 
-/**
- * 与えられた fix_strategy が check_item に対して許可されているか確認。
- * 不許可なら理由付きで返す (API バリデーション用)。
- */
 export function isStrategyAllowed(
   checkItemId: string,
   strategy: FixStrategy,
