@@ -78,6 +78,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const { runQualityChecklist } = await import('@/lib/content/quality-checklist');
       const html = existing.published_html || existing.stage2_body_html || '';
       if (html) {
+        // P5-34: quality_overrides を取得 (escape hatch / ignore-warn 連携)
+        // フロント (P5-31) で bulk override 後、backend transition でも pass 扱いに
+        // しないと公開できない。
+        type Override = { check_item_id: string };
+        const { createServiceRoleClient } = await import('@/lib/supabase/server');
+        const sb = await createServiceRoleClient();
+        const { data: row } = await sb
+          .from('articles')
+          .select('quality_overrides')
+          .eq('id', id)
+          .maybeSingle();
+        const overrides = (row?.quality_overrides as Override[] | null) ?? [];
+
         const checkResult = runQualityChecklist({
           title: existing.title || '',
           html,
@@ -85,6 +98,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           metaDescription: existing.meta_description || undefined,
           theme: existing.theme || undefined,
         });
+
+        // override 適用
+        if (overrides.length > 0 && Array.isArray(checkResult.items)) {
+          const overrideIds = new Set(overrides.map((o) => o.check_item_id));
+          let suppressedErrors = 0;
+          for (const item of checkResult.items) {
+            if (overrideIds.has(item.id) && item.status !== 'pass') {
+              if (item.severity === 'error') suppressedErrors++;
+              item.status = 'pass';
+              item.detail = `(無視済) ${item.detail ?? ''}`.trim();
+            }
+          }
+          checkResult.errorCount = Math.max(0, checkResult.errorCount - suppressedErrors);
+          checkResult.passed = checkResult.errorCount === 0;
+          logger.info('api', 'transition.quality_overrides_applied', {
+            articleId: id,
+            overrides_count: overrides.length,
+            suppressed_errors: suppressedErrors,
+            now_passed: checkResult.passed,
+          });
+        }
 
         if (!checkResult.passed) {
           const failedItems = checkResult.items
