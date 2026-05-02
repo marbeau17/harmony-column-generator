@@ -618,6 +618,26 @@ export default function ArticleDetailPage() {
             ゼロ生成は Stage1〜Stage4 (画像/Stage3) を一気通貫で実行します。
             完了後は「公開」ボタンで即公開可能です。
           </p>
+          {/* P5-41: ゼロ生成記事にも編集/公開導線を追加。
+              これが無いと品質チェック不合格時に詳細画面から脱出できなくなる。 */}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={() => router.push(`/dashboard/articles/${articleId}/edit`)}
+              className="rounded-lg bg-brand-500 px-5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-brand-600"
+            >
+              編集 / 公開へ →
+            </button>
+            {article.status === 'published' && article.published_url && (
+              <a
+                href={article.published_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-green-500 px-5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-green-600"
+              >
+                公開URLを開く
+              </a>
+            )}
+          </div>
         </section>
       ) : (
         <>
