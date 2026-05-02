@@ -13,6 +13,8 @@ import { useParams, useRouter } from 'next/navigation';
 import TipTapEditor from '@/components/editor/TipTapEditor';
 import PreviewPane from '@/components/editor/PreviewPane';
 import type { Article } from '@/types/article';
+import QualityFixMenu from '@/components/articles/QualityFixMenu';
+import type { CheckItem } from '@/lib/content/quality-checklist';
 
 // ─── Theme labels ───────────────────────────────────────────────────────────
 
@@ -884,17 +886,30 @@ export default function ArticleEditPage() {
                   {/* エラー項目のみ表示（不合格時） */}
                   {!(qualityCheck as Record<string, unknown>).passed && (
                     <div className="rounded-lg border border-red-200 divide-y divide-red-100">
-                      {((qualityCheck as Record<string, unknown>).items as Array<{
-                        id: string; label: string; status: string; severity: string; detail?: string;
-                      }>)
+                      {((qualityCheck as Record<string, unknown>).items as CheckItem[])
                         ?.filter(i => i.status === 'fail' && i.severity === 'error')
                         .map(item => (
                           <div key={item.id} className="px-3 py-2 flex items-start gap-2">
                             <span className="text-red-500 shrink-0">{'\u274C'}</span>
-                            <div>
+                            <div className="flex-1 min-w-0">
                               <p className="text-xs text-gray-700">{item.label}</p>
                               {item.detail && <p className="text-xs text-red-500">{item.detail}</p>}
                             </div>
+                            <QualityFixMenu
+                              articleId={articleId}
+                              item={item}
+                              onAfter={async () => {
+                                setQualityLoading(true);
+                                try {
+                                  const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST' });
+                                  const data = await res.json();
+                                  setQualityCheck(data);
+                                } finally {
+                                  setQualityLoading(false);
+                                }
+                              }}
+                              onManualEdit={() => setPublishDialogOpen(false)}
+                            />
                           </div>
                         ))}
                     </div>
@@ -907,17 +922,30 @@ export default function ArticleEditPage() {
                         警告 {String((qualityCheck as Record<string, unknown>).warningCount)}件を表示
                       </summary>
                       <div className="mt-1 rounded-lg border border-amber-200 divide-y divide-amber-100">
-                        {((qualityCheck as Record<string, unknown>).items as Array<{
-                          id: string; label: string; status: string; severity: string; detail?: string;
-                        }>)
+                        {((qualityCheck as Record<string, unknown>).items as CheckItem[])
                           ?.filter(i => i.status === 'warn' || (i.status === 'fail' && i.severity === 'warning'))
                           .map(item => (
                             <div key={item.id} className="px-3 py-1.5 flex items-start gap-2">
                               <span className="shrink-0">{'\u26A0\uFE0F'}</span>
-                              <div>
+                              <div className="flex-1 min-w-0">
                                 <p className="text-xs text-gray-600">{item.label}</p>
                                 {item.detail && <p className="text-xs text-amber-600">{item.detail}</p>}
                               </div>
+                              <QualityFixMenu
+                                articleId={articleId}
+                                item={item}
+                                onAfter={async () => {
+                                  setQualityLoading(true);
+                                  try {
+                                    const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST' });
+                                    const data = await res.json();
+                                    setQualityCheck(data);
+                                  } finally {
+                                    setQualityLoading(false);
+                                  }
+                                }}
+                                onManualEdit={() => setPublishDialogOpen(false)}
+                              />
                             </div>
                           ))}
                       </div>
