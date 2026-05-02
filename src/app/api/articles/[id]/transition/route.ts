@@ -73,8 +73,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // published への遷移時は品質チェックリストを実行
-    if (status === 'published') {
+    // P5-35: ?force=true で品質チェック完全 bypass (緊急公開専用)
+    // これは frontend の override 適用 (P5-31) と二重ゲートになる安全装置
+    const forceParam = request.nextUrl.searchParams.get('force');
+    const forceBypass = forceParam === 'true' || forceParam === '1';
+    if (forceBypass) {
+      logger.warn('api', 'transition.force_bypass', {
+        articleId: id,
+        toStatus: status,
+        userId: user.id,
+      });
+    }
+
+    // published への遷移時は品質チェックリストを実行 (force=true なら skip)
+    if (status === 'published' && !forceBypass) {
       const { runQualityChecklist } = await import('@/lib/content/quality-checklist');
       const html = existing.published_html || existing.stage2_body_html || '';
       if (html) {

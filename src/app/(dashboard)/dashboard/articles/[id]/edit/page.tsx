@@ -1040,8 +1040,39 @@ export default function ArticleEditPage() {
                           }),
                         }).catch(() => {});
                       }
-                      // 通常 publish flow
-                      await handlePublish();
+                      // P5-35: 緊急公開は transition?force=true で backend check も bypass
+                      // 通常 handlePublish の transition 呼出を上書きする形で直接実行
+                      try {
+                        const updateRes = await fetch(`/api/articles/${articleId}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            ...autoSaveData,
+                            published_html: bodyHtml,
+                            published_at: new Date().toISOString(),
+                          }),
+                        });
+                        if (!updateRes.ok) throw new Error('記事保存に失敗');
+                        const transitionRes = await fetch(
+                          `/api/articles/${articleId}/transition?force=true`,
+                          {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'published' }),
+                          },
+                        );
+                        if (!transitionRes.ok) {
+                          const errJson = await transitionRes.json().catch(() => ({}));
+                          throw new Error(errJson?.error ?? `HTTP ${transitionRes.status}`);
+                        }
+                        // FTP 自動アップロード (best-effort)
+                        fetch(`/api/articles/${articleId}/deploy`, { method: 'POST' }).catch(() => {});
+                        setPublishDialogOpen(false);
+                        setPublishSuccessOpen(true);
+                        toast.success('🚀 緊急公開しました');
+                      } catch (e) {
+                        toast.error(`緊急公開失敗: ${(e as Error).message}`);
+                      }
                     } finally {
                       setPublishing(false);
                     }
