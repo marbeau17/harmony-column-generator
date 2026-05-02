@@ -59,21 +59,21 @@ describe('public-urls helper', () => {
     it('default 値で page 1 のハブ URL を返す', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
-      expect(getHubUrl()).toBe('https://harmony-mc.com/spiritual/column/');
+      expect(getHubUrl()).toBe('https://harmony-mc.com/spiritual/column/index.html');
     });
 
     it('page 2 以降は /page/{N}/ が付く', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
-      expect(getHubUrl(2)).toBe('https://harmony-mc.com/spiritual/column/page/2/');
-      expect(getHubUrl(7)).toBe('https://harmony-mc.com/spiritual/column/page/7/');
+      expect(getHubUrl(2)).toBe('https://harmony-mc.com/spiritual/column/page/2/index.html');
+      expect(getHubUrl(7)).toBe('https://harmony-mc.com/spiritual/column/page/7/index.html');
     });
 
     it('カスタム env でも組み立てが正しい', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://staging.example.com');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '/blog');
-      expect(getHubUrl(1)).toBe('https://staging.example.com/blog/');
-      expect(getHubUrl(3)).toBe('https://staging.example.com/blog/page/3/');
+      expect(getHubUrl(1)).toBe('https://staging.example.com/blog/index.html');
+      expect(getHubUrl(3)).toBe('https://staging.example.com/blog/page/3/index.html');
     });
   });
 
@@ -83,14 +83,14 @@ describe('public-urls helper', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
       expect(getArticleUrl('hello-world')).toBe(
-        'https://harmony-mc.com/spiritual/column/hello-world/'
+        'https://harmony-mc.com/spiritual/column/hello-world/index.html'
       );
     });
 
     it('カスタム env でも記事 canonical が組み立たる', () => {
       vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://staging.example.com');
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '/blog');
-      expect(getArticleUrl('my-slug')).toBe('https://staging.example.com/blog/my-slug/');
+      expect(getArticleUrl('my-slug')).toBe('https://staging.example.com/blog/my-slug/index.html');
     });
   });
 
@@ -120,12 +120,12 @@ describe('public-urls helper', () => {
   describe('getArticleRelativePath', () => {
     it('default ハブパスを使った相対パスを返す', () => {
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '');
-      expect(getArticleRelativePath('hello-world')).toBe('/spiritual/column/hello-world/');
+      expect(getArticleRelativePath('hello-world')).toBe('/spiritual/column/hello-world/index.html');
     });
 
     it('カスタムハブパスでも相対パスが組み立たる', () => {
       vi.stubEnv('NEXT_PUBLIC_HUB_PATH', '/blog/articles');
-      expect(getArticleRelativePath('my-slug')).toBe('/blog/articles/my-slug/');
+      expect(getArticleRelativePath('my-slug')).toBe('/blog/articles/my-slug/index.html');
     });
   });
 });

@@ -86,32 +86,32 @@ describe('sitemap.ts 記事 URL パターン pin (P5-44)', () => {
     vi.resetModules();
   });
 
-  it('case 1: 記事 entry が新形式 /column/{slug}/ を含む (canonical と同じ trailing slash)', async () => {
+  it('case 1: 記事 entry が新形式 /spiritual/column/{slug}/index.html を含む', async () => {
     const { default: sitemap } = await import('@/app/sitemap');
     const entries = await sitemap();
 
     const articleEntries = entries.filter((e) =>
-      mocks.fixture.some((f) => e.url.endsWith(`/${f.slug}/`)),
+      mocks.fixture.some((f) => e.url.endsWith(`/${f.slug}/index.html`)),
     );
     expect(articleEntries.length).toBe(mocks.fixture.length);
 
     for (const f of mocks.fixture) {
-      const expected = `https://harmony-mc.com/spiritual/column/${f.slug}/`;
+      const expected = `https://harmony-mc.com/spiritual/column/${f.slug}/index.html`;
       expect(entries.map((e) => e.url)).toContain(expected);
     }
   });
 
-  it('case 2: 旧形式 .html 拡張子 / /columns/ 複数形バグが一切混入しない', async () => {
+  it('case 2: 旧形式 {slug}.html / /columns/ 複数形バグが一切混入しない', async () => {
     const { default: sitemap } = await import('@/app/sitemap');
     const entries = await sitemap();
 
     for (const f of mocks.fixture) {
-      const badHtml = `https://harmony-mc.com/spiritual/column/${f.slug}.html`;
+      // 旧バグ: slug 名そのものが .html (例: test-article-one.html)
+      const badSlugHtml = `https://harmony-mc.com/spiritual/column/${f.slug}.html`;
       const badPlural = `https://harmony-mc.com/columns/${f.slug}/`;
       for (const entry of entries) {
-        expect(entry.url).not.toBe(badHtml);
+        expect(entry.url).not.toBe(badSlugHtml);
         expect(entry.url).not.toBe(badPlural);
-        expect(entry.url).not.toContain('.html');
         expect(entry.url).not.toContain('/columns/');
       }
     }
@@ -125,29 +125,28 @@ describe('sitemap.ts 記事 URL パターン pin (P5-44)', () => {
     const articleEntry = entries.find((e) => e.url.includes(slug));
     expect(articleEntry).toBeDefined();
     expect(articleEntry!.url).toBe(
-      `https://harmony-mc.com/spiritual/column/${slug}/`,
+      `https://harmony-mc.com/spiritual/column/${slug}/index.html`,
     );
-    // .html 拡張子 / /columns/ 複数形が無いこと
-    expect(articleEntry!.url).not.toContain('.html');
+    // /columns/ 複数形が無いこと
     expect(articleEntry!.url).not.toContain('/columns/');
   });
 
-  it('case 4: 記事 URL すべてに `/column/` substring が含まれる', async () => {
+  it('case 4: 記事 URL すべてに `/column/` + index.html 終端', async () => {
     const { default: sitemap } = await import('@/app/sitemap');
     const entries = await sitemap();
 
     const articleUrls = entries
       .map((e) => e.url)
       .filter((u) =>
-        mocks.fixture.some((f) => u.endsWith(`/${f.slug}/`)),
+        mocks.fixture.some((f) => u.endsWith(`/${f.slug}/index.html`)),
       );
 
     expect(articleUrls.length).toBeGreaterThan(0);
     for (const url of articleUrls) {
       expect(url).toContain('/column/');
-      // 複数形 /columns/ や .html 形式に戻っていない
       expect(url).not.toContain('/columns/');
-      expect(url).not.toContain('.html');
+      // /index.html 終端 (slug.html 形式の旧バグは禁止)
+      expect(url).toMatch(/\/index\.html$/);
     }
   });
 });
