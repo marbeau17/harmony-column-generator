@@ -885,3 +885,71 @@ trim 後の length>0 で判定するように修正（バグ D 系統の防衛 +
 - claim-extractor body 分割対応（body > 8000 chars リスク）
 - ペルソナ別 source 記事マイニング（キーワード候補強化の v2）
 - 公開承認フロー zero-gen 経路 E2E
+
+## P5-43: 公開制御統一リファクタ (Step 1)
+
+### 目的
+現状、記事の公開制御が `reviewed_at` (タイムスタンプ駆動) と `visibility_state` (ステートマシン駆動) の 2 系統で並立しており、
+- どちらが「真の公開状態」かが文脈依存になる
+- リーダー (一覧 / 詳細 / RSS / sitemap) ごとに判定ロジックが微妙に異なる
+- ステージング → 本番のゲート判定が二重化し、デグレ温床になっている
+
+これを `visibility_state` を単一の真実源 (Single Source of Truth) に統一し、`reviewed_at` は「レビュー完了の事実時刻」を示す監査用カラムへ降格する。
+
+### 設計参照
+- `docs/refactor/publish-control-unification.md` (Step 1〜4 全体設計、状態遷移図、影響リーダー一覧)
+- 関連: `docs/optimized_spec.md` §公開制御 / `feedback_html_history.md` (revision 履歴ルール)
+
+### Step 1 完了項目 (スキーマ + ヘルパー基盤整備)
+
+- [ ] **A1**: スキーマ拡張マイグレーション作成
+  - `articles.visibility_state` enum に `draft` / `pending_review` を追加 (PostgreSQL `ALTER TYPE ... ADD VALUE`)
+  - `articles.reviewed_at` の NOT NULL 制約は維持しつつ、コメントで「監査用」と明記
+  - 影響インデックス: `idx_articles_visibility_state` の REINDEX 計画
+- [ ] **A2**: `src/lib/publish/state-machine.ts` に新ノード追加
+  - TRANSITIONS テーブルに `draft -> pending_review`, `pending_review -> reviewed`, `pending_review -> draft` の 3 遷移を追記
+  - 既存遷移 (`reviewed -> staged -> published`) は破壊しない
+  - 単体テスト `test/unit/publish-state-machine.test.ts` でカバレッジ維持
+- [ ] **B1**: `src/lib/publish/visibility-predicate.ts` ヘルパー新設
+  - `isPubliclyVisible(article)`, `isStaged(article)`, `isUnderReview(article)` を一元提供
+  - 内部で `visibility_state` のみを参照し、`reviewed_at` は見ない
+- [ ] **B2**: `src/lib/publish/state-readers-sql.ts` ヘルパー新設
+  - Supabase クエリビルダー向けの `whereVisible()`, `whereStaged()` ファクトリ
+  - 既存の生 SQL 散在 (`.eq('reviewed_at', ...)` 等) を将来置換するための足場
+- [ ] **B3**: `src/lib/publish/lifecycle-stage.ts` ヘルパー新設
+  - `stageOf(article): 'draft'|'review'|'staged'|'published'|'archived'` を返す
+  - UI バッジ / 通知文言 / 監査ログで再利用
+- [ ] **C1**: parity 検証スクリプト `scripts/publish/check-parity.ts`
+  - 全記事について `reviewed_at IS NOT NULL` と `visibility_state IN ('reviewed','staged','published')` の差異を抽出
+  - 差異 0 件が Step 2 着手の前提条件
+- [ ] **C2**: backfill スクリプト `scripts/publish/backfill-visibility-state.ts`
+  - 差異検知時に `reviewed_at` を真とみなして `visibility_state` を補正 (dry-run / apply 両モード)
+  - 必ず `article_revisions` に履歴 INSERT してから UPDATE (HTML History Rule 準拠)
+- [ ] **C3**: runtime-parity アサート
+  - `src/lib/publish/visibility-predicate.ts` 内で `reviewed_at` と `visibility_state` の不整合を検出した場合、
+    Sentry に警告ログを送出 (本番では throw しない / staging では throw)
+
+### Step 2 (readers migration) 着手前のチェックリスト
+1. parity スクリプト (C1) を本番 DB に対して実行し、**差異 0 件**を確認
+2. 差異が残る場合は backfill スクリプト (C2) を `--apply` 実行 → 再度 parity チェック
+3. E2E baseline 確認: `npm run test:e2e -- --grep "publish"` が緑 (既存挙動が壊れていない)
+4. Sentry に runtime-parity 警告が 24h で 0 件であること
+
+### ロールバック手順 (Step 1 範囲)
+1. マイグレーション逆実行
+   - `supabase migration down` で `visibility_state` enum から `draft` / `pending_review` を削除
+   - PostgreSQL の `ALTER TYPE ... DROP VALUE` は非対応のため、enum 再作成 + データ退避の手順書を `docs/refactor/publish-control-unification.md` §ロールバックに記載
+2. `src/lib/publish/state-machine.ts` の TRANSITIONS から新ノード遷移 3 行を削除
+3. 新設ヘルパー (B1/B2/B3) は import されていない限り残置可 (Tree shaking で本番バンドルから除外)
+4. parity / backfill スクリプト (C1/C2) は読み取り or 履歴付き UPDATE のみのため安全、削除不要
+
+### 影響範囲 (Step 1 のみ)
+- マイグレーションファイル: `supabase/migrations/20260502_publish_control_step1.sql` (予定)
+- 新規ヘルパー: `src/lib/publish/{visibility-predicate,state-readers-sql,lifecycle-stage}.ts`
+- 新規スクリプト: `scripts/publish/{check-parity,backfill-visibility-state}.ts`
+- 既存変更: `src/lib/publish/state-machine.ts` (TRANSITIONS 追記のみ、削除なし)
+
+### 注意事項
+- Step 1 では**既存の reader ロジックは一切変更しない**。あくまで「並走ヘルパーの追加」と「parity 検証基盤の構築」のみ
+- Step 2 以降で reader 群を `visibility-predicate` 経由に切り替えていく
+- HTML History Rule (`feedback_html_history.md`) を必ず順守: backfill でも `article_revisions` INSERT を先行させる
