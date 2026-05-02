@@ -1000,7 +1000,7 @@ export default function ArticleEditPage() {
               )}
             </div>
 
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button
                 onClick={() => setPublishDialogOpen(false)}
                 className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -1008,6 +1008,51 @@ export default function ArticleEditPage() {
               >
                 キャンセル
               </button>
+              {/* P5-31: 緊急公開 — 品質チェック不合格でも理由を入力すれば公開可能。
+                  記事公開のループ詰まり (whack-a-mole) を防ぐ escape hatch。
+                  バックエンドは status 遷移のみで品質チェックは frontend ガードのみ。 */}
+              {qualityCheck && !(qualityCheck as Record<string, unknown>).passed && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const reason = window.prompt(
+                      '品質チェックを無視して公開する理由を入力してください\n（監査ログに記録されます）',
+                    );
+                    if (!reason || reason.trim().length === 0) return;
+                    // 全 fail/warn item を quality_overrides に bulk add
+                    const items = (qualityCheck as Record<string, unknown>).items as
+                      | Array<{ id: string; status: string; severity: string }>
+                      | undefined;
+                    const failingItems = (items ?? []).filter(
+                      (i) => i.status === 'fail' || i.status === 'warn',
+                    );
+                    setPublishing(true);
+                    try {
+                      // bulk override: 各 item を ignore-warn で登録
+                      for (const it of failingItems) {
+                        await fetch(`/api/articles/${articleId}/auto-fix`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            fix_strategy: 'ignore-warn',
+                            check_item_id: it.id,
+                            ignore_params: { reason: `[緊急公開] ${reason}` },
+                          }),
+                        }).catch(() => {});
+                      }
+                      // 通常 publish flow
+                      await handlePublish();
+                    } finally {
+                      setPublishing(false);
+                    }
+                  }}
+                  disabled={publishing || qualityLoading}
+                  className="px-4 py-2 text-sm rounded-lg border border-orange-400 bg-orange-50 text-orange-800 hover:bg-orange-100 disabled:opacity-50 dark:border-orange-700 dark:bg-orange-950/40 dark:text-orange-100"
+                  title="品質チェックを全て無視して公開（監査ログに記録）"
+                >
+                  ⚠️ 品質警告を無視して公開
+                </button>
+              )}
               <button
                 onClick={handlePublish}
                 disabled={publishing || qualityLoading || (qualityCheck ? !(qualityCheck as Record<string, unknown>).passed : false)}
