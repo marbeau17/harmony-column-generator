@@ -60,7 +60,20 @@ const PER_PAGE = 20;
 
 // ─── Status → 遷移先マップ ──────────────────────────────────────────────────
 
-function getArticlePath(id: string, status: string): string {
+function getArticlePath(
+  id: string,
+  status: string,
+  generationMode?: string | null,
+): string {
+  // zero-gen 記事は outline / review 画面が存在しないため別ルーティング
+  if (generationMode === 'zero') {
+    if (status === 'published') {
+      return `/dashboard/articles/${id}`;
+    }
+    return `/dashboard/articles/${id}/edit`;
+  }
+
+  // source-base (既存) ロジック
   switch (status) {
     case 'draft':
       return `/dashboard/articles/${id}/edit`;
@@ -322,7 +335,7 @@ export default function ArticlesPage() {
   };
 
   const handleRowClick = (article: ArticleItem) => {
-    router.push(getArticlePath(article.id, article.status));
+    router.push(getArticlePath(article.id, article.status, article.generation_mode));
   };
 
   const handleBulkUpdateRelated = async () => {
