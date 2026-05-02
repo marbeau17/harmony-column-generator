@@ -190,12 +190,17 @@ async function runAsyncPipeline(args: {
         },
       });
       completionPartial = r.partial;
+      // P5-27: validation issues を error メッセージに反映
+      if (r.validationIssues.length > 0) {
+        completionError = `品質警告 ${r.validationIssues.length} 件: ${r.validationIssues.slice(0, 2).join(' / ')}`;
+      }
       logger.info('api', 'zero-generate-async.completion.ok', {
         job_id: jobId,
         article_id: json.article_id,
         images_count: r.imageFilesCount,
         stage3_chars: r.stage3HtmlChars,
         partial: r.partial,
+        validation_issues: r.validationIssues,
       });
     } catch (e) {
       completionError = (e as Error).message;

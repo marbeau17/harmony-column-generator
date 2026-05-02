@@ -159,6 +159,83 @@ export interface CompletionResult {
   metaDescriptionChars: number;
   seoFilename: string;
   partial: boolean;
+  /** P5-27: post-completion validation で検出した契約違反一覧 */
+  validationIssues: string[];
+}
+
+/**
+ * Post-completion validation — 仕上げ後に「期待される状態」を検証し、
+ * 違反があれば issue 一覧を返す。これは reactive bug fix (発覚後修正) から
+ * proactive prevention (発生前検出) への転換のため。
+ *
+ * 検査項目:
+ *   - stage2_body_html に IMAGE プレースホルダが残っていないか
+ *   - image_files が 1 件以上あるか
+ *   - meta_description が空でないか
+ *   - seo_filename が空でないか
+ *   - stage3_final_html が一定長以上か
+ *   - キーワードが本文に出現しているか (loose match)
+ */
+function validateCompletion(args: {
+  bodyHtml: string;
+  imageFiles: ImageFileRow[];
+  metaDescription: string;
+  seoFilename: string;
+  stage3Html: string;
+  keyword: string | null;
+}): string[] {
+  const issues: string[] = [];
+
+  // 1. IMAGE placeholder 残存チェック
+  const placeholders =
+    args.bodyHtml.match(/IMAGE[：:][a-z_]+/gi) ?? [];
+  if (placeholders.length > 0) {
+    issues.push(
+      `本文に未置換 IMAGE プレースホルダが残っています (${placeholders.length} 件): ${placeholders.slice(0, 3).join(', ')}`,
+    );
+  }
+
+  // 2. 画像ファイル数
+  if (args.imageFiles.length === 0) {
+    issues.push('image_files が空です (画像生成が完全失敗)');
+  } else if (args.imageFiles.length < 3) {
+    issues.push(`image_files が ${args.imageFiles.length} 件のみ (期待 3)`);
+  }
+
+  // 3. meta_description
+  if (!args.metaDescription || args.metaDescription.length < 50) {
+    issues.push(
+      `meta_description が短すぎます (${args.metaDescription?.length ?? 0} 字)`,
+    );
+  }
+
+  // 4. seo_filename
+  if (!args.seoFilename || args.seoFilename.length === 0) {
+    issues.push('seo_filename が未設定です');
+  }
+
+  // 5. stage3 length
+  if (!args.stage3Html || args.stage3Html.length < 1000) {
+    issues.push(
+      `stage3_final_html が短すぎます (${args.stage3Html?.length ?? 0} 字)`,
+    );
+  }
+
+  // 6. キーワード出現 (CSV 形式で、最初のトークンだけ確認)
+  if (args.keyword) {
+    const kwTokens = args.keyword
+      .split(/[,、\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 2);
+    const firstKw = kwTokens[0];
+    if (firstKw && !args.bodyHtml.includes(firstKw)) {
+      issues.push(
+        `キーワード "${firstKw}" が本文に 1 度も出現していません`,
+      );
+    }
+  }
+
+  return issues;
 }
 
 /**
@@ -334,6 +411,22 @@ export async function runZeroGenCompletion(args: {
     });
   }
 
+  // 7. P5-27: Post-completion validation — 契約違反を即時検出
+  const validationIssues = validateCompletion({
+    bodyHtml: updatedBodyHtml,
+    imageFiles,
+    metaDescription,
+    seoFilename,
+    stage3Html,
+    keyword: (article.keyword as string) ?? null,
+  });
+  if (validationIssues.length > 0) {
+    logger.error('ai', 'completion.validation_failed', {
+      articleId,
+      issues: validationIssues,
+    });
+  }
+
   logger.info('ai', 'done', {
     articleId,
     images_count: imageFiles.length,
@@ -341,6 +434,7 @@ export async function runZeroGenCompletion(args: {
     meta_chars: metaDescription.length,
     seo_filename: seoFilename,
     partial: imageGenPartial,
+    validation_issues_count: validationIssues.length,
     total_elapsed_ms: Date.now() - t0,
   });
 
@@ -349,6 +443,7 @@ export async function runZeroGenCompletion(args: {
     stage3HtmlChars: stage3Html.length,
     metaDescriptionChars: metaDescription.length,
     seoFilename,
-    partial: imageGenPartial,
+    partial: imageGenPartial || validationIssues.length > 0,
+    validationIssues,
   };
 }
