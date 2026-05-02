@@ -562,26 +562,87 @@ export default function ArticleDetailPage() {
         </button>
       </div>
 
-      {/* ─ ステータスタイムライン ─ */}
-      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
-          ステータス遷移
-        </h2>
-        <StatusTimeline currentStatus={article.status} />
-      </section>
-
-      {/* ─ 次のアクション ─ */}
-      <section className="flex flex-col gap-4 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
-            次のアクション
+      {/* P5-33: ステータス遷移 + 次のアクションは legacy 7 ステップ
+          (draft → outline_pending → outline_approved → body_generating →
+           body_review → editing → published) で source-base 記事用。
+          zero-gen は INSERT 時に draft、生成完了後も draft、publish で published と
+          直接遷移するため、legacy stepper に当てはまらない。
+          generation_mode='zero' のときは zero-gen 専用の簡潔ステータス表示に置換。 */}
+      {article.generation_mode === 'zero' ? (
+        <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
+            ステータス
           </h2>
-          <p className="mt-1 text-xs text-slate-500">
-            現在のステータス: {String(STATUS_LABELS[article.status as keyof typeof STATUS_LABELS] ?? article.status)}
+          {(() => {
+            const status = article.status;
+            const imageCount = Array.isArray(article.image_files)
+              ? (article.image_files as unknown[]).length
+              : 0;
+            const hasStage2 = Boolean(article.stage2_body_html);
+            const hasStage3 = Boolean(article.stage3_final_html);
+            const isFullyReady = hasStage2 && hasStage3 && imageCount >= 1;
+            const stages = [
+              { key: 'draft', label: '下書き', done: true },
+              { key: 'generated', label: '本文生成', done: hasStage2 },
+              { key: 'images', label: '画像生成', done: imageCount >= 1 },
+              { key: 'finalized', label: '仕上げ完了', done: isFullyReady && status !== 'body_generating' },
+              { key: 'published', label: '公開済み', done: status === 'published' },
+            ];
+            return (
+              <div className="flex flex-wrap items-center gap-3">
+                {stages.map((s, i) => (
+                  <div key={s.key} className="flex items-center gap-2">
+                    <span
+                      className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                        s.done
+                          ? 'bg-brand-500 text-white'
+                          : 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500'
+                      }`}
+                    >
+                      {s.done ? '✓' : i + 1}
+                    </span>
+                    <span
+                      className={`text-xs ${s.done ? 'font-medium text-gray-700 dark:text-gray-200' : 'text-gray-400'}`}
+                    >
+                      {s.label}
+                    </span>
+                    {i < stages.length - 1 && (
+                      <span className="text-gray-300 dark:text-gray-600">—</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            ゼロ生成は Stage1〜Stage4 (画像/Stage3) を一気通貫で実行します。
+            完了後は「公開」ボタンで即公開可能です。
           </p>
-        </div>
-        <div className="w-full sm:w-auto">{renderActionButton()}</div>
-      </section>
+        </section>
+      ) : (
+        <>
+          {/* ─ Legacy ステータスタイムライン (source-base 記事用) ─ */}
+          <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-500">
+              ステータス遷移
+            </h2>
+            <StatusTimeline currentStatus={article.status} />
+          </section>
+
+          {/* ─ 次のアクション (source-base 記事用) ─ */}
+          <section className="flex flex-col gap-4 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">
+                次のアクション
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                現在のステータス: {String(STATUS_LABELS[article.status as keyof typeof STATUS_LABELS] ?? article.status)}
+              </p>
+            </div>
+            <div className="w-full sm:w-auto">{renderActionButton()}</div>
+          </section>
+        </>
+      )}
 
       {/* ─ FTPデプロイ ─ */}
       {article.status === 'published' && (
