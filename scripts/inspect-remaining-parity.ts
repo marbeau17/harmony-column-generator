@@ -17,10 +17,13 @@ const sb = createClient(
 );
 
 (async () => {
+  // audit-only: P5-43 Step 4 — visibility_state と reviewed_at の整合性監査スクリプトのため reviewed_at filter を許可
+  /* eslint-disable no-restricted-syntax */
   const { data } = await sb
     .from('articles')
     .select('id, title, status, reviewed_at, visibility_state, generation_mode')
     .not('reviewed_at', 'is', null);
+  /* eslint-enable no-restricted-syntax */
 
   const mismatched = (data ?? []).filter(
     (a) => !['live', 'live_hub_stale'].includes((a.visibility_state as string) ?? ''),

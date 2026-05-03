@@ -34,6 +34,8 @@ interface ArticleItem {
   keyword: string;
   status: string;
   updated_at: string;
+  // audit-only: P5-43 Step 4 — 一覧の title 属性 (公開日付ツールチップ) と
+  //   optimistic update の rollback 用にのみ参照する。状態判定には visibility_state を使うこと。
   reviewed_at: string | null;
   // P5-43 Step 2: visibility_state を ArticleItem に追加（公開可視判定の正本）
   visibility_state?: string | null;
@@ -929,6 +931,7 @@ export default function ArticlesPage() {
                         // P5-43 Step 2: 公開中表示は visibility_state ベース
                         checked={isPubliclyVisible(article)}
                         // P5-43 Step 2: title 属性も visibility_state ベース表示（reviewed_at は補助情報として残す）
+                        // audit-only: P5-43 Step 4 — 表示の括弧内日付として参照のみ。状態判定 (isPubliclyVisible) は visibility_state を見る。
                         title={
                           isPubliclyVisible(article)
                             ? `公開中${article.reviewed_at ? ` (${new Date(article.reviewed_at).toLocaleDateString('ja-JP')})` : ''}`

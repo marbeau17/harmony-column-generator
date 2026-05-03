@@ -11,6 +11,8 @@ export type ArticleListItem = {
   title: string;
   slug: string;
   status: string;
+  // audit-only: P5-43 Step 4 — 一覧 UI の補助表示 (確認日付) 用。
+  //   状態判定 (公開可視性) には使わず visibility_state を見ること。
   reviewed_at: string | null;
   // P5-59: 生成モード（zero / source）を一覧でも判別可能に。string→GenerationMode に厳密化
   generation_mode: GenerationMode | null;

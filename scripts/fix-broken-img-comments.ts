@@ -30,8 +30,7 @@ const APPLY = process.argv.includes('--apply');
 
   const { data, error } = await sb
     .from('articles')
-    .select('id, slug, title, stage2_body_html')
-    .eq('generation_mode', 'zero');
+    .select('id, slug, title, stage2_body_html');
 
   if (error) {
     console.error('SELECT error:', error.message);

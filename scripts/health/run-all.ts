@@ -6,6 +6,7 @@
  * 使い方:
  *   tsx scripts/health/run-all.ts                # JSON サマリを stdout
  *   tsx scripts/health/run-all.ts --strict       # critical >0 で exit 1
+ *   tsx scripts/health/run-all.ts --very-strict  # critical or high >0 で exit 1
  *   tsx scripts/health/run-all.ts --skip-http    # H-05 (URL probe) を skip
  *   tsx scripts/health/run-all.ts --json out.json # ファイル出力
  *
@@ -27,6 +28,7 @@ try {
 }
 
 const STRICT = process.argv.includes('--strict');
+const VERY_STRICT = process.argv.includes('--very-strict');
 const SKIP_HTTP = process.argv.includes('--skip-http');
 const jsonArgIdx = process.argv.indexOf('--json');
 const JSON_OUT_PATH = jsonArgIdx > 0 ? process.argv[jsonArgIdx + 1] : null;
@@ -45,18 +47,49 @@ interface HealthResult {
 const PUBLIC_BASE = process.env.NEXT_PUBLIC_SITE_URL || 'https://harmony-mc.com';
 const HUB_PATH = process.env.NEXT_PUBLIC_HUB_PATH || '/spiritual/column';
 
+// CI 環境（GitHub Actions / Vercel cron）からの fetch は一部 CDN/WAF が
+// "harmony-health-monitor/1.0" のような独自 UA を bot 判定して block するケースがあり、
+// status=0 (TypeError: fetch failed) で落ちる。一般ブラウザ相当の UA を使用する。
+const FETCH_UA =
+  'Mozilla/5.0 (compatible; HarmonyHealthMonitor/1.0; +https://harmony-mc.com)';
+
+async function fetchWithTimeout(
+  url: string,
+  ms = 15000,
+  retries = 2,
+): Promise<{ status: number; text?: string; error?: string }> {
+  let lastError = '';
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': FETCH_UA,
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Cache-Control': 'no-cache',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!res.ok) return { status: res.status };
+      const text = await res.text();
+      return { status: res.status, text };
+    } catch (e) {
+      clearTimeout(timer);
+      lastError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+      }
+    }
+  }
+  return { status: 0, error: lastError };
+}
+
 async function fetchPublicHtml(slug: string): Promise<{ status: number; html?: string }> {
   const url = `${PUBLIC_BASE}${HUB_PATH}/${slug}/index.html`;
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'harmony-health-monitor/1.0', 'Cache-Control': 'no-cache' },
-    });
-    if (!res.ok) return { status: res.status };
-    const html = await res.text();
-    return { status: res.status, html };
-  } catch {
-    return { status: 0 };
-  }
+  const r = await fetchWithTimeout(url);
+  return { status: r.status, html: r.text };
 }
 
 async function main(): Promise<void> {
@@ -210,30 +243,40 @@ async function main(): Promise<void> {
     failedSamples: h06Failed.slice(0, 5),
   });
 
-  // ── H-07: sitemap.xml URL 件数 (簡易) ────────────────────────────────────
+  // ── H-07: sitemap.xml URL 件数 (記事 URL のみ抽出して比較) ───────────────
   if (!SKIP_HTTP) {
-    let sitemapStatus = 0;
-    let sitemapUrls = 0;
-    try {
-      const sm = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://blogauto-pi.vercel.app'}/sitemap.xml`, {
-        headers: { 'User-Agent': 'harmony-health-monitor/1.0' },
-      });
-      sitemapStatus = sm.status;
-      if (sm.ok) {
-        const xml = await sm.text();
-        sitemapUrls = (xml.match(/<loc>[^<]+\/index\.html<\/loc>/g) ?? []).length;
-      }
-    } catch {
-      sitemapStatus = 0;
-    }
+    // .env.local の NEXT_PUBLIC_APP_URL は dev 用 (localhost:3000) のため、
+    // 本番ヘルスチェックでは HEALTH_SITEMAP_URL > NEXT_PUBLIC_APP_URL(非localhost) > 本番デフォルト
+    // の優先順位で解決する。CI/cron で localhost に向かないようにする。
+    const envAppUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
+    const isLocalAppUrl = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(envAppUrl);
+    const sitemapBase =
+      process.env.HEALTH_SITEMAP_BASE ||
+      (envAppUrl && !isLocalAppUrl ? envAppUrl : 'https://blogauto-pi.vercel.app');
+    const sm = await fetchWithTimeout(`${sitemapBase}/sitemap.xml`);
+    const sitemapStatus = sm.status;
+    const xml = sm.text ?? '';
+    // 記事 URL = "/spiritual/column/{slug}/index.html" 形式。ハブ・テーマページは除外。
+    const articleLocPattern = new RegExp(
+      `<loc>[^<]*${HUB_PATH.replace(/\//g, '\\/')}\\/[^<\\/]+\\/index\\.html<\\/loc>`,
+      'g',
+    );
+    const sitemapArticleUrls = (xml.match(articleLocPattern) ?? []).length;
+    const sitemapTotalUrls = (xml.match(/<loc>/g) ?? []).length;
     const expectedCount = list.filter((a) => a.generation_mode === 'zero').length;
-    const ok = sitemapStatus === 200 && sitemapUrls === expectedCount;
+    const ok = sitemapStatus === 200 && sitemapArticleUrls === expectedCount;
+    let detail: string;
+    if (sitemapStatus === 0) {
+      detail = `fetch failed (${sm.error ?? 'unknown'})`;
+    } else if (sitemapStatus !== 200) {
+      detail = `HTTP ${sitemapStatus}`;
+    } else {
+      detail = `sitemap article=${sitemapArticleUrls} (total loc=${sitemapTotalUrls}) vs zero-gen=${expectedCount}`;
+    }
     results.push({
       id: 'H-07', label: 'sitemap.xml 全 zero-gen 出力', severity: 'high',
       ok,
-      detail: ok
-        ? `sitemap=${sitemapUrls} == zero-gen=${expectedCount}`
-        : `sitemap=${sitemapUrls} vs zero-gen=${expectedCount} (status=${sitemapStatus})`,
+      detail,
     });
   } else {
     results.push({ id: 'H-07', label: 'sitemap.xml 全 zero-gen 出力', severity: 'high', ok: true, detail: 'SKIPPED' });
@@ -241,26 +284,24 @@ async function main(): Promise<void> {
 
   // ── H-08: ハブ記事数 vs DB zero-gen 数 (簡易: HTML 内 article-card 数) ──
   if (!SKIP_HTTP) {
-    let hubCount = 0;
-    let hubStatus = 0;
-    try {
-      const hub = await fetch(`${PUBLIC_BASE}${HUB_PATH}/index.html`, {
-        headers: { 'User-Agent': 'harmony-health-monitor/1.0', 'Cache-Control': 'no-cache' },
-      });
-      hubStatus = hub.status;
-      if (hub.ok) {
-        const html = await hub.text();
-        hubCount = (html.match(/<a [^>]*class="article-card"/g) ?? []).length;
-      }
-    } catch {
-      hubStatus = 0;
-    }
+    const hub = await fetchWithTimeout(`${PUBLIC_BASE}${HUB_PATH}/index.html`);
+    const hubStatus = hub.status;
+    const html = hub.text ?? '';
+    const hubCount = (html.match(/<a [^>]*class="article-card"/g) ?? []).length;
     const expectedHub = list.filter((a) => a.generation_mode === 'zero').length;
     const ok = hubStatus === 200 && hubCount === expectedHub;
+    let detail: string;
+    if (hubStatus === 0) {
+      detail = `fetch failed (${hub.error ?? 'unknown'})`;
+    } else if (hubStatus !== 200) {
+      detail = `HTTP ${hubStatus}`;
+    } else {
+      detail = `hub=${hubCount} vs zero-gen=${expectedHub}`;
+    }
     results.push({
       id: 'H-08', label: 'ハブ記事数 == DB zero-gen 数', severity: 'medium',
       ok,
-      detail: `hub=${hubCount} vs zero-gen=${expectedHub} (status=${hubStatus})`,
+      detail,
     });
   } else {
     results.push({ id: 'H-08', label: 'ハブ記事数 == DB zero-gen 数', severity: 'medium', ok: true, detail: 'SKIPPED' });
@@ -374,6 +415,10 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`合計: critical=${summary.criticalFailed} / high=${summary.highFailed} / medium=${summary.mediumFailed}`);
 
+  if (VERY_STRICT && (summary.criticalFailed > 0 || summary.highFailed > 0)) {
+    console.error('\n🚨 critical or high failure detected (--very-strict). exit 1');
+    process.exit(1);
+  }
   if (STRICT && summary.criticalFailed > 0) {
     console.error('\n🚨 critical failure detected. exit 1');
     process.exit(1);

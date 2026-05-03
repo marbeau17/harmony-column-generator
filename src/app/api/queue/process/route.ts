@@ -937,6 +937,7 @@ export async function POST(request: NextRequest) {
 
           // Background: hub page rebuild
           const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          // eslint-disable-next-line no-restricted-syntax -- ハブ再ビルドは fire-and-forget、失敗してもキュー処理は継続
           fetch(`${appUrl}/api/hub/rebuild`, { method: 'POST' }).catch(() => {});
 
           logger.info('api', 'processQueue.published', {

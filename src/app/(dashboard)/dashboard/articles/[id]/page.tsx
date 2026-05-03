@@ -815,6 +815,7 @@ export default function ArticleDetailPage() {
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-brand-500">由起子さん確認</h2>
               {/* P5-43 Step 2: 「公開中」表示判定を visibility_state ベース (isPubliclyVisible) に変更。日時表示は audit 目的で reviewed_at をそのまま表示 */}
+              {/* audit-only: P5-43 Step 4 — reviewed_at / reviewed_by は監査表示のみ。状態判定 (isPubliclyVisible) は visibility_state を読む。 */}
               {isPubliclyVisible(article as { visibility_state?: string | null }) ? (
                 <p className="text-xs text-emerald-600 mt-1">
                   ✅ 確認済み（{(article as Record<string, unknown>).reviewed_at ? new Date(String((article as Record<string, unknown>).reviewed_at)).toLocaleDateString('ja-JP') : '—'}）

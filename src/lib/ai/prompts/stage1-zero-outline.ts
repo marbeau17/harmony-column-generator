@@ -3,7 +3,15 @@
 // ステージ1（ゼロ生成版）: 元記事に依存せず、テーマ/ペルソナ/キーワードのみから
 // 「ナラティブ・アーク（気づき→揺らぎ→受容→行動）」を中核とする深い構成案を生成する。
 // spec §5.1 に対応。既存 stage1-outline.ts は変更せず、独立した別関数として提供する。
+//
+// 出力 JSON は zod schema (zeroOutlineOutputSchema) で強制検証する。
+// schema 違反時は logger.error + プロンプト 1 回リトライ → それでも失敗ならスロー。
+// （P5-17: Stage1 outline の構造保証を強化）
 // ============================================================================
+
+import { z } from 'zod';
+import { logger } from '@/lib/logger';
+import { generateJson } from '@/lib/ai/gemini-client';
 
 // ─── 入出力型 ─────────────────────────────────────────────────────────────────
 
@@ -15,33 +23,126 @@ export interface ZeroOutlineInput {
   target_length: number;
 }
 
-export interface ZeroOutlineOutput {
-  /** リード要約（100〜150字）。記事冒頭の引き込み文 */
-  lead_summary: string;
-  /** ナラティブ・アーク（気づき→揺らぎ→受容→行動の物語弧） */
-  narrative_arc: {
-    opening_hook: { type: 'question' | 'scene' | 'empathy'; text: string };
-    awareness: string;
-    wavering: string;
-    acceptance: string;
-    action: string;
-    closing_style: 'lingering' | 'direct';
-  };
-  /** 感情曲線（H2 章数分の整数 / -2〜+2 の範囲を想定） */
-  emotion_curve: number[];
-  /** H2 章構成 */
-  h2_chapters: Array<{
-    title: string;
-    summary: string;
-    target_chars: number;
-    arc_phase: string;
-  }>;
-  /** 引用候補ハイライト（80〜120字 × 3） */
-  citation_highlights: string[];
-  /** FAQ（読者の検索意図に応える Q&A） */
-  faq_items: Array<{ q: string; a: string }>;
-  /** 画像生成プロンプト（hero/body/summary 各1） */
-  image_prompts: Array<{ slot: 'hero' | 'body' | 'summary'; prompt: string }>;
+// ─── zod schema（Gemini 出力検証） ────────────────────────────────────────────
+//
+// AI 出力は不安定で、しばしば
+//   - キー欠落（faq_items / image_prompts 等）
+//   - 型不一致（emotion_curve が "1" 等の文字列になる）
+//   - enum 違反（closing_style が "soft" など）
+//   - image_prompts のオブジェクト形式（{hero,body,summary}）
+// を含む。これらを catch して検出し、リトライ or fallback を判定する。
+
+const arcPhaseSchema = z.enum(['awareness', 'wavering', 'acceptance', 'action']);
+
+const openingHookSchema = z.object({
+  type: z.enum(['question', 'scene', 'empathy']),
+  text: z.string().min(1),
+});
+
+const narrativeArcSchema = z.object({
+  opening_hook: openingHookSchema,
+  awareness: z.string().min(1),
+  wavering: z.string().min(1),
+  acceptance: z.string().min(1),
+  action: z.string().min(1),
+  closing_style: z.enum(['lingering', 'direct']),
+});
+
+const h2ChapterSchema = z.object({
+  title: z.string().min(1),
+  summary: z.string(),
+  target_chars: z.number().int().nonnegative(),
+  // arc_phase はモデルによって表記揺れが起きるため z.string() に留め、
+  // 値検査は別途 warn ログでカバー（過剰拒否で生成失敗にしない）。
+  arc_phase: z.string().min(1),
+});
+
+const faqItemSchema = z.object({
+  q: z.string().min(1),
+  a: z.string().min(1),
+});
+
+const imagePromptSchema = z.object({
+  slot: z.enum(['hero', 'body', 'summary']),
+  prompt: z.string().min(1),
+});
+
+/**
+ * Stage1 ゼロ生成 outline の zod schema。
+ * Gemini 応答は generateJson で受け取った後、本 schema で parse される。
+ */
+export const zeroOutlineOutputSchema = z.object({
+  lead_summary: z.string().min(1),
+  narrative_arc: narrativeArcSchema,
+  emotion_curve: z.array(z.number()).min(1),
+  h2_chapters: z.array(h2ChapterSchema).min(1),
+  citation_highlights: z.array(z.string()).min(1),
+  faq_items: z.array(faqItemSchema).min(1),
+  image_prompts: z.array(imagePromptSchema).min(1),
+});
+
+export type ZeroOutlineOutput = z.infer<typeof zeroOutlineOutputSchema>;
+
+/**
+ * 既知の表記揺れを修復する best-effort coercion。
+ * 主に image_prompts の object → array 形式変換を担当。
+ */
+function coerceLooseOutline(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object') return raw;
+  const obj = { ...(raw as Record<string, unknown>) };
+
+  // image_prompts: {hero, body, summary} 形式 → 配列形式へ変換
+  const ip = obj.image_prompts;
+  if (ip && typeof ip === 'object' && !Array.isArray(ip)) {
+    const ipObj = ip as Record<string, unknown>;
+    const slots: Array<'hero' | 'body' | 'summary'> = ['hero', 'body', 'summary'];
+    const arr = slots
+      .map((slot) => {
+        const v = ipObj[slot];
+        if (typeof v === 'string' && v.length > 0) {
+          return { slot, prompt: v };
+        }
+        if (v && typeof v === 'object' && typeof (v as { prompt?: unknown }).prompt === 'string') {
+          return { slot, prompt: (v as { prompt: string }).prompt };
+        }
+        return null;
+      })
+      .filter((x): x is { slot: 'hero' | 'body' | 'summary'; prompt: string } => x !== null);
+    if (arr.length > 0) obj.image_prompts = arr;
+  }
+
+  return obj;
+}
+
+/**
+ * AI 出力 raw を zod で検証する。
+ * 失敗時は logger.error を吐いた上で null を返す（呼び出し側で retry / fallback を判断）。
+ */
+export function parseZeroOutlineOutput(
+  raw: unknown,
+  ctx: { requestId?: string; attempt?: number } = {},
+): ZeroOutlineOutput | null {
+  const coerced = coerceLooseOutline(raw);
+  const result = zeroOutlineOutputSchema.safeParse(coerced);
+  if (result.success) return result.data;
+
+  logger.error(
+    'ai',
+    'stage1_zero_outline.schema_violation',
+    {
+      request_id: ctx.requestId,
+      attempt: ctx.attempt ?? 1,
+      // 上位 5 件まで（過剰ログ防止）
+      issues: result.error.issues.slice(0, 5).map((i) => ({
+        path: i.path.join('.'),
+        code: i.code,
+        message: i.message,
+      })),
+      received_keys: raw && typeof raw === 'object' ? Object.keys(raw as object) : null,
+    },
+    result.error,
+  );
+  return null;
 }
 
 // ─── 由起子さん語彙辞書（OK 30 語） ────────────────────────────────────────────

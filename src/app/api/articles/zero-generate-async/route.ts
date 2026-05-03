@@ -185,6 +185,7 @@ async function runAsyncPipeline(args: {
           };
           const p = stageProgressMap[stage];
           if (p !== undefined) {
+            // eslint-disable-next-line no-restricted-syntax -- 進捗更新は best-effort、失敗してもメイン処理を止めない
             void safeUpdate({ progress: p }).catch(() => {});
           }
         },

@@ -8,6 +8,7 @@
 // 後方互換: settings 未指定 → DEFAULT_SEO_SETTINGS を使うため既存呼出はそのまま動く。
 // ============================================================================
 
+import { z } from 'zod';
 import type { Article } from '@/types/article';
 import {
   DEFAULT_SEO_SETTINGS,
@@ -18,10 +19,15 @@ import { getArticleUrl } from '@/lib/config/public-urls';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
-interface FAQItem {
-  question: string;
-  answer: string;
-}
+// AI 出力の FAQ 構造を保証する zod schema
+// question / answer は非空文字列必須。余剰プロパティは許容（passthrough せず単に無視）。
+const FaqItemSchema = z.object({
+  question: z.string().min(1),
+  answer: z.string().min(1),
+});
+const FaqArraySchema = z.array(FaqItemSchema);
+
+export type FAQItem = z.infer<typeof FaqItemSchema>;
 
 interface BreadcrumbItem {
   name: string;
@@ -208,26 +214,43 @@ function extractFirstImageUrl(imageFiles: unknown, fallback: string): string {
   return fallback;
 }
 
-function parseFaqData(faqData: unknown): FAQItem[] {
-  if (!faqData) return [];
-  let items: unknown[];
+/**
+ * AI 生成 FAQ データを zod で構造検証した上で `FAQItem[]` を返す共通 parser。
+ *
+ * 受理する入力:
+ *   - JSON 文字列: `JSON.parse` 後に zod 検証
+ *   - 配列: そのまま zod 検証
+ *   - null / undefined / その他: 空配列を返す
+ *
+ * 失敗ポリシー（タスク P5: zod schema validation）:
+ *   - JSON.parse 失敗・zod 検証失敗いずれも `[]` を返し、`console.warn` を出す
+ *   - 上流で個別エラーにせず、生成記事自体は壊さない（FAQ 不在許容）
+ */
+export function parseFaqData(faqData: unknown): FAQItem[] {
+  if (faqData === null || faqData === undefined || faqData === '') return [];
+
+  let raw: unknown;
   if (typeof faqData === 'string') {
     try {
-      items = JSON.parse(faqData);
-    } catch {
+      raw = JSON.parse(faqData);
+    } catch (err) {
+      console.warn(
+        '[parseFaqData] JSON.parse 失敗 — FAQ を空配列で返す',
+        err instanceof Error ? err.message : err,
+      );
       return [];
     }
-  } else if (Array.isArray(faqData)) {
-    items = faqData;
   } else {
+    raw = faqData;
+  }
+
+  const result = FaqArraySchema.safeParse(raw);
+  if (!result.success) {
+    console.warn(
+      '[parseFaqData] zod 検証失敗 — FAQ を空配列で返す',
+      result.error.issues.slice(0, 3),
+    );
     return [];
   }
-  if (!Array.isArray(items)) return [];
-  return items.filter(
-    (item): item is FAQItem =>
-      typeof item === 'object' &&
-      item !== null &&
-      typeof (item as FAQItem).question === 'string' &&
-      typeof (item as FAQItem).answer === 'string',
-  );
+  return result.data;
 }

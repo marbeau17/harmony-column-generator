@@ -133,8 +133,25 @@ export const CTA_TEMPLATES: Record<
 // デフォルトテーマ（マッチしない場合のフォールバック）
 const DEFAULT_THEME = 'healing';
 
+// 許可されたテーマキー一覧（CTA_TEMPLATES と同期）
+const VALID_THEME_KEYS = Object.keys(CTA_TEMPLATES);
+
 /**
- * テーマに基づいてCTA文言を選択する
+ * テーマキーが有効か検証する。
+ * - 非文字列 / 空文字 / 未知キーは false。
+ */
+function isValidThemeKey(theme: unknown): theme is string {
+  return (
+    typeof theme === 'string' &&
+    theme.length > 0 &&
+    Object.prototype.hasOwnProperty.call(CTA_TEMPLATES, theme)
+  );
+}
+
+/**
+ * テーマに基づいてCTA文言を選択する。
+ * 不正値（未定義 / 空文字 / 未登録キー）は DEFAULT_THEME にフォールバックし warn ログを出す。
+ *
  * @param theme テーマ名
  * @param _articleId 記事ID（将来のA/Bテスト等で使用可能）
  * @returns cta2, cta3 の文言オブジェクト
@@ -146,7 +163,17 @@ export function selectCtaTexts(
   cta2: { catch: string; sub: string };
   cta3: { catch: string; sub: string };
 } {
-  const templates = CTA_TEMPLATES[theme] ?? CTA_TEMPLATES[DEFAULT_THEME];
+  let resolvedTheme: string;
+  if (isValidThemeKey(theme)) {
+    resolvedTheme = theme;
+  } else {
+    console.warn(
+      `[cta-generator] selectCtaTexts: 不正なテーマキー "${String(theme)}" (articleId=${_articleId})。"${DEFAULT_THEME}" にフォールバックします。許可キー: [${VALID_THEME_KEYS.join(', ')}]`
+    );
+    resolvedTheme = DEFAULT_THEME;
+  }
+
+  const templates = CTA_TEMPLATES[resolvedTheme];
 
   return {
     cta2: templates.cta2_mid,
@@ -228,6 +255,9 @@ export function insertCtasIntoHtml(
   articleSlug: string,
   ctaSettings?: Partial<CtaSettingsAll>
 ): string {
+  // ctaTexts の形状を validate。欠損 / 不正型は DEFAULT_THEME にフォールバックして warn。
+  const validatedCtaTexts = validateCtaTexts(ctaTexts, articleSlug);
+
   const $ = cheerio.load(html);
 
   // Idempotency guard: if CTAs already exist, don't insert again
@@ -240,8 +270,8 @@ export function insertCtasIntoHtml(
 
   // CTA1は削除（冒頭CTAは読者の没入を妨げるため）
   // CTA2（中盤・検討促進）とCTA3（終盤・コンバージョン）の2つのみ配置
-  const cta2Html = buildCtaHtml('cta2', 'mid', ctaTexts.cta2.catch, ctaTexts.cta2.sub, articleSlug, ctaSettings?.cta2);
-  const cta3Html = buildCtaHtml('cta3', 'end', ctaTexts.cta3.catch, ctaTexts.cta3.sub, articleSlug, ctaSettings?.cta3);
+  const cta2Html = buildCtaHtml('cta2', 'mid', validatedCtaTexts.cta2.catch, validatedCtaTexts.cta2.sub, articleSlug, ctaSettings?.cta2);
+  const cta3Html = buildCtaHtml('cta3', 'end', validatedCtaTexts.cta3.catch, validatedCtaTexts.cta3.sub, articleSlug, ctaSettings?.cta3);
 
   if (h2Count === 0) {
     const body = $('body');
@@ -267,6 +297,60 @@ export function insertCtasIntoHtml(
 // ---------------------------------------------------------------------------
 // ユーティリティ
 // ---------------------------------------------------------------------------
+
+/**
+ * ctaTexts の cta2 / cta3 形状（catch, sub が非空文字列）を検証し、
+ * 欠損があれば DEFAULT_THEME のテンプレートからフィールド単位で補完する。
+ */
+function validateCtaTexts(
+  ctaTexts: unknown,
+  articleSlug: string
+): {
+  cta2: { catch: string; sub: string };
+  cta3: { catch: string; sub: string };
+} {
+  const fallback = CTA_TEMPLATES[DEFAULT_THEME];
+  const fallbackResult = {
+    cta2: fallback.cta2_mid,
+    cta3: fallback.cta3_end,
+  };
+
+  if (!ctaTexts || typeof ctaTexts !== 'object') {
+    console.warn(
+      `[cta-generator] insertCtasIntoHtml: ctaTexts が object でないため "${DEFAULT_THEME}" にフォールバック (slug=${articleSlug})`
+    );
+    return fallbackResult;
+  }
+
+  const candidate = ctaTexts as {
+    cta2?: { catch?: unknown; sub?: unknown };
+    cta3?: { catch?: unknown; sub?: unknown };
+  };
+
+  const pickField = (
+    key: 'cta2' | 'cta3',
+    field: 'catch' | 'sub',
+    fallbackText: string
+  ): string => {
+    const v = candidate[key]?.[field];
+    if (typeof v === 'string' && v.length > 0) return v;
+    console.warn(
+      `[cta-generator] insertCtasIntoHtml: ctaTexts.${key}.${field} が不正 (slug=${articleSlug})。デフォルトに置換。`
+    );
+    return fallbackText;
+  };
+
+  return {
+    cta2: {
+      catch: pickField('cta2', 'catch', fallback.cta2_mid.catch),
+      sub: pickField('cta2', 'sub', fallback.cta2_mid.sub),
+    },
+    cta3: {
+      catch: pickField('cta3', 'catch', fallback.cta3_end.catch),
+      sub: pickField('cta3', 'sub', fallback.cta3_end.sub),
+    },
+  };
+}
 
 function escapeHtml(text: string): string {
   return text

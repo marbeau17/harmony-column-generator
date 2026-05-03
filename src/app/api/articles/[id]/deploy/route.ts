@@ -55,6 +55,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         articleId,
         slug,
         visibility_state: article.visibility_state,
+        // audit-only: P5-43 Step 4 — ログ補助情報として残す。デプロイ可否判定は isDeployable (visibility_state) のみ。
         reviewed_at: article.reviewed_at,
       });
       return NextResponse.json({

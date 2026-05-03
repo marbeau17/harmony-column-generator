@@ -1,0 +1,56 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-empty-pattern": "error",
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.property.name='catch'] > ArrowFunctionExpression.arguments:first-child[body.type='BlockStatement'][body.body.length=0]",
+        "message": "空の catch ハンドラ (.catch(() => {})) は禁止です。エラーは最低限 logger.warn 等で記録してください (どうしても無視したい場合は eslint-disable-next-line + 理由コメントを併記)。"
+      },
+      {
+        "selector": "CallExpression[callee.property.name='catch'][arguments.0.type='ArrowFunctionExpression'][arguments.0.body.type='Identifier'][arguments.0.body.name='undefined']",
+        "message": "空の catch ハンドラ (.catch(() => undefined)) は禁止です。エラーは最低限 logger.warn 等で記録してください。"
+      },
+      {
+        "selector": "CallExpression[callee.property.name='eq'][arguments.0.value='reviewed_at']",
+        "message": "P5-43 Step 4: reviewed_at を state 判定に使うのは禁止です。公開可視判定は visibility_state を単一ソースとして使ってください (.eq('visibility_state', 'live') 等)。どうしても audit 用途で必要な場合は // audit-only: P5-43 Step 4 コメントを添えて eslint-disable-next-line で例外化してください。"
+      },
+      {
+        "selector": "CallExpression[callee.property.name='not'][arguments.0.value='reviewed_at']",
+        "message": "P5-43 Step 4: reviewed_at を state 判定に使うのは禁止です。公開可視判定は visibility_state を単一ソースとして使ってください (.not('visibility_state', 'eq', 'idle') 等)。どうしても audit 用途で必要な場合は // audit-only: P5-43 Step 4 コメントを添えて eslint-disable-next-line で例外化してください。"
+      },
+      {
+        "selector": "CallExpression[callee.property.name='is'][arguments.0.value='reviewed_at']",
+        "message": "P5-43 Step 4: reviewed_at を state 判定に使うのは禁止です。公開可視判定は visibility_state を単一ソースとして使ってください。どうしても audit 用途で必要な場合は // audit-only: P5-43 Step 4 コメントを添えて eslint-disable-next-line で例外化してください。"
+      },
+      {
+        "selector": "CallExpression[callee.property.name='filter'][arguments.0.value='reviewed_at']",
+        "message": "P5-43 Step 4: reviewed_at を state 判定に使うのは禁止です。公開可視判定は visibility_state を単一ソースとして使ってください。どうしても audit 用途で必要な場合は // audit-only: P5-43 Step 4 コメントを添えて eslint-disable-next-line で例外化してください。"
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/lib/tone/compute-centroid.ts",
+        "src/app/(dashboard)/dashboard/articles/page.tsx",
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "CallExpression[callee.property.name='catch'] > ArrowFunctionExpression.arguments:first-child[body.type='BlockStatement'][body.body.length=0]",
+            "message": "空の catch ハンドラ (.catch(() => {})) は禁止です。エラーは最低限 logger.warn 等で記録してください。"
+          },
+          {
+            "selector": "CallExpression[callee.property.name='catch'][arguments.0.type='ArrowFunctionExpression'][arguments.0.body.type='Identifier'][arguments.0.body.name='undefined']",
+            "message": "空の catch ハンドラ (.catch(() => undefined)) は禁止です。"
+          }
+        ]
+      }
+    }
+  ]
+}

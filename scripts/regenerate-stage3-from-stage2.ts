@@ -1,11 +1,17 @@
 /**
- * P5-58: 修復済み stage2_body_html から stage3_final_html を再生成。
+ * P5-58 / H-01-H-02: 修復済み stage2_body_html から stage3_final_html を再生成。
  *
- * 背景: P5-57 で stage2 の `<!--<img` 不正コメントを修復したが、stage3 は未更新のため
- *       Vercel `/column/[slug]/` (DB から stage3 を読む) で旧バグが見え続ける。
+ * 背景:
+ *   - P5-57 で stage2 の `<!--<img` 不正コメントを修復したが、stage3 は未更新のため
+ *     Vercel `/column/[slug]/` (DB から stage3 を読む) で旧バグが見え続ける。
+ *   - H-01/H-02: 本番 published 記事の多くで stage3_final_html が legacy 生成器で作られた
+ *     本文 fragment 形式 (`<main>` / `<footer>` を含まない) のままになっている。
+ *     そのまま CDN/Vercel 経由で配信すると <main>=0/2, <footer>=0/2 になる。
  *
- * 動作: 修復した記事 (P5-57 の rollback JSON 参照) + 残存 article (X10 で発見) の stage3 を
- *       generateArticleHtml() で再生成して DB UPDATE。
+ * 動作:
+ *   - 修復対象 (P5-57 の rollback JSON / X10 で発見) + legacy 構造の記事 (mode 不問) を
+ *     generateArticleHtml() で再生成して DB UPDATE。
+ *   - 旧 generation_mode フィルタは撤去 (source モードの legacy 記事も対象)。
  */
 import * as fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
@@ -25,11 +31,10 @@ const APPLY = process.argv.includes('--apply');
     { auth: { persistSession: false } },
   );
 
-  // stage3 中に <!--<img を含む記事をスキャン (DB 全件)
+  // stage3 検査対象 (zero / source 双方を含む全記事)
   const { data, error } = await sb
     .from('articles')
-    .select('id, slug, title, stage2_body_html, stage3_final_html')
-    .eq('generation_mode', 'zero');
+    .select('id, slug, title, generation_mode, stage2_body_html, stage3_final_html');
   if (error) {
     console.error(error);
     process.exit(1);
@@ -51,10 +56,21 @@ const APPLY = process.argv.includes('--apply');
         slug: a.slug as string,
         reason: 'stage3 empty but stage2 exists',
       });
+    } else if (s3 && s2) {
+      // H-01/H-02 修復: stage3 に <main> または <footer> が 0 個 or 2 個以上ある記事も対象
+      const mainCount = (s3.match(/<main[\s>]/gi) ?? []).length;
+      const footerCount = (s3.match(/<footer[\s>]/gi) ?? []).length;
+      if (mainCount !== 1 || footerCount !== 1) {
+        targets.push({
+          id: a.id as string,
+          slug: a.slug as string,
+          reason: `legacy stage3 (main=${mainCount}, footer=${footerCount})`,
+        });
+      }
     }
   }
 
-  console.log(`zero-gen: ${data?.length ?? 0} 件`);
+  console.log(`articles total: ${data?.length ?? 0} 件`);
   console.log(`stage3 再生成対象: ${targets.length} 件\n`);
   for (const t of targets) console.log(`  - ${t.slug}: ${t.reason}`);
 

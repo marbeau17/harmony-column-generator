@@ -144,6 +144,10 @@ export interface Article {
 
   published_url: string | null;
   published_at: string | null;
+  // audit-only: P5-43 Step 4 — reviewed_at / reviewed_by は監査用タイムスタンプ。
+  //   状態判定 (ハブ表示・FTP deploy ゲート・sitemap・SSG) には使用しない。
+  //   書込は POST /api/articles/[id]/review (action='approve') のみが行う。
+  //   詳細: docs/refactor/publish-control-unification.md §3.2 / §5 Step 4。
   reviewed_at: string | null;
   reviewed_by: string | null;
   // P5-43 publish-control v2: visibility_state ベースの公開制御

@@ -28,12 +28,15 @@ import { buildCategories, generateAllHubPages, type HubArticleCard } from '../..
 import { uploadToFtp, getFtpConfig, type UploadFile } from '../../src/lib/deploy/ftp-uploader';
 
 async function fetchArticleCards(): Promise<HubArticleCard[]> {
+  // audit-only: P5-43 Step 4 — 既存の Hub 再デプロイ運用スクリプト。今後 visibility_state ベースに移行予定 (別チケット)
+  /* eslint-disable no-restricted-syntax */
   const { data, error } = await supabase
     .from('articles')
     .select('id, title, slug, seo_filename, meta_description, stage2_body_html, stage3_final_html, theme, published_at, image_files')
     .eq('status', 'published')
     .not('reviewed_at', 'is', null)
     .order('published_at', { ascending: false });
+  /* eslint-enable no-restricted-syntax */
 
   if (error) throw new Error(`fetchArticleCards failed: ${error.message}`);
   if (!data || data.length === 0) return [];

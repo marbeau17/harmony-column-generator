@@ -57,6 +57,8 @@ export interface ArticleRow {
   published_url: string | null;
   published_at: string | null;
   ai_generation_log: string | null;
+  // audit-only: P5-43 Step 4 — reviewed_at / reviewed_by は監査用タイムスタンプ。
+  //   状態判定には使用しない (詳細: src/types/article.ts のコメント)。
   reviewed_at: string | null;
   reviewed_by: string | null;
   // Publish Control V2（step7 で legacy 公開経路にも書込同期）
@@ -285,11 +287,13 @@ export async function updateArticle(
         const metaChanged = fields.meta_description !== undefined && fields.meta_description !== current.meta_description;
 
         if (bodyChanged || titleChanged || metaChanged) {
+          /* eslint-disable no-restricted-syntax -- スナップショット失敗で本体UPDATE処理を巻き込まない方針 (Don't fail the update if snapshot fails) */
           await saveRevision(id, {
             title: current.title,
             body_html: currentBody,
             meta_description: current.meta_description,
-          }, 'auto_snapshot').catch(() => {}); // Don't fail the update if snapshot fails
+          }, 'auto_snapshot').catch(() => {});
+          /* eslint-enable no-restricted-syntax */
         }
       }
     }

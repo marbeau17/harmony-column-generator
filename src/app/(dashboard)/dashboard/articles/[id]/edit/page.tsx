@@ -254,6 +254,7 @@ export default function ArticleEditPage() {
         } else {
           console.warn('[publish] FTPアップロード失敗（手動で再試行してください）');
         }
+        // eslint-disable-next-line no-restricted-syntax -- FTP 自動アップロードは best-effort、失敗してもUIフローは継続
       }).catch(() => {});
 
       setPublishDialogOpen(false);
@@ -1012,6 +1013,7 @@ export default function ArticleEditPage() {
                             check_item_id: it.id,
                             ignore_params: { reason: `[緊急公開] ${reason}` },
                           }),
+                          // eslint-disable-next-line no-restricted-syntax -- 緊急公開時の事前 ignore-warn 適用は fire-and-forget、後続の transition?force=true で確実に bypass する
                         }).catch(() => {});
                       }
                       // P5-35: 緊急公開は transition?force=true で backend check も bypass
@@ -1045,6 +1047,7 @@ export default function ArticleEditPage() {
                         }
                         // FTP 自動アップロード (best-effort)
                         // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                        // eslint-disable-next-line no-restricted-syntax -- FTP 自動デプロイは best-effort、失敗してもDB公開状態は維持される
                         fetch(`/api/articles/${articleId}/deploy`, { method: 'POST', credentials: 'same-origin' }).catch(() => {});
                         setPublishDialogOpen(false);
                         setPublishSuccessOpen(true);

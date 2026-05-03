@@ -101,11 +101,14 @@ async function main() {
   // クライアント側で visibility_state による絞り込みを行う
   // (NULL/idle の両方を取りこぼさないため、SQL 側で NOT IN を組まずに
   //  TS 側で安全に判定する)。
+  // audit-only: P5-43 Step 4 — reviewed_at から visibility_state への一回限りバックフィル用クエリのため許可
+  /* eslint-disable no-restricted-syntax */
   const { data, error } = await sb
     .from('articles')
     .select('id, title, status, reviewed_at, visibility_state')
     .eq('status', 'published')
     .not('reviewed_at', 'is', null);
+  /* eslint-enable no-restricted-syntax */
 
   if (error) {
     console.error('SELECT 失敗:', error.message);
@@ -167,6 +170,8 @@ async function main() {
 
   for (const t of targets) {
     // 1) articles 更新 — 競合回避のため status/reviewed_at 条件を WHERE に再付与
+    // audit-only: P5-43 Step 4 — バックフィル時の二重ガード（既に reviewed 済みの行のみ live 化）
+    /* eslint-disable no-restricted-syntax */
     const { error: updErr } = await sb
       .from('articles')
       .update({
@@ -176,6 +181,7 @@ async function main() {
       .eq('id', t.id)
       .eq('status', 'published')
       .not('reviewed_at', 'is', null);
+    /* eslint-enable no-restricted-syntax */
 
     if (updErr) {
       failures.push({ id: t.id, phase: 'articles.update', message: updErr.message });

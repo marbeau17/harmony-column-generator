@@ -14,6 +14,8 @@ import {
   generateFAQSchema,
   generatePersonSchema,
   generateBreadcrumbSchema,
+  parseFaqData,
+  type FAQItem,
 } from '@/lib/seo/structured-data';
 import {
   DEFAULT_SEO_SETTINGS,
@@ -91,38 +93,8 @@ function formatDateJa(isoDate: string): string {
 }
 
 // ─── FAQ HTML生成 ──────────────────────────────────────────────────────────
-
-interface FAQItem {
-  question: string;
-  answer: string;
-}
-
-function parseFaqData(faqData: unknown): FAQItem[] {
-  if (!faqData) return [];
-
-  let items: unknown[];
-  if (typeof faqData === 'string') {
-    try {
-      items = JSON.parse(faqData);
-    } catch {
-      return [];
-    }
-  } else if (Array.isArray(faqData)) {
-    items = faqData;
-  } else {
-    return [];
-  }
-
-  if (!Array.isArray(items)) return [];
-
-  return items.filter(
-    (item): item is FAQItem =>
-      typeof item === 'object' &&
-      item !== null &&
-      typeof (item as FAQItem).question === 'string' &&
-      typeof (item as FAQItem).answer === 'string',
-  );
-}
+// FAQ 構造の zod 検証 + parser は @/lib/seo/structured-data に集約。
+// ここではビュー側のレンダリングだけを担う。
 
 function buildFaqHtml(faqs: FAQItem[]): string {
   if (faqs.length === 0) return '';
