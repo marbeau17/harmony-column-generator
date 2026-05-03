@@ -691,13 +691,13 @@ export function generateArticleHtml(
         ${faqHtml}
       </section>` : ''}
 
-      <!-- 関連記事3件 -->
-      <section class="article-related">
+      <!-- 関連記事3件 (P5-59: 同 generation_mode で 3 件揃わない場合は section 自体を非表示) -->
+      ${article.related_articles && article.related_articles.length > 0 ? `<section class="article-related">
         <h2>関連記事</h2>
         <div class="article-related-grid">
           ${relatedArticlesHtml}
         </div>
-      </section>
+      </section>` : ''}
 
       <!-- P5-52: 著者プロフィールカードはここ 1 箇所のみ。
            旧構成では「関連記事の前」にプロフィールを置き、別レイヤで footer 後にも

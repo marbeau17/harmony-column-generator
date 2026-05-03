@@ -6,6 +6,9 @@
 // bigram トークナイザーで日本語テキストを分割。
 // ============================================================================
 
+// P5-59: generation_mode の厳密型を共通 types から取り込む
+import type { GenerationMode } from '@/types/article';
+
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
 export interface RelatedArticle {
@@ -17,8 +20,8 @@ export interface RelatedArticle {
 export interface ArticleCard {
   href: string;
   title: string;
-  // P5-59: 生成モード（zero-generation 等）の識別用フィールド
-  generation_mode?: string | null;
+  // P5-59: 生成モード（zero / source）の識別用フィールド。string → GenerationMode に厳密化
+  generation_mode?: GenerationMode | null;
 }
 
 // ─── トークナイザー ─────────────────────────────────────────────────────────

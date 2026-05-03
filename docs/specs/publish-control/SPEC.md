@@ -261,6 +261,47 @@ Step 3 マイグレーション `20260502_publish_control_step3.sql` で以下 3
 
 <!-- /P5-43 Step 3: review action API -->
 
+<!-- P5-59: related-articles generation_mode segregation (additive) -->
+### 3.9 関連記事の generation_mode 同質性ルール (P5-59)
+
+> 本セクションは additive。§3.6 (関連記事同期) と
+> `docs/specs/publish-control/07-related-articles-logic.md` の選定アルゴリズムに
+> **フィルタ条件を1段追加**するだけで、保存場所・埋め込み・リップル処理は不変。
+
+#### 目的
+zero-generation 由来記事 (`generation_mode='zero_gen'`) と過去アメブロ移行記事
+(`generation_mode='legacy_ameblo'` 等) を **混在させない**。
+視点・トーン・CTA 配置が異なるため、関連記事ブロックに混ざると読者体験が壊れる。
+
+#### ルール
+関連記事候補集合 (`fetchPublishedArticleCards` 由来) を、対象記事 X の
+`articles.generation_mode` と **同一値** の記事のみに絞り込む:
+
+```
+candidates = published AND is_hub_visible = true
+           AND generation_mode = X.generation_mode
+```
+
+- TF-IDF コサイン類似度・`SPIRITUAL_TERMS` ボーナス・top3 切り出しは従来通り
+- フォールバック (`/column/[slug]/page.tsx` の theme ベース補完) も
+  同 `generation_mode` 内に限定する
+- 同 `generation_mode` 候補が 3 件未満なら不足のまま返す
+  (異 mode で埋めない / 既存挙動より関連数が減る可能性は許容)
+
+#### 適用範囲
+- `computeAndSaveRelatedArticles(articleId)` (`src/lib/publish/auto-related.ts`)
+- `updateAllRelatedArticles()` (`src/lib/publish/auto-related.ts`)
+- `/column/[slug]/page.tsx` のフォールバック関連
+- §3.6 リップル対象 Y の絞り込み (X の mode と異なる Y は再生成不要)
+
+#### 既存仕様との関係
+- §3.6 の DB JSONB 更新・ハブ再生成・リップルジョブ投入フローは不変
+- §3.3 visibility API / §3.8 review API の契約・ステートマシンは不変
+- 07-related-articles-logic.md のスコアリング式 (`cosineSimilarity + bonus`) は不変
+- HTML History Rule: 関連ブロック差し替えで HTML を書く Y は従来通り
+  `article_revisions` に `change_type='ripple_related'` で履歴 INSERT
+<!-- /P5-59 -->
+
 ## 4. 実装手順（ユーザー承認後）
 
 ```

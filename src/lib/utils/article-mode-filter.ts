@@ -12,10 +12,14 @@
  * 'source' 扱いするのが UI 上の合意（dashboard/articles/page.tsx 参照）。
  */
 
+// P5-59: GenerationMode を共通 types から取り込み、generation_mode を厳密化
+import type { GenerationMode } from '@/types/article';
+
 export type ArticleMode = 'all' | 'zero' | 'source';
 
 export interface MaybeArticle {
-  generation_mode?: string | null;
+  // P5-59: string → GenerationMode へ厳密化（null/undefined は legacy 互換のため保持）
+  generation_mode?: GenerationMode | null;
 }
 
 /**

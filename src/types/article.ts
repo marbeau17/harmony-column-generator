@@ -28,6 +28,15 @@ export const ARTICLE_STATUSES: readonly ArticleStatus[] = [
   'published',
 ] as const;
 
+// P5-59: 生成モードの厳密型。zero=新規生成 / source=書き換え / null=legacy。
+//        従来 string 型で散在していた generation_mode を本ユニオンで統一する。
+export type GenerationMode = 'zero' | 'source';
+
+export const GENERATION_MODES: readonly GenerationMode[] = [
+  'zero',
+  'source',
+] as const;
+
 /** 視点タイプ（元記事→コラムへの変換アプローチ） */
 export type PerspectiveType =
   | 'experience_to_lesson'

@@ -19,6 +19,8 @@ import { logClientError } from '@/lib/utils/client-error-logger';
 import { isPubliclyVisible, isDeployable } from '@/lib/publish-control/visibility-predicate';
 // P5-43 Step 3: 新 review API 用の ULID 生成（PublishButton と共有）
 import { ulid } from '@/lib/publish-control/ulid';
+// P5-59: generation_mode の厳密型を共通 types から取り込む
+import type { GenerationMode } from '@/types/article';
 
 // publish-control-v2 flag (inlined at build time). Default OFF — existing UI unchanged.
 const PUBLISH_CONTROL_V2 = process.env.NEXT_PUBLIC_PUBLISH_CONTROL_V2 === 'on';
@@ -37,7 +39,8 @@ interface ArticleItem {
   visibility_state?: string | null;
   hallucination_score?: number | null;
   yukiko_tone_score?: number | null;
-  generation_mode?: string | null;
+  // P5-59: string → GenerationMode へ厳密化
+  generation_mode?: GenerationMode | null;
   is_hub_visible?: boolean | null;
 }
 

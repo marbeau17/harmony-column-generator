@@ -11,11 +11,10 @@ import {
   type ArticleCard,
 } from '@/lib/generators/related-articles';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+// P5-59: 生成モード厳密型は共通 types から import（ローカル alias 廃止）
+import type { GenerationMode } from '@/types/article';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
-
-// P5-59: generation_mode を保持して同一モード内のみで関連記事を選定する
-type GenerationMode = 'zero' | 'source';
 
 interface PublishedArticleRow {
   id: string;

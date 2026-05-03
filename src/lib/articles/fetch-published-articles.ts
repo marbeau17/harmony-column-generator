@@ -3,14 +3,17 @@
  * See docs/specs/hub-rebuild-guarantee.md §4.4.
  */
 
+// P5-59: generation_mode の厳密型を共通 types から取り込む
+import type { GenerationMode } from '@/types/article';
+
 export type ArticleListItem = {
   id: string;
   title: string;
   slug: string;
   status: string;
   reviewed_at: string | null;
-  // P5-59: 生成モード（standard / zero など）を一覧でも判別可能に
-  generation_mode: string | null;
+  // P5-59: 生成モード（zero / source）を一覧でも判別可能に。string→GenerationMode に厳密化
+  generation_mode: GenerationMode | null;
   [key: string]: unknown;
 };
 

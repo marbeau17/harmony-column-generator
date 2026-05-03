@@ -1,6 +1,8 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { saveRevision } from '@/lib/db/article-revisions';
 import { assertArticleWriteAllowed, assertArticleDeleteAllowed } from '@/lib/publish-control/session-guard';
+// P5-59: generation_mode の厳密型を共通 types から取り込む
+import type { GenerationMode } from '@/types/article';
 
 // ---------- 型定義 ----------
 
@@ -91,7 +93,8 @@ export interface CreateArticleInput {
    * DB 側にも DEFAULT 'source' が定義されているが、依存せず明示書込みすることで
    * 後続の集計・フィルタ（例: batch-hide-source）で NULL 扱いを避ける。
    */
-  generation_mode?: 'zero' | 'source';
+  // P5-59: 'zero' | 'source' の literal union を共通 GenerationMode 型に統一
+  generation_mode?: GenerationMode;
 }
 
 // ---------- CRUD ----------
@@ -191,7 +194,8 @@ export async function createArticle(
     // generation_mode は明示的に書込む。未指定なら 'source' を既定値として採用する。
     // DB 側 DEFAULT 'source' に依存せず明示することで、列の NULL 化や DEFAULT 変更時の
     // 副作用を防ぎ、後続フィルタ（例: batch-hide-source）の判定を一貫させる。
-    const generationMode: 'zero' | 'source' = input.generation_mode ?? 'source';
+    // P5-59: GenerationMode 型へ統一（旧: 'zero' | 'source' literal union）
+    const generationMode: GenerationMode = input.generation_mode ?? 'source';
 
     const { data, error } = await supabase
       .from('articles')

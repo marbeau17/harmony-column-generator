@@ -27,7 +27,7 @@
 - **ハブページ** (`/spiritual/column/`): `generation_mode='zero'` のみ表示
 - **sitemap.xml**: `generation_mode='zero'` のみ含める
 - **公開ページ** (`/spiritual/column/[slug]/`): `generation_mode='zero'` のみ 200 応答 (rewrite は 404)
-- **column/[slug] 内部リンク (関連記事)**: `generation_mode='zero'` の中から選出
+- **column/[slug] 内部リンク (関連記事)**: `generation_mode='zero'` の中から選出 (P5-59 で「同一 mode 内のみ」ルールへ厳密化)
 
 ### 緊急脱出ハッチ (env)
 
@@ -107,3 +107,34 @@ closing tag を lookahead で参照のみに留め、別ステップで消費す
 ### 関連
 - `docs/progress.md` P5-57 セクション
 - 次工程 P5-58 (X2): article-html-generator 全 regex を網羅的に点検 + 境界ケーステスト整備
+
+---
+
+## P5-59 追記 — 関連記事を同一 `generation_mode` 内のみで選定
+
+**Date:** 2026-05-02
+**Status:** 実装完了
+
+### 背景
+P5-55 (上記) でハブ・sitemap・公開ページは `generation_mode='zero'` のみに限定したが、`articles.related_articles` フィールドはモード混在のまま計算されており、zero-gen 記事の関連欄に rewrite 記事 URL が混入する潜在リスクがあった。
+
+### 仕様
+- **関連記事計算**: 対象記事の `generation_mode` と**完全一致**する候補のみを TF-IDF コサイン類似度入力に使う
+  - zero 記事 → zero 記事のみ
+  - source 記事 → source 記事のみ
+  - `null` 記事 → `null` 記事のみ (旧 source 互換)
+- **空欄ルール継承**: 自分自身を除いた同一モード候補が 3 件未満なら `related_articles=[]` で保存
+- **env override `NEXT_PUBLIC_HUB_INCLUDE_REWRITES=on` の挙動**: ハブ・sitemap・公開ページの mode フィルタは緩むが、**関連記事の同一モードルールは緩めない** (混在は常に禁止)
+
+### 実装箇所 (P5-59)
+- `src/lib/publish/auto-related.ts::fetchPublishedArticleCards()` — SELECT に `generation_mode` を追加
+- `src/lib/publish/auto-related.ts::computeAndSaveRelatedArticles()` — `targetMode` で候補プールを絞る + 候補不足時に空配列保存
+- `src/lib/publish/auto-related.ts::updateAllRelatedArticles()` — 各記事の `generation_mode` で候補プールを絞る (同上)
+- `src/lib/generators/related-articles.ts::ArticleCard` — `generation_mode?: string | null` を任意フィールドとして追加 (型整合のみ)
+
+### ロールバック
+- 同一モード制限を一時解除する env スイッチは設けていない (混在は常に禁止)
+- 緊急時は `auto-related.ts` のフィルタ行をコメントアウトして即時デプロイ可能 (DB 変更なし)
+
+### 関連
+- `docs/progress.md` P5-59 セクション
