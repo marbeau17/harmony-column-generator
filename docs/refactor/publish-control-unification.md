@@ -265,7 +265,7 @@ visibility_state ∈ {live, live_hub_stale}
 - **動かない:** 旧 `reviewed_at` だけを直接 SQL で書き換える運用スクリプト
   (本リポジトリ内の `scripts/*.ts` で grep される ad-hoc 修復系) は更新が必要。
 
-### Step 4 — `reviewed_at` を audit-only に降格
+### Step 4 — `reviewed_at` を audit-only に降格 ✅ 完了 (2026-05-02)
 
 - DB レベル: `reviewed_at` を `NOT NULL` 化しない (歴史データのため null 容認)。
   ただし migration コメント・`session-guard.ts` の guard 対象から外し、
@@ -274,6 +274,25 @@ visibility_state ∈ {live, live_hub_stale}
   ここでは何もしない。
 - **動く:** 全フロー
 - **動かない:** 旧 SQL 直書きスクリプトのうち未更新のもの
+
+#### 完了サマリ ✅
+
+- writer 経路は Step 3 で `POST /api/articles/[id]/review` (action='approve') に
+  集約済み（`visibility/route.ts` / `batch-hide.ts` / `run-completion.ts` /
+  dashboard PUT は touch しない）。
+- Step 4 では display 用 reader と型定義に `// audit-only` コメントを付与し、
+  状態判定からの完全切り離しを明示:
+  - `src/types/article.ts` (Article.reviewed_at / reviewed_by)
+  - `src/lib/db/articles.ts` (ArticleRow.reviewed_at / reviewed_by)
+  - `src/lib/articles/fetch-published-articles.ts` (ArticleListItem.reviewed_at)
+  - `src/app/(dashboard)/dashboard/articles/page.tsx` (ArticleItem 型 + title 属性表示)
+  - `src/app/(dashboard)/dashboard/articles/[id]/page.tsx` (確認済みバッジ表示)
+  - `src/app/api/articles/[id]/deploy/route.ts` (logger ペイロード補助)
+- `compute-centroid.ts` は verify-state-parity 検証用に旧 reviewed_at を select 句に
+  残置 (where では未使用)。Step 2 のコメントどおり残置で OK と判定。
+- 全 75 ファイル / 844 テスト PASS を確認。
+- 完了マーカー: `docs/specs/publish-control/SPEC.md §3.7 reviewed_at 段階的降格計画` も
+  Step 4 完了に更新済み。
 
 ### Step 5 — 列削除 (任意・後日)
 

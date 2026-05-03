@@ -34,6 +34,7 @@ import {
 } from '@/lib/validators/zero-generate';
 import {
   buildZeroOutlinePrompt,
+  parseZeroOutlineOutput,
   ZERO_OUTLINE_TEMPERATURE,
   type ZeroOutlineInput,
   type ZeroOutlineOutput,
@@ -207,16 +208,43 @@ export async function POST(request: NextRequest) {
 
     const { system, user: userPrompt } = buildZeroOutlinePrompt(zeroInput);
 
-    // 5. Gemini で outline JSON 取得
-    const { data: outline } = await generateJson<ZeroOutlineOutput>(
+    // 5. Gemini で outline JSON 取得（temperature=0.5 / topP=0.9）→ zod 検証
+    //    schema 違反時は logger.error 後、強化プロンプトで 1 回だけ再試行する。
+    //    2 度連続違反は throw して 500 にフォールスルー。
+    const { data: rawOutline } = await generateJson<unknown>(
       system,
       userPrompt,
       {
-        // spec §5.3: Stage1 outline は temperature=0.5 / topP=0.9 で構成を決定的に
         temperature: ZERO_OUTLINE_TEMPERATURE,
         topP: 0.9,
       },
     );
+    let outline: ZeroOutlineOutput | null = parseZeroOutlineOutput(
+      rawOutline,
+      { attempt: 1 },
+    );
+    if (!outline) {
+      // retry: 直前の違反を踏まえて strict reminder を末尾に追加
+      const retryUser =
+        userPrompt +
+        '\n\n## 注意（再試行）\n直前の出力は ZeroOutlineOutput スキーマに違反しました。' +
+        'lead_summary / narrative_arc / emotion_curve / h2_chapters / citation_highlights / faq_items / image_prompts を' +
+        '**全て**埋め、image_prompts は必ず配列形式で返してください。';
+      const { data: rawRetry } = await generateJson<unknown>(
+        system,
+        retryUser,
+        {
+          temperature: ZERO_OUTLINE_TEMPERATURE,
+          topP: 0.9,
+        },
+      );
+      outline = parseZeroOutlineOutput(rawRetry, { attempt: 2 });
+      if (!outline) {
+        throw new Error(
+          'Stage1 outline schema validation failed after retry',
+        );
+      }
+    }
 
     // 6. articles INSERT
     const { id: articleId } = await insertZeroDraft({

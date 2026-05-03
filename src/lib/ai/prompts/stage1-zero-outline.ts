@@ -374,3 +374,76 @@ export function buildZeroOutlinePrompt(input: ZeroOutlineInput): {
 
 /** ゼロ生成プロンプトの推奨 temperature（spec §5.1） */
 export const ZERO_OUTLINE_TEMPERATURE = 0.5;
+
+// ─── Stage1 outline 生成 + zod validation + retry ─────────────────────────────
+
+export interface GenerateZeroOutlineOptions {
+  /** generateJson に渡す追加オプション（temperature 等は既定値あり） */
+  generateOptions?: Parameters<typeof generateJson>[2];
+  /** 1 回目失敗時に再試行するか（既定 true） */
+  retryOnSchemaError?: boolean;
+  /** 構造化ログ用の request id */
+  requestId?: string;
+  /** generateJson の差し替え用（テスト注入） */
+  generateJsonImpl?: typeof generateJson;
+}
+
+/**
+ * Stage1 outline を生成し、zod schema で検証する。
+ *
+ * 検証フロー:
+ *   1. プロンプト組立 → generateJson
+ *   2. parseZeroOutlineOutput で zod parse
+ *      - 成功: 即 return
+ *      - 失敗: logger.error 済み。retryOnSchemaError なら 1 回だけ retry
+ *   3. 2 度目も失敗ならスロー（呼び出し側で 502 等を返す）
+ *
+ * NOTE: 既存ルートが直接 generateJson を呼んでいる箇所は別関数として残し、
+ *       本関数は新規導入する（responsibility は「生成 + 検証」）。
+ */
+export async function generateZeroOutlineWithValidation(
+  input: ZeroOutlineInput,
+  opts: GenerateZeroOutlineOptions = {},
+): Promise<ZeroOutlineOutput> {
+  const generate = opts.generateJsonImpl ?? generateJson;
+  const retry = opts.retryOnSchemaError ?? true;
+  const generateOptions = opts.generateOptions ?? {
+    temperature: ZERO_OUTLINE_TEMPERATURE,
+    topP: 0.9,
+  };
+
+  const { system, user } = buildZeroOutlinePrompt(input);
+
+  // 1 回目
+  const first = await generate<unknown>(system, user, generateOptions);
+  const parsed1 = parseZeroOutlineOutput(first.data, {
+    requestId: opts.requestId,
+    attempt: 1,
+  });
+  if (parsed1) return parsed1;
+
+  if (!retry) {
+    throw new Error(
+      'Stage1 outline schema validation failed (retry disabled)',
+    );
+  }
+
+  // 2 回目（retry）— プロンプトに「直前の出力が schema 違反だった」旨を追記
+  const retryUser =
+    user +
+    '\n\n## 注意（再試行）\n直前の出力は ZeroOutlineOutput スキーマに違反していました。' +
+    'lead_summary / narrative_arc / emotion_curve / h2_chapters / citation_highlights / faq_items / image_prompts を' +
+    '**全て**埋め、image_prompts は必ず配列形式で返してください。';
+
+  const second = await generate<unknown>(system, retryUser, generateOptions);
+  const parsed2 = parseZeroOutlineOutput(second.data, {
+    requestId: opts.requestId,
+    attempt: 2,
+  });
+  if (parsed2) return parsed2;
+
+  // 2 度連続失敗 → 致命扱い（呼び出し側で 502/500 を返す）
+  throw new Error(
+    'Stage1 outline schema validation failed after retry',
+  );
+}

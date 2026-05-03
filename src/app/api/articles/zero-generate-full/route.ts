@@ -50,6 +50,7 @@ import {
 } from '@/lib/validators/zero-generate';
 import {
   buildZeroOutlinePrompt,
+  parseZeroOutlineOutput,
   ZERO_OUTLINE_TEMPERATURE,
   type ZeroOutlineInput,
   type ZeroOutlineOutput,
@@ -216,10 +217,12 @@ async function fetchThemeAndPersona(
 
 async function generateStage1Outline(
   zeroInput: ZeroOutlineInput,
+  ctx: { requestId?: string } = {},
 ): Promise<ZeroOutlineOutput> {
   const { system, user: userPrompt } = buildZeroOutlinePrompt(zeroInput);
 
-  const { data: outline } = await generateJson<ZeroOutlineOutput>(
+  // 1 回目
+  const { data: rawFirst } = await generateJson<unknown>(
     system,
     userPrompt,
     {
@@ -227,8 +230,35 @@ async function generateStage1Outline(
       topP: 0.9,
     },
   );
+  const parsedFirst = parseZeroOutlineOutput(rawFirst, {
+    requestId: ctx.requestId,
+    attempt: 1,
+  });
+  if (parsedFirst) return parsedFirst;
 
-  return outline;
+  // 2 回目（schema 違反による retry）
+  const retryUser =
+    userPrompt +
+    '\n\n## 注意（再試行）\n直前の出力は ZeroOutlineOutput スキーマに違反しました。' +
+    'lead_summary / narrative_arc / emotion_curve / h2_chapters / citation_highlights / faq_items / image_prompts を' +
+    '**全て**埋め、image_prompts は必ず配列形式で返してください。';
+  const { data: rawSecond } = await generateJson<unknown>(
+    system,
+    retryUser,
+    {
+      temperature: ZERO_OUTLINE_TEMPERATURE,
+      topP: 0.9,
+    },
+  );
+  const parsedSecond = parseZeroOutlineOutput(rawSecond, {
+    requestId: ctx.requestId,
+    attempt: 2,
+  });
+  if (parsedSecond) return parsedSecond;
+
+  throw new Error(
+    'Stage1 outline schema validation failed after retry',
+  );
 }
 
 // ─── RAG retrieve ───────────────────────────────────────────────────────────
@@ -569,7 +599,7 @@ export async function POST(request: NextRequest) {
       intent: body.intent,
       target_length: body.target_length,
     };
-    outline = await generateStage1Outline(zeroInput);
+    outline = await generateStage1Outline(zeroInput, { requestId });
     stages.outline = 'ok';
     console.log('[zero-gen.full.outline.end]', {
       requestId,
