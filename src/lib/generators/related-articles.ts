@@ -17,6 +17,8 @@ export interface RelatedArticle {
 export interface ArticleCard {
   href: string;
   title: string;
+  // P5-59: 生成モード（zero-generation 等）の識別用フィールド
+  generation_mode?: string | null;
 }
 
 // ─── トークナイザー ─────────────────────────────────────────────────────────

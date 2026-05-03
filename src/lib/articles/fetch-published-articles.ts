@@ -9,6 +9,8 @@ export type ArticleListItem = {
   slug: string;
   status: string;
   reviewed_at: string | null;
+  // P5-59: 生成モード（standard / zero など）を一覧でも判別可能に
+  generation_mode: string | null;
   [key: string]: unknown;
 };
 

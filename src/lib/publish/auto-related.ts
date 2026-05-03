@@ -14,11 +14,15 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
+// P5-59: generation_mode を保持して同一モード内のみで関連記事を選定する
+type GenerationMode = 'zero' | 'source';
+
 interface PublishedArticleRow {
   id: string;
   slug: string;
   title: string;
   keyword: string;
+  generation_mode: GenerationMode | null;
 }
 
 interface RelatedArticleEntry {
@@ -32,13 +36,14 @@ interface RelatedArticleEntry {
  * 公開済み記事の一覧を Supabase から取得し、ArticleCard[] 形式で返す
  */
 export async function fetchPublishedArticleCards(): Promise<
-  { id: string; slug: string; title: string; keyword: string }[]
+  PublishedArticleRow[]
 > {
   const supabase = await createServiceRoleClient();
 
+  // P5-59: generation_mode も取得して呼び出し元でモード一致フィルタを行う
   const { data, error } = await supabase
     .from('articles')
-    .select('id, slug, title, keyword')
+    .select('id, slug, title, keyword, generation_mode')
     .eq('status', 'published');
 
   if (error) {
@@ -59,9 +64,10 @@ export async function computeAndSaveRelatedArticles(
   const supabase = await createServiceRoleClient();
 
   // 対象記事を取得
+  // P5-59: generation_mode も取得して同一モードのみで関連記事候補を絞る
   const { data: article, error: fetchError } = await supabase
     .from('articles')
-    .select('id, slug, title, keyword')
+    .select('id, slug, title, keyword, generation_mode')
     .eq('id', articleId)
     .single();
 
@@ -74,26 +80,42 @@ export async function computeAndSaveRelatedArticles(
   // 全公開済み記事を取得
   const allCards = await fetchPublishedArticleCards();
 
+  // P5-59: 対象記事と同じ generation_mode の記事のみを候補にする
+  const targetMode = (article as { generation_mode: GenerationMode | null })
+    .generation_mode;
+  const sameModeCards = allCards.filter(
+    (a) => a.generation_mode === targetMode,
+  );
+
   // ArticleCard[] 形式に変換（href を env 駆動の相対パスにマッピング）
-  const candidates: ArticleCard[] = allCards.map((a) => ({
+  const candidates: ArticleCard[] = sameModeCards.map((a) => ({
     href: getArticleRelativePath(a.slug), // P5-44: env 駆動に置換
     title: a.title,
   }));
 
   // 自分自身を除外して関連記事を選定（上位3件）
   const selfHref = getArticleRelativePath(article.slug); // P5-44: env 駆動に置換
-  const related = selectRelatedArticles(
-    article.keyword,
-    candidates,
-    3,
-    selfHref,
-  );
 
-  // score を除外して保存用データを作成
-  const relatedEntries: RelatedArticleEntry[] = related.map((r) => ({
-    href: r.href,
-    title: r.title,
-  }));
+  // P5-59: 同一モード候補が3件未満なら空配列で保存（足りない時は空欄ルール）
+  // selfHref を除いた純粋な候補数で判定する
+  const candidatesExcludingSelf = candidates.filter((c) => c.href !== selfHref);
+  let relatedEntries: RelatedArticleEntry[];
+  if (candidatesExcludingSelf.length < 3) {
+    relatedEntries = [];
+  } else {
+    const related = selectRelatedArticles(
+      article.keyword,
+      candidates,
+      3,
+      selfHref,
+    );
+
+    // score を除外して保存用データを作成
+    relatedEntries = related.map((r) => ({
+      href: r.href,
+      title: r.title,
+    }));
+  }
 
   // DB に保存
   const { error: updateError } = await supabase
@@ -127,30 +149,42 @@ export async function updateAllRelatedArticles(): Promise<{
     return { updated: 0, errors: [] };
   }
 
-  // ArticleCard[] 形式に変換
-  const candidates: ArticleCard[] = allCards.map((a) => ({
-    href: getArticleRelativePath(a.slug), // P5-44: env 駆動に置換
-    title: a.title,
-  }));
-
   let updated = 0;
   const errors: string[] = [];
 
   // 各記事について関連記事を計算・保存
   for (const article of allCards) {
     try {
-      const selfHref = getArticleRelativePath(article.slug); // P5-44: env 駆動に置換
-      const related = selectRelatedArticles(
-        article.keyword,
-        candidates,
-        3,
-        selfHref,
+      // P5-59: 各記事の generation_mode と一致する候補のみで関連記事を計算する
+      const sameModeCards = allCards.filter(
+        (a) => a.generation_mode === article.generation_mode,
       );
-
-      const relatedEntries: RelatedArticleEntry[] = related.map((r) => ({
-        href: r.href,
-        title: r.title,
+      const candidates: ArticleCard[] = sameModeCards.map((a) => ({
+        href: getArticleRelativePath(a.slug), // P5-44: env 駆動に置換
+        title: a.title,
       }));
+
+      const selfHref = getArticleRelativePath(article.slug); // P5-44: env 駆動に置換
+
+      // P5-59: 自分自身を除いた同一モード候補が3件未満なら空配列で保存
+      const candidatesExcludingSelf = candidates.filter(
+        (c) => c.href !== selfHref,
+      );
+      let relatedEntries: RelatedArticleEntry[];
+      if (candidatesExcludingSelf.length < 3) {
+        relatedEntries = [];
+      } else {
+        const related = selectRelatedArticles(
+          article.keyword,
+          candidates,
+          3,
+          selfHref,
+        );
+        relatedEntries = related.map((r) => ({
+          href: r.href,
+          title: r.title,
+        }));
+      }
 
       const { error: updateError } = await supabase
         .from('articles')
