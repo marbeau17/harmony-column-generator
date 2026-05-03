@@ -309,7 +309,8 @@ export default function PlannerPage() {
   const fetchPlans = useCallback(async () => {
     try {
       setPlansError(null);
-      const res = await fetch('/api/plans');
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch('/api/plans', { credentials: 'same-origin' });
       if (!res.ok) throw new Error('プランの取得に失敗しました');
       const json = await res.json();
       // API は { data: [...], meta: {...} } を返す
@@ -325,7 +326,8 @@ export default function PlannerPage() {
   // ── Fetch queue ─────────────────────────────────────────────────
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await fetch('/api/queue');
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch('/api/queue', { credentials: 'same-origin' });
       if (res.ok) {
         const data = await res.json();
         const items: QueueItem[] = data.items ?? data.data ?? [];
@@ -383,8 +385,10 @@ export default function PlannerPage() {
     try {
       // ── Step 1: Keyword Research ──
       console.log('[planner] Step 1: Starting keyword research...');
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const step1Res = await fetch('/api/plans/generate', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count }),
       });
@@ -411,8 +415,10 @@ export default function PlannerPage() {
 
       // ── Step 2: Plan Generation + Source Selection + DB Save ──
       console.log('[planner] Step 2: Generating plans from keywords...');
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const step2Res = await fetch('/api/plans/generate-plans', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           keywords: step1Data.keywords,
@@ -470,8 +476,10 @@ export default function PlannerPage() {
   const handleApprove = async (id: string, reject = false) => {
     try {
       setActionMessage(reject ? '却下中...' : '承認中...');
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch(`/api/plans/${id}/approve`, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(reject ? { reject: true } : { approve: true }),
       });
@@ -558,7 +566,8 @@ export default function PlannerPage() {
       console.log(`[queue] Iteration ${iteration}: calling /api/queue/process`);
 
       try {
-        const res = await fetch('/api/queue/process', { method: 'POST' });
+        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+        const res = await fetch('/api/queue/process', { method: 'POST', credentials: 'same-origin' });
         const data = await res.json().catch(() => ({}));
 
         console.log(`[queue] Response: status=${res.status}`, data);
@@ -620,7 +629,8 @@ export default function PlannerPage() {
   const handleRetryQueueItem = async (queueItemId: string) => {
     try {
       // Reset the failed item to pending so it can be reprocessed
-      await fetch(`/api/queue/${queueItemId}/retry`, { method: 'POST' });
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      await fetch(`/api/queue/${queueItemId}/retry`, { method: 'POST', credentials: 'same-origin' });
       await fetchQueue();
       // Auto-start queue processing
       handleStartQueue();
@@ -644,7 +654,8 @@ export default function PlannerPage() {
       // Step 1: Prepare batch
       setBatchState({ status: 'preparing', items: [], completedCount: 0, failedCount: 0 });
 
-      const prepRes = await fetch('/api/queue/batch-generate', { method: 'POST' });
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const prepRes = await fetch('/api/queue/batch-generate', { method: 'POST', credentials: 'same-origin' });
       const prepData = await prepRes.json();
 
       if (!prepRes.ok || !prepData.batchItems?.length) {
@@ -685,7 +696,8 @@ export default function PlannerPage() {
           stepCount++;
           console.log(`[batch] Article ${i+1}/${items.length} step ${stepCount}: calling /api/queue/process`);
           try {
-            const res = await fetch('/api/queue/process', { method: 'POST' });
+            // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+            const res = await fetch('/api/queue/process', { method: 'POST', credentials: 'same-origin' });
             const data = await res.json();
             console.log(`[batch] Response:`, { status: res.status, processed: data.processed, step: data.currentStep, conflict: data.conflict, error: data.error });
 

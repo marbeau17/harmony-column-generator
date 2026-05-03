@@ -7,6 +7,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 // P5-44: ハードコード URL を env 駆動の単一ソースに統一
 import { getSiteUrl, getHubPath } from '@/lib/config/public-urls';
+// C7: 管理画面ボタンのエラーを Vercel logs から追跡できるよう必ず console.error で吐く
+import { logClientError } from '@/lib/utils/client-error-logger';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -215,17 +217,29 @@ export default function SettingsPage() {
     const prev = zeroGenAutoApprove;
     setZeroGenAutoApprove(next); // optimistic
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/settings', {
         method: 'PUT',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           section: 'workflow',
           data: { zero_gen_auto_approve: next },
         }),
       });
-      if (!res.ok) throw new Error('保存に失敗しました');
+      if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'settings:toggle-auto-approve:http',
+          new Error(`HTTP ${res.status}`),
+          { next, status: res.status },
+        );
+        throw new Error('保存に失敗しました');
+      }
       showToast(next ? 'ゼロ生成記事を自動承認に切替えました' : '由起子さん手動確認に切替えました', 'success');
     } catch (e: any) {
+      // C7: Vercel logs にも残す
+      logClientError('settings:toggle-auto-approve:catch', e, { next });
       setZeroGenAutoApprove(prev);
       showToast(`エラー: ${e.message}`, 'error');
     } finally {
@@ -242,15 +256,26 @@ export default function SettingsPage() {
       setDeployProgress((p) => Math.min(p + 8, 90));
     }, 300);
     try {
-      const res = await fetch('/api/hub/rebuild', { method: 'POST' });
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch('/api/hub/rebuild', { method: 'POST', credentials: 'same-origin' });
       const data = await res.json().catch(() => null);
       clearInterval(progressInterval);
       setDeployProgress(100);
-      if (!res.ok) throw new Error(data?.error ?? 'ハブページ再生成に失敗しました');
+      if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'settings:hub-rebuild:http',
+          new Error(`HTTP ${res.status} ${data?.error ?? ''}`),
+          { status: res.status, body: data },
+        );
+        throw new Error(data?.error ?? 'ハブページ再生成に失敗しました');
+      }
       setDeployMessage(`ハブページ再生成完了: ${data?.generated ?? 0} ファイル生成`);
     } catch (err: any) {
       clearInterval(progressInterval);
       setDeployProgress(0);
+      // C7: Vercel logs にも残す
+      logClientError('settings:hub-rebuild:catch', err);
       setDeployMessage(`エラー: ${err.message}`);
     } finally {
       setTimeout(() => { setDeploying('idle'); setDeployProgress(0); }, 1500);
@@ -265,18 +290,36 @@ export default function SettingsPage() {
       setDeployProgress((p) => Math.min(p + 5, 90));
     }, 400);
     try {
-      const res = await fetch('/api/hub/deploy', { method: 'POST' });
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch('/api/hub/deploy', { method: 'POST', credentials: 'same-origin' });
       const data = await res.json().catch(() => null);
       clearInterval(progressInterval);
       setDeployProgress(100);
-      if (!res.ok) throw new Error(data?.error ?? 'FTPデプロイに失敗しました');
-      setDeployMessage(
-        `FTPデプロイ完了: ${data?.uploaded ?? 0} ファイルアップロード`,
-      );
+      if (!res.ok) {
+        // P5-51: HTTP ステータスを必ずメッセージに含めて可視化（silent failure 解消）
+        const apiErr = data?.error ?? 'FTPデプロイに失敗しました';
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'settings:ftp-deploy:http',
+          new Error(`HTTP ${res.status} ${apiErr}`),
+          { status: res.status, body: data },
+        );
+        throw new Error(`[HTTP ${res.status}] ${apiErr}`);
+      }
+      const successMsg = `FTPデプロイ完了: ${data?.uploaded ?? 0} ファイルアップロード`;
+      setDeployMessage(successMsg);
+      // P5-51: 成功時も既存 showToast で可視化
+      showToast(successMsg, 'success');
     } catch (err: any) {
       clearInterval(progressInterval);
       setDeployProgress(0);
-      setDeployMessage(`エラー: ${err.message}`);
+      // P5-51: setDeployMessage だけだと silent fail に近いため必ず showToast(error) で可視化
+      const msg = err instanceof Error ? err.message : '予期せぬエラー';
+      console.error('[ftp-deploy] Error:', err);
+      // C7: Vercel logs にも残す
+      logClientError('settings:ftp-deploy:catch', err);
+      setDeployMessage(`エラー: ${msg}`);
+      showToast(`FTPデプロイ失敗: ${msg}`, 'error');
     } finally {
       setTimeout(() => { setDeploying('idle'); setDeployProgress(0); }, 1500);
     }
@@ -287,8 +330,17 @@ export default function SettingsPage() {
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/settings');
-      if (!res.ok) return;
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch('/api/settings', { credentials: 'same-origin' });
+      if (!res.ok) {
+        // C7: 取得失敗でも UI は defaults にフォールバックするが Vercel logs には残す
+        logClientError(
+          'settings:fetch:http',
+          new Error(`HTTP ${res.status}`),
+          { status: res.status },
+        );
+        return;
+      }
       const data = await res.json();
 
       // API は { basic: {...}, ai: {...}, cta: {...}, seo: {...} } を返す
@@ -311,8 +363,9 @@ export default function SettingsPage() {
       if (data.workflow && typeof data.workflow === 'object') {
         setZeroGenAutoApprove(Boolean(data.workflow.zero_gen_auto_approve));
       }
-    } catch {
-      // ignore — use defaults
+    } catch (err) {
+      // UI 上は defaults にフォールバックするが、C7: Vercel logs には残す
+      logClientError('settings:fetch:catch', err);
     } finally {
       setLoading(false);
     }
@@ -337,14 +390,22 @@ export default function SettingsPage() {
     };
 
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/settings', {
         method: 'PUT',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section: tab, data: payloads[tab] }),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => null);
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'settings:save:http',
+          new Error(`HTTP ${res.status} ${err?.error ?? ''}`),
+          { tab, status: res.status, body: err },
+        );
         throw new Error(err?.error ?? '保存に失敗しました');
       }
 
@@ -353,6 +414,8 @@ export default function SettingsPage() {
       clearDirty(tab);
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
+      // C7: Vercel logs にも残す
+      logClientError('settings:save:catch', err, { tab });
       setSaveMessage(`エラー: ${err.message}`);
       showToast(`エラー: ${err.message}`, 'error');
     } finally {
@@ -693,14 +756,25 @@ export default function SettingsPage() {
                   try {
                     setSaving(true);
                     setSaveMessage('全記事のCTAを更新中...');
-                    const res = await fetch('/api/articles/batch-update-cta', { method: 'POST' });
+                    // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                    const res = await fetch('/api/articles/batch-update-cta', { method: 'POST', credentials: 'same-origin' });
                     const data = await res.json();
-                    if (!res.ok) throw new Error(data?.error ?? 'CTA一括更新に失敗しました');
+                    if (!res.ok) {
+                      // C7: Vercel logs に必ず残す
+                      logClientError(
+                        'settings:batch-update-cta:http',
+                        new Error(`HTTP ${res.status} ${data?.error ?? ''}`),
+                        { status: res.status, body: data },
+                      );
+                      throw new Error(data?.error ?? 'CTA一括更新に失敗しました');
+                    }
                     const errorInfo = data.errors?.length ? ` (${data.errors.length}件エラー)` : '';
                     setSaveMessage(`CTA更新完了: ${data.updated ?? 0}件更新、${data.skipped ?? 0}件スキップ${errorInfo}`);
                     showToast(`${data.updated ?? 0}件のCTAを更新しました`, 'success');
                     setTimeout(() => setSaveMessage(null), 8000);
                   } catch (err: any) {
+                    // C7: Vercel logs にも残す
+                    logClientError('settings:batch-update-cta:catch', err);
                     setSaveMessage(`エラー: ${err.message}`);
                     showToast(`エラー: ${err.message}`, 'error');
                   } finally {
@@ -1129,14 +1203,26 @@ export default function SettingsPage() {
                         return;
                       }
                       try {
+                        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
                         const res = await fetch('/api/settings', {
                           method: 'PUT',
+                          credentials: 'same-origin',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ section: 'ftp', data: { host, user, password, port: Number(port), remotePath } }),
                         });
-                        if (!res.ok) throw new Error('保存に失敗しました');
+                        if (!res.ok) {
+                          // C7: Vercel logs に必ず残す
+                          logClientError(
+                            'settings:ftp-save:http',
+                            new Error(`HTTP ${res.status}`),
+                            { status: res.status, host, port: Number(port) },
+                          );
+                          throw new Error('保存に失敗しました');
+                        }
                         if (msgEl) { msgEl.textContent = '✅ FTP設定を保存しました'; msgEl.className = 'text-xs text-emerald-600'; }
                       } catch (err: unknown) {
+                        // C7: Vercel logs にも残す
+                        logClientError('settings:ftp-save:catch', err, { host, port: Number(port) });
                         if (msgEl) { msgEl.textContent = `❌ ${err instanceof Error ? err.message : String(err)}`; msgEl.className = 'text-xs text-red-600'; }
                       }
                     }}
@@ -1157,15 +1243,27 @@ export default function SettingsPage() {
                       }
                       if (msgEl) { msgEl.textContent = '接続テスト中...'; msgEl.className = 'text-xs text-amber-600'; }
                       try {
+                        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
                         const res = await fetch('/api/ftp/test', {
                           method: 'POST',
+                          credentials: 'same-origin',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ host, user, password, port: Number(port) }),
                         });
                         const data = await res.json();
-                        if (!res.ok) throw new Error(data?.error ?? '接続テスト失敗');
+                        if (!res.ok) {
+                          // C7: Vercel logs に必ず残す
+                          logClientError(
+                            'settings:ftp-test:http',
+                            new Error(`HTTP ${res.status} ${data?.error ?? ''}`),
+                            { status: res.status, host, port: Number(port), body: data },
+                          );
+                          throw new Error(data?.error ?? '接続テスト失敗');
+                        }
                         if (msgEl) { msgEl.textContent = '✅ FTP接続成功！'; msgEl.className = 'text-xs text-emerald-600'; }
                       } catch (err: unknown) {
+                        // C7: Vercel logs にも残す
+                        logClientError('settings:ftp-test:catch', err, { host, port: Number(port) });
                         if (msgEl) { msgEl.textContent = `❌ 接続失敗: ${err instanceof Error ? err.message : String(err)}`; msgEl.className = 'text-xs text-red-600'; }
                       }
                     }}
@@ -1199,7 +1297,8 @@ export default function SettingsPage() {
 
                   try {
                     // Step 1: 画像が必要な記事のリストを取得
-                    const listRes = await fetch('/api/articles?limit=100');
+                    // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                    const listRes = await fetch('/api/articles?limit=100', { credentials: 'same-origin' });
                     const listData = await listRes.json();
                     const allArticles = listData.data || [];
                     const needImages = allArticles.filter((a: Record<string, unknown>) => {
@@ -1224,19 +1323,37 @@ export default function SettingsPage() {
                       console.log('[batch-images]', i + 1, '/', needImages.length, ':', title);
 
                       try {
-                        const res = await fetch('/api/articles/' + (article.id as string) + '/generate-images', { method: 'POST' });
+                        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                        const res = await fetch('/api/articles/' + (article.id as string) + '/generate-images', { method: 'POST', credentials: 'same-origin' });
                         const data = await res.json();
                         console.log('[batch-images] Result:', JSON.stringify(data));
-                        if (data.success || (data.images && data.images.length > 0)) { success++; } else { failed++; console.error('[batch-images] Failed:', data.error, data.errors); }
+                        if (data.success || (data.images && data.images.length > 0)) {
+                          success++;
+                        } else {
+                          failed++;
+                          console.error('[batch-images] Failed:', data.error, data.errors);
+                          // C7: Vercel logs に必ず残す
+                          logClientError(
+                            'settings:batch-images:item-fail',
+                            new Error(`HTTP ${res.status} ${data?.error ?? ''}`),
+                            { articleId: article.id, status: res.status, body: data },
+                          );
+                        }
                       } catch (err) {
                         failed++;
                         console.error('[batch-images] Error:', err);
+                        // C7: Vercel logs に必ず残す
+                        logClientError('settings:batch-images:item-catch', err, {
+                          articleId: article.id,
+                        });
                       }
                     }
 
                     if (msgEl) { msgEl.innerHTML = `✅ 完了: ${success}件成功${failed > 0 ? `、${failed}件失敗` : ''}`; msgEl.className = 'mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3'; }
                   } catch (err: unknown) {
                     console.error('[batch-images] Error:', err);
+                    // C7: Vercel logs にも残す
+                    logClientError('settings:batch-images:fatal', err);
                     if (msgEl) { msgEl.innerHTML = `❌ エラー: ${err instanceof Error ? err.message : String(err)}`; msgEl.className = 'mt-3 text-sm text-red-700 bg-red-50 rounded-lg p-3'; }
                   } finally {
                     if (btn) { btn.disabled = false; }
@@ -1267,12 +1384,23 @@ export default function SettingsPage() {
                   if (btn) btn.disabled = true;
                   if (msgEl) { msgEl.textContent = 'TOCを一括挿入中...'; msgEl.className = 'mt-3 text-sm text-amber-700 bg-amber-50 rounded-lg p-3'; }
                   try {
-                    const res = await fetch('/api/articles/batch-add-toc', { method: 'POST' });
+                    // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                    const res = await fetch('/api/articles/batch-add-toc', { method: 'POST', credentials: 'same-origin' });
                     const data = await res.json();
-                    if (!res.ok) throw new Error(data?.error ?? 'TOC一括挿入に失敗しました');
+                    if (!res.ok) {
+                      // C7: Vercel logs に必ず残す
+                      logClientError(
+                        'settings:batch-add-toc:http',
+                        new Error(`HTTP ${res.status} ${data?.error ?? ''}`),
+                        { status: res.status, body: data },
+                      );
+                      throw new Error(data?.error ?? 'TOC一括挿入に失敗しました');
+                    }
                     const errorInfo = data.errors?.length ? ` (${data.errors.length}件エラー)` : '';
                     if (msgEl) { msgEl.textContent = `完了: ${data.updated ?? 0}件挿入、${data.skipped ?? 0}件スキップ${errorInfo}`; msgEl.className = 'mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3'; }
                   } catch (err: unknown) {
+                    // C7: Vercel logs にも残す
+                    logClientError('settings:batch-add-toc:catch', err);
                     if (msgEl) { msgEl.textContent = `エラー: ${err instanceof Error ? err.message : String(err)}`; msgEl.className = 'mt-3 text-sm text-red-700 bg-red-50 rounded-lg p-3'; }
                   } finally {
                     if (btn) btn.disabled = false;
@@ -1392,9 +1520,18 @@ export default function SettingsPage() {
                     while (remaining > 0) {
                       batchNum++;
                       setHighlightMessage(`バッチ ${batchNum} 処理中... (${totalUpdated}件完了)`);
-                      const res = await fetch('/api/articles/batch-add-highlights?limit=5', { method: 'POST' });
+                      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                      const res = await fetch('/api/articles/batch-add-highlights?limit=5', { method: 'POST', credentials: 'same-origin' });
                       const data = await res.json().catch(() => null);
-                      if (!res.ok) throw new Error(data?.error ?? 'ハイライト適用に失敗しました');
+                      if (!res.ok) {
+                        // C7: Vercel logs に必ず残す
+                        logClientError(
+                          'settings:batch-highlights:http',
+                          new Error(`HTTP ${res.status} ${data?.error ?? ''}`),
+                          { batchNum, status: res.status, body: data },
+                        );
+                        throw new Error(data?.error ?? 'ハイライト適用に失敗しました');
+                      }
 
                       totalUpdated += data?.updated ?? 0;
                       totalErrors += data?.errors?.length ?? 0;
@@ -1406,6 +1543,8 @@ export default function SettingsPage() {
                       `完了: ${totalUpdated}件更新 / 全${totalArticles}件${totalErrors > 0 ? ` (エラー: ${totalErrors}件)` : ''}`
                     );
                   } catch (err: unknown) {
+                    // C7: Vercel logs にも残す
+                    logClientError('settings:batch-highlights:catch', err);
                     setHighlightMessage(`エラー: ${err instanceof Error ? err.message : String(err)}`);
                   } finally {
                     setHighlightRunning(false);

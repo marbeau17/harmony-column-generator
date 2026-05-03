@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+// P5-51: 一括デプロイの silent failure 解消（toast.error で件数 + 失敗 ID を可視化）
+import toast from 'react-hot-toast';
 import { Search, Plus, ChevronLeft, ChevronRight, ArrowUpDown, RefreshCw, Download, Upload } from 'lucide-react';
 import StatusBadge from '@/components/common/StatusBadge';
 import PublishButton, { type PublishButtonState } from '@/components/articles/PublishButton';
@@ -11,6 +13,8 @@ import GenerationModeBadge from '@/components/articles/GenerationModeBadge';
 import { rebuildHub, formatHubRebuildResult } from '@/lib/deploy/hub-rebuild-client';
 import { fetchPublishedArticles } from '@/lib/articles/fetch-published-articles';
 import { filterArticlesByMode } from '@/lib/utils/article-mode-filter';
+// C7: 管理画面ボタンのエラーを Vercel logs から追跡できるよう必ず console.error で吐く
+import { logClientError } from '@/lib/utils/client-error-logger';
 // P5-43 Step 2: 公開可視判定の単一ソース（reviewed_at ベースから visibility_state ベースへ統一）
 import { isPubliclyVisible, isDeployable } from '@/lib/publish-control/visibility-predicate';
 // P5-43 Step 3: 新 review API 用の ULID 生成（PublishButton と共有）
@@ -140,7 +144,14 @@ export default function ArticlesPage() {
     try {
       const fetchResult = await fetchPublishedArticles(200);
       if (!fetchResult.ok) {
-        setBulkDeployResult(`記事一覧取得エラー: ${fetchResult.error}`);
+        // P5-51: 記事一覧取得失敗を toast.error で可視化
+        const errMsg = `記事一覧取得エラー: ${fetchResult.error}`;
+        setBulkDeployResult(errMsg);
+        toast.error(errMsg, { duration: 8000 });
+        // C7: Vercel logs にも構造化エラーを残す
+        logClientError('articles-list:bulk-deploy:fetch-published', new Error(errMsg), {
+          inner: fetchResult.error,
+        });
         return;
       }
       const freshArticles = fetchResult.articles as unknown as ArticleItem[];
@@ -151,22 +162,38 @@ export default function ArticlesPage() {
       let success = 0;
       let failed = 0;
       const errors: string[] = [];
+      // P5-51: 失敗 ID を別途収集（toast に件数 + ID を可視化するため）
+      const failedIds: string[] = [];
 
       for (const article of reviewed) {
         try {
-          const res = await fetch(`/api/articles/${article.id}/deploy`, { method: 'POST' });
+          // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+          const res = await fetch(`/api/articles/${article.id}/deploy`, { method: 'POST', credentials: 'same-origin' });
           if (res.ok) {
             success++;
           } else {
             failed++;
+            failedIds.push(article.id);
             const body = await res.json().catch(() => ({}));
-            errors.push(`${article.title}: ${body.error || res.status}`);
+            errors.push(`${article.title}: [HTTP ${res.status}] ${body.error || ''}`);
             console.error(`[Deploy FAIL] ${article.slug}:`, body);
+            // C7: Vercel logs に必ず構造化エラーを残す
+            logClientError(
+              'articles-list:bulk-deploy:item-http',
+              new Error(`HTTP ${res.status} ${body.error || ''}`),
+              { articleId: article.id, slug: article.slug, status: res.status, body },
+            );
           }
         } catch (err) {
           failed++;
+          failedIds.push(article.id);
           errors.push(`${article.title}: ネットワークエラー`);
           console.error(`[Deploy ERROR] ${article.slug}:`, err);
+          // C7: Vercel logs に必ず構造化エラーを残す
+          logClientError('articles-list:bulk-deploy:item-network', err, {
+            articleId: article.id,
+            slug: article.slug,
+          });
         }
       }
 
@@ -179,9 +206,26 @@ export default function ArticlesPage() {
       msg += ` ／ ${formatHubRebuildResult(hubResult)}`;
       if (errors.length > 0) msg += `\n失敗: ${errors.slice(0, 3).join(' / ')}`;
       setBulkDeployResult(msg);
+
+      // P5-51: 1件以上失敗していれば toast.error で件数 + 失敗 ID（先頭3件）を可視化
+      if (failed > 0) {
+        const idPreview = failedIds.slice(0, 3).join(', ');
+        const more = failedIds.length > 3 ? ` 他 ${failedIds.length - 3} 件` : '';
+        toast.error(
+          `デプロイ失敗 ${failed} 件 / 成功 ${success} 件\n失敗ID: ${idPreview}${more}`,
+          { duration: 10000 },
+        );
+      } else if (success > 0) {
+        toast.success(`デプロイ成功 ${success} 件`);
+      }
     } catch (err) {
+      // P5-51: 全体失敗を toast.error で可視化（silent failure 解消）
+      const msg = err instanceof Error ? err.message : '予期せぬエラー';
       console.error('[BulkDeploy ERROR]:', err);
-      setBulkDeployResult('デプロイに失敗しました');
+      // C7: Vercel logs に構造化ログを残す
+      logClientError('articles-list:bulk-deploy:fatal', err);
+      setBulkDeployResult(`デプロイに失敗しました: ${msg}`);
+      toast.error(`一括デプロイ失敗: ${msg}`, { duration: 8000 });
     } finally {
       setBulkDeploying(false);
     }
@@ -234,8 +278,15 @@ export default function ArticlesPage() {
       params.set('limit', String(PER_PAGE));
       params.set('offset', String((page - 1) * PER_PAGE));
 
-      const res = await fetch(`/api/articles?${params.toString()}`);
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/articles?${params.toString()}`, { credentials: 'same-origin' });
       if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'articles-list:fetch:http',
+          new Error(`HTTP ${res.status}`),
+          { status: res.status, query: params.toString() },
+        );
         throw new Error(`記事の取得に失敗しました (${res.status})`);
       }
 
@@ -244,6 +295,12 @@ export default function ArticlesPage() {
       // API が meta.total を返す場合と count を返す場合の両方に対応
       setTotalCount(json.meta?.total ?? json.count ?? 0);
     } catch (err) {
+      // C7: Vercel logs にも残す
+      logClientError('articles-list:fetch:catch', err, {
+        statusFilter,
+        keyword,
+        page,
+      });
       setError(err instanceof Error ? err.message : '記事の取得に失敗しました');
     } finally {
       setLoading(false);
@@ -351,14 +408,23 @@ export default function ArticlesPage() {
     setBulkUpdating(true);
     setBulkUpdateResult(null);
     try {
-      const res = await fetch('/api/articles/update-related', { method: 'POST' });
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch('/api/articles/update-related', { method: 'POST', credentials: 'same-origin' });
       if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'articles-list:bulk-update-related:http',
+          new Error(`HTTP ${res.status}`),
+          { status: res.status },
+        );
         throw new Error(`更新に失敗しました (${res.status})`);
       }
       const json = await res.json();
       const count = json.updatedCount ?? json.updated ?? 0;
       setBulkUpdateResult(`${count} 件の記事の関連記事を更新しました`);
     } catch (err) {
+      // C7: Vercel logs にも残す
+      logClientError('articles-list:bulk-update-related:catch', err);
       setBulkUpdateResult(err instanceof Error ? err.message : '更新に失敗しました');
     } finally {
       setBulkUpdating(false);
@@ -369,14 +435,22 @@ export default function ArticlesPage() {
     setBulkExporting(true);
     setBulkExportResult(null);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/export/article', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'articles-list:bulk-export:http',
+          new Error(`HTTP ${res.status} ${err.error || ''}`),
+          { status: res.status, body: err },
+        );
         throw new Error(err.error || 'エクスポートに失敗しました');
       }
 
@@ -393,6 +467,8 @@ export default function ArticlesPage() {
 
       setBulkExportResult('ZIPファイルをダウンロードしました');
     } catch (err) {
+      // C7: Vercel logs にも残す
+      logClientError('articles-list:bulk-export:catch', err);
       setBulkExportResult(`エラー: ${err instanceof Error ? err.message : 'エクスポートに失敗'}`);
     } finally {
       setBulkExporting(false);
@@ -875,8 +951,10 @@ export default function ArticlesPage() {
 
                           let res: Response;
                           try {
+                            // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
                             res = await fetch(`/api/articles/${article.id}/review`, {
                               method: 'POST',
+                              credentials: 'same-origin',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ action, requestId: ulid() }),
                             });
@@ -885,6 +963,11 @@ export default function ArticlesPage() {
                             setArticles((prev) =>
                               prev.map((a) => (a.id === article.id ? { ...a, reviewed_at: prevReviewedAt } : a))
                             );
+                            // C7: Vercel logs に必ず残す
+                            logClientError('articles-list:review-toggle:catch', err, {
+                              articleId: article.id,
+                              action,
+                            });
                             setBulkDeployResult(`確認フラグ更新失敗: ${err instanceof Error ? err.message : String(err)}`);
                             return;
                           }
@@ -893,6 +976,12 @@ export default function ArticlesPage() {
                             // サーバ側エラー → rollback
                             setArticles((prev) =>
                               prev.map((a) => (a.id === article.id ? { ...a, reviewed_at: prevReviewedAt } : a))
+                            );
+                            // C7: Vercel logs に必ず残す
+                            logClientError(
+                              'articles-list:review-toggle:http',
+                              new Error(`HTTP ${res.status}`),
+                              { articleId: article.id, action, status: res.status },
                             );
                             setBulkDeployResult(`確認フラグ更新失敗 (HTTP ${res.status})`);
                             return;

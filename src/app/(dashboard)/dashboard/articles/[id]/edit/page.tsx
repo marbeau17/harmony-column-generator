@@ -49,8 +49,10 @@ function useAutoSave(
 
       setSaveStatus('saving');
       try {
+        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
         const res = await fetch(`/api/articles/${articleId}`, {
           method: 'PUT',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: json,
         });
@@ -115,7 +117,8 @@ export default function ArticleEditPage() {
     async function load() {
       try {
         setLoading(true);
-        const res = await fetch(`/api/articles/${articleId}`);
+        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+        const res = await fetch(`/api/articles/${articleId}`, { credentials: 'same-origin' });
         if (!res.ok) throw new Error('記事の取得に失敗しました');
         const json = await res.json();
         const a = json.data as Article;
@@ -210,8 +213,10 @@ export default function ArticleEditPage() {
     setPublishing(true);
     try {
       // 1. フィールド更新（最終HTML・メタ情報を保存）
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const updateRes = await fetch(`/api/articles/${articleId}`, {
         method: 'PUT',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...autoSaveData,
@@ -222,8 +227,10 @@ export default function ArticleEditPage() {
       if (!updateRes.ok) throw new Error('記事の保存に失敗しました');
 
       // 2. ステータス遷移: editing → published
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const transitionRes = await fetch(`/api/articles/${articleId}/transition`, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'published' }),
       });
@@ -233,8 +240,10 @@ export default function ArticleEditPage() {
       }
 
       // バックグラウンドでFTPに自動アップロード（失敗しても公開は成功扱い）
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       fetch(`/api/articles/${articleId}/deploy`, {
         method: 'POST',
+        credentials: 'same-origin',
       }).then((res) => {
         if (res.ok) {
           console.log('[publish] FTP自動アップロード完了');
@@ -289,8 +298,10 @@ export default function ArticleEditPage() {
     setExporting(true);
     setExportResult(null);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/export/article', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId }),
       });
@@ -322,7 +333,8 @@ export default function ArticleEditPage() {
 
   const handleApplyImages = useCallback(async () => {
     try {
-      const res = await fetch(`/api/articles/${articleId}`);
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/articles/${articleId}`, { credentials: 'same-origin' });
       if (!res.ok) {
         toast.error('記事の取得に失敗しました');
         return;
@@ -442,7 +454,8 @@ export default function ArticleEditPage() {
                   setLoading(true);
                   const load = async () => {
                     try {
-                      const res = await fetch(`/api/articles/${articleId}`);
+                      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                      const res = await fetch(`/api/articles/${articleId}`, { credentials: 'same-origin' });
                       if (!res.ok) throw new Error('記事の取得に失敗しました');
                       const json = await res.json();
                       const a = json.data as Article;
@@ -583,12 +596,15 @@ export default function ArticleEditPage() {
                   setQualityCheck(null);
                   try {
                     // まず最新の本文を保存
+                    // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
                     await fetch(`/api/articles/${articleId}`, {
                       method: 'PUT',
+                      credentials: 'same-origin',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ stage2_body_html: bodyHtml, title, meta_description: metaDescription }),
                     });
-                    const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST' });
+                    // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                    const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST', credentials: 'same-origin' });
                     const data = await res.json();
                     setQualityCheck(data);
                   } catch {
@@ -943,7 +959,8 @@ export default function ArticleEditPage() {
                               onAfter={async () => {
                                 setQualityLoading(true);
                                 try {
-                                  const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST' });
+                                  // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                                  const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST', credentials: 'same-origin' });
                                   const data = await res.json();
                                   setQualityCheck(data);
                                 } finally {
@@ -979,7 +996,8 @@ export default function ArticleEditPage() {
                                 onAfter={async () => {
                                   setQualityLoading(true);
                                   try {
-                                    const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST' });
+                                    // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                                    const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST', credentials: 'same-origin' });
                                     const data = await res.json();
                                     setQualityCheck(data);
                                   } finally {
@@ -1030,8 +1048,10 @@ export default function ArticleEditPage() {
                     try {
                       // bulk override: 各 item を ignore-warn で登録
                       for (const it of failingItems) {
+                        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
                         await fetch(`/api/articles/${articleId}/auto-fix`, {
                           method: 'POST',
+                          credentials: 'same-origin',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
                             fix_strategy: 'ignore-warn',
@@ -1043,8 +1063,10 @@ export default function ArticleEditPage() {
                       // P5-35: 緊急公開は transition?force=true で backend check も bypass
                       // 通常 handlePublish の transition 呼出を上書きする形で直接実行
                       try {
+                        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
                         const updateRes = await fetch(`/api/articles/${articleId}`, {
                           method: 'PUT',
+                          credentials: 'same-origin',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
                             ...autoSaveData,
@@ -1053,10 +1075,12 @@ export default function ArticleEditPage() {
                           }),
                         });
                         if (!updateRes.ok) throw new Error('記事保存に失敗');
+                        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
                         const transitionRes = await fetch(
                           `/api/articles/${articleId}/transition?force=true`,
                           {
                             method: 'POST',
+                            credentials: 'same-origin',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ status: 'published' }),
                           },
@@ -1066,7 +1090,8 @@ export default function ArticleEditPage() {
                           throw new Error(errJson?.error ?? `HTTP ${transitionRes.status}`);
                         }
                         // FTP 自動アップロード (best-effort)
-                        fetch(`/api/articles/${articleId}/deploy`, { method: 'POST' }).catch(() => {});
+                        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                        fetch(`/api/articles/${articleId}/deploy`, { method: 'POST', credentials: 'same-origin' }).catch(() => {});
                         setPublishDialogOpen(false);
                         setPublishSuccessOpen(true);
                         toast.success('🚀 緊急公開しました');

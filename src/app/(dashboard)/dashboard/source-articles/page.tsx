@@ -110,7 +110,8 @@ export default function SourceArticlesPage() {
       if (keyword) params.set('keyword', keyword);
       if (themeFilter) params.set('theme_category', themeFilter);
 
-      const res = await fetch(`/api/source-articles?${params}`);
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/source-articles?${params}`, { credentials: 'same-origin' });
       if (!res.ok) throw new Error('元記事の取得に失敗しました');
       const json: ListResponse = await res.json();
 
@@ -174,8 +175,10 @@ export default function SourceArticlesPage() {
       const formData = new FormData();
       formData.append('file', file);
 
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/source-articles/import', {
         method: 'POST',
+        credentials: 'same-origin',
         body: formData,
       });
 

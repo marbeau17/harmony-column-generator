@@ -204,7 +204,8 @@ export default function ReviewPage() {
 
   const fetchArticle = useCallback(async () => {
     try {
-      const res = await fetch(`/api/articles/${articleId}`);
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/articles/${articleId}`, { credentials: 'same-origin' });
       if (!res.ok) throw new Error('記事の取得に失敗しました');
       const json = await res.json();
       const data: Article & { generation_mode?: string | null } = json.data;
@@ -258,8 +259,10 @@ export default function ReviewPage() {
   const handleApproveEdit = async () => {
     setSubmitting(true);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch(`/api/articles/${articleId}/transition`, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'editing' }),
       });
@@ -283,8 +286,10 @@ export default function ReviewPage() {
   const handleRegenerate = async () => {
     setRegenerating(true);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch(`/api/ai/generate-body`, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId }),
       });

@@ -147,7 +147,8 @@ export default function OutlinePage() {
 
   const fetchArticle = useCallback(async () => {
     try {
-      const res = await fetch(`/api/articles/${articleId}`);
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/articles/${articleId}`, { credentials: 'same-origin' });
       if (!res.ok) throw new Error('記事の取得に失敗しました');
       const json = await res.json();
       const data: Article & { generation_mode?: string | null } = json.data;
@@ -194,8 +195,10 @@ export default function OutlinePage() {
     setSubmitting(true);
     try {
       // 1. フィールド更新（タイトル、メタ、構成案の編集内容を保存）
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const updateRes = await fetch(`/api/articles/${articleId}`, {
         method: 'PUT',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: editTitle,
@@ -207,8 +210,10 @@ export default function OutlinePage() {
 
       // 2. ステータス遷移: outline_pending → outline_approved（既にapprovedならスキップ）
       if (article.status !== 'outline_approved') {
+        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
         const transitionRes = await fetch(`/api/articles/${articleId}/transition`, {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'outline_approved' }),
         });
@@ -216,8 +221,10 @@ export default function OutlinePage() {
       }
 
       // 3. 本文生成開始（generate-body が outline_approved → body_generating を内部で処理）
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const genRes = await fetch(`/api/ai/generate-body`, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId }),
       });
@@ -236,8 +243,10 @@ export default function OutlinePage() {
   const handleRegenerate = async () => {
     setRegenerating(true);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch(`/api/ai/generate-outline`, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId }),
       });

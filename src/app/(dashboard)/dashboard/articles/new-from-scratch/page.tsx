@@ -351,9 +351,10 @@ export default function NewFromScratchPage() {
       setOptionsLoading(true);
       setOptionsError(null);
       try {
+        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
         const [themesRes, personasRes] = await Promise.all([
-          fetch('/api/themes', { method: 'GET' }),
-          fetch('/api/personas', { method: 'GET' }),
+          fetch('/api/themes', { method: 'GET', credentials: 'same-origin' }),
+          fetch('/api/personas', { method: 'GET', credentials: 'same-origin' }),
         ]);
 
         if (!themesRes.ok) {
@@ -417,10 +418,12 @@ export default function NewFromScratchPage() {
       };
       // Phase 1: persona のみ即時表示
       try {
+        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
         const fastRes = await fetch(
           '/api/articles/zero-generate/suggest-keywords?mode=fast',
           {
             method: 'POST',
+            credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(reqBody),
           },
@@ -440,8 +443,10 @@ export default function NewFromScratchPage() {
       }
       // Phase 2: AI 候補を append（時間がかかるが UI はもう操作可能）
       try {
+        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
         const fullRes = await fetch('/api/articles/zero-generate/suggest-keywords', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(reqBody),
         });
@@ -562,9 +567,10 @@ export default function NewFromScratchPage() {
       // 並列で記事詳細とハルシネーション再評価を取る。
       // hallucination-check は POST だが冪等的に再実行可能なため、
       // ここで claims を取り直して Pane 用の HallucinationResult を組み立てる。
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const [articleRes, halluRes] = await Promise.allSettled([
-        fetch(`/api/articles/${articleId}`, { method: 'GET' }),
-        fetch(`/api/articles/${articleId}/hallucination-check`, { method: 'POST' }),
+        fetch(`/api/articles/${articleId}`, { method: 'GET', credentials: 'same-origin' }),
+        fetch(`/api/articles/${articleId}/hallucination-check`, { method: 'POST', credentials: 'same-origin' }),
       ]);
 
       // 記事詳細
@@ -636,8 +642,10 @@ export default function NewFromScratchPage() {
 
     try {
       // P5-20: 非同期生成 — POST 即返で job_id を取得、SSE で進捗購読
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/articles/zero-generate-async', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           theme_id: themeId,

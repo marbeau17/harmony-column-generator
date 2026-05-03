@@ -67,9 +67,10 @@ export default function BatchZeroGeneratePage() {
     (async () => {
       setOptionsLoading(true);
       try {
+        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
         const [tRes, pRes] = await Promise.all([
-          fetch('/api/themes'),
-          fetch('/api/personas'),
+          fetch('/api/themes', { credentials: 'same-origin' }),
+          fetch('/api/personas', { credentials: 'same-origin' }),
         ]);
         if (!tRes.ok) throw new Error('テーマ取得失敗');
         if (!pRes.ok) throw new Error('ペルソナ取得失敗');
@@ -199,8 +200,10 @@ export default function BatchZeroGeneratePage() {
             target_length: r.target_length,
           })),
         };
+        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
         const res = await fetch('/api/articles/zero-generate-batch', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });

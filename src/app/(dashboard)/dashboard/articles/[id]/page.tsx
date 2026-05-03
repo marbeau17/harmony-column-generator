@@ -7,11 +7,15 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+// P5-51: 再デプロイ系ボタンの silent failure 解消（toast.error で可視化）
+import toast from 'react-hot-toast';
 import type { Article, ArticleStatus } from '@/types/article';
 import StatusBadge from '@/components/common/StatusBadge';
 import GenerationModeBadge from '@/components/articles/GenerationModeBadge';
 // P5-43 Step 2: 公開判定を visibility_state ベースに統一
 import { isPubliclyVisible } from '@/lib/publish-control/visibility-predicate';
+// C7: 管理画面ボタンのエラーを Vercel logs から追跡できるよう必ず console.error で吐く
+import { logClientError } from '@/lib/utils/client-error-logger';
 
 // ─── ステータスラベル ──────────────────────────────────────────────────────────
 
@@ -143,11 +147,21 @@ export default function ArticleDetailPage() {
 
   const fetchArticle = useCallback(async () => {
     try {
-      const res = await fetch(`/api/articles/${articleId}`);
-      if (!res.ok) throw new Error('記事の取得に失敗しました');
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/articles/${articleId}`, { credentials: 'same-origin' });
+      if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError('article-detail:fetch:http', new Error(`HTTP ${res.status}`), {
+          articleId,
+          status: res.status,
+        });
+        throw new Error('記事の取得に失敗しました');
+      }
       const json = await res.json();
       setArticle(json.data as Article);
     } catch (err) {
+      // C7: Vercel logs にも残す
+      logClientError('article-detail:fetch:catch', err, { articleId });
       setError(err instanceof Error ? err.message : '予期せぬエラー');
     } finally {
       setLoading(false);
@@ -157,12 +171,22 @@ export default function ArticleDetailPage() {
   const fetchRevisions = useCallback(async () => {
     setRevisionsLoading(true);
     try {
-      const res = await fetch(`/api/articles/${articleId}/revisions`);
-      if (!res.ok) return;
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/articles/${articleId}/revisions`, { credentials: 'same-origin' });
+      if (!res.ok) {
+        // C7: 取得失敗でも UI は静かにフォールバックするが、Vercel logs には残す
+        logClientError(
+          'article-detail:fetch-revisions:http',
+          new Error(`HTTP ${res.status}`),
+          { articleId, status: res.status },
+        );
+        return;
+      }
       const json = await res.json();
       setRevisions((json.data ?? json.revisions ?? json) as typeof revisions);
-    } catch {
-      // リビジョン取得エラーは無視
+    } catch (err) {
+      // リビジョン取得エラーは UI 上は無視するが、Vercel logs には残す
+      logClientError('article-detail:fetch-revisions:catch', err, { articleId });
     } finally {
       setRevisionsLoading(false);
     }
@@ -172,12 +196,24 @@ export default function ArticleDetailPage() {
     if (!window.confirm('このバージョンに復元しますか？現在の内容は上書きされます。')) return;
     setRestoreLoading(revisionId);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch(`/api/articles/${articleId}/revisions/${revisionId}/restore`, {
         method: 'POST',
+        credentials: 'same-origin',
       });
-      if (!res.ok) throw new Error('復元に失敗しました');
+      if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'article-detail:restore:http',
+          new Error(`HTTP ${res.status}`),
+          { articleId, revisionId, status: res.status },
+        );
+        throw new Error('復元に失敗しました');
+      }
       window.location.reload();
     } catch (err) {
+      // C7: Vercel logs にも残す
+      logClientError('article-detail:restore:catch', err, { articleId, revisionId });
       setError(err instanceof Error ? err.message : '復元エラー');
     } finally {
       setRestoreLoading(null);
@@ -212,7 +248,8 @@ export default function ArticleDetailPage() {
     if (isBodyGenerating || isFinalizingZeroGen) {
       pollingRef.current = setInterval(async () => {
         try {
-          const res = await fetch(`/api/articles/${articleId}`);
+          // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+          const res = await fetch(`/api/articles/${articleId}`, { credentials: 'same-origin' });
           if (!res.ok) return;
           const json = await res.json();
           const updated = json.data as Article;
@@ -249,14 +286,26 @@ export default function ArticleDetailPage() {
   const handleGenerateOutline = async () => {
     setActionLoading(true);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/ai/generate-outline', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId }),
       });
-      if (!res.ok) throw new Error('アウトライン生成に失敗しました');
+      if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'article-detail:generate-outline:http',
+          new Error(`HTTP ${res.status}`),
+          { articleId, status: res.status },
+        );
+        throw new Error('アウトライン生成に失敗しました');
+      }
       await fetchArticle();
     } catch (err) {
+      // C7: Vercel logs にも残す
+      logClientError('article-detail:generate-outline:catch', err, { articleId });
       setError(err instanceof Error ? err.message : '予期せぬエラー');
     } finally {
       setActionLoading(false);
@@ -268,14 +317,26 @@ export default function ArticleDetailPage() {
   const handleGenerateBody = async () => {
     setActionLoading(true);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/ai/generate-body', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId }),
       });
-      if (!res.ok) throw new Error('本文生成の開始に失敗しました');
+      if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'article-detail:generate-body:http',
+          new Error(`HTTP ${res.status}`),
+          { articleId, status: res.status },
+        );
+        throw new Error('本文生成の開始に失敗しました');
+      }
       await fetchArticle();
     } catch (err) {
+      // C7: Vercel logs にも残す
+      logClientError('article-detail:generate-body:catch', err, { articleId });
       setError(err instanceof Error ? err.message : '予期せぬエラー');
     } finally {
       setActionLoading(false);
@@ -287,14 +348,26 @@ export default function ArticleDetailPage() {
   const handleGenerateImagePrompts = async () => {
     setImagePromptLoading(true);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/ai/generate-image-prompts', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId }),
       });
-      if (!res.ok) throw new Error('画像プロンプト生成に失敗しました');
+      if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'article-detail:generate-image-prompts:http',
+          new Error(`HTTP ${res.status}`),
+          { articleId, status: res.status },
+        );
+        throw new Error('画像プロンプト生成に失敗しました');
+      }
       await fetchArticle();
     } catch (err) {
+      // C7: Vercel logs にも残す
+      logClientError('article-detail:generate-image-prompts:catch', err, { articleId });
       setError(err instanceof Error ? err.message : '予期せぬエラー');
     } finally {
       setImagePromptLoading(false);
@@ -307,8 +380,10 @@ export default function ArticleDetailPage() {
     setImageGenLoading(true);
     console.log('[image-gen] Starting image generation for article:', articleId);
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch(`/api/articles/${articleId}/generate-images`, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
       });
       const body = await res.json().catch(() => ({}));
@@ -316,6 +391,12 @@ export default function ArticleDetailPage() {
       if (!res.ok) {
         const errMsg = body.error || body.message || '画像生成に失敗しました';
         console.error('[image-gen] Error:', errMsg);
+        // C7: Vercel logs にも残す
+        logClientError(
+          'article-detail:generate-images:http',
+          new Error(`HTTP ${res.status} ${errMsg}`),
+          { articleId, status: res.status, body },
+        );
         throw new Error(errMsg);
       }
       console.log('[image-gen] Success:', body);
@@ -323,6 +404,8 @@ export default function ArticleDetailPage() {
       await fetchArticle();
     } catch (err) {
       console.error('[image-gen] Exception:', err);
+      // C7: Vercel logs にも残す
+      logClientError('article-detail:generate-images:catch', err, { articleId });
       setError(err instanceof Error ? err.message : '予期せぬエラー');
     } finally {
       setImageGenLoading(false);
@@ -336,15 +419,32 @@ export default function ArticleDetailPage() {
     setFtpResult(null);
     console.log('[ftp] Starting FTP upload for article:', articleId);
     try {
-      const res = await fetch(`/api/articles/${articleId}/deploy`, { method: 'POST' });
-      const data = await res.json();
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/articles/${articleId}/deploy`, { method: 'POST', credentials: 'same-origin' });
+      // P5-51: HTTP ステータス & API エラーメッセージを必ず toast.error で可視化（silent failure 解消）
+      const data = await res.json().catch(() => ({}));
       console.log('[ftp] Response:', data);
-      if (!res.ok) throw new Error(data.error || 'FTPアップロードに失敗しました');
+      if (!res.ok) {
+        const apiErr = (data && typeof data === 'object' && 'error' in data ? (data as any).error : null) || 'FTPアップロードに失敗しました';
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'article-detail:ftp-upload:http',
+          new Error(`HTTP ${res.status} ${apiErr}`),
+          { articleId, status: res.status, body: data },
+        );
+        throw new Error(`[HTTP ${res.status}] ${apiErr}`);
+      }
       setFtpResult(`✓ ${data.message}`);
+      toast.success(`FTPアップロード成功: ${data.message ?? '完了'}`);
       setTimeout(() => setFtpResult(null), 5000);
     } catch (err) {
+      // P5-51: console.error だけだとユーザーに気付かれないため toast.error で必ず可視化
+      const msg = err instanceof Error ? err.message : '予期せぬエラー';
       console.error('[ftp] Error:', err);
-      setFtpResult(`✗ ${err instanceof Error ? err.message : 'エラー'}`);
+      // C7: Vercel logs にも残す
+      logClientError('article-detail:ftp-upload:catch', err, { articleId });
+      setFtpResult(`✗ ${msg}`);
+      toast.error(`FTPアップロード失敗: ${msg}`, { duration: 8000 });
       setTimeout(() => setFtpResult(null), 8000);
     } finally {
       setFtpUploading(false);
@@ -356,11 +456,22 @@ export default function ArticleDetailPage() {
   const handleQualityCheck = async () => {
     setQualityLoading(true);
     try {
-      const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST' });
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/articles/${articleId}/quality-check`, { method: 'POST', credentials: 'same-origin' });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '品質チェックに失敗しました');
+      if (!res.ok) {
+        // C7: Vercel logs に必ず残す
+        logClientError(
+          'article-detail:quality-check:http',
+          new Error(`HTTP ${res.status} ${data?.error || ''}`),
+          { articleId, status: res.status, body: data },
+        );
+        throw new Error(data.error || '品質チェックに失敗しました');
+      }
       setQualityCheck(data);
     } catch (err) {
+      // C7: Vercel logs にも残す
+      logClientError('article-detail:quality-check:catch', err, { articleId });
       setError(err instanceof Error ? err.message : '予期せぬエラー');
     } finally {
       setQualityLoading(false);
@@ -739,13 +850,30 @@ export default function ArticleDetailPage() {
                   return (t + r).slice(0, 26);
                 };
                 try {
+                  // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
                   const res = await fetch(`/api/articles/${articleId}/review`, {
                     method: 'POST',
+                    credentials: 'same-origin',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action, requestId: ulid() }),
                   });
-                  if (res.ok) await fetchArticle();
-                } catch { /* ignore */ }
+                  if (res.ok) {
+                    await fetchArticle();
+                  } else {
+                    // C7: Vercel logs に必ず残す
+                    logClientError(
+                      'article-detail:review-toggle:http',
+                      new Error(`HTTP ${res.status}`),
+                      { articleId, action, status: res.status },
+                    );
+                  }
+                } catch (err) {
+                  // C7: UI 上は無視するが、Vercel logs には残す
+                  logClientError('article-detail:review-toggle:catch', err, {
+                    articleId,
+                    action,
+                  });
+                }
               }}
               className={`rounded-lg px-4 py-2 text-xs font-medium flex items-center gap-2 ${
                 isPubliclyVisible(article as { visibility_state?: string | null })

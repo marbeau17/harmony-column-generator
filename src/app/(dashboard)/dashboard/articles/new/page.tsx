@@ -56,7 +56,8 @@ export default function NewArticlePage() {
   // URL パラメータから元記事IDを読み込み
   const prefetchSourceArticle = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/api/source-articles/${id}`);
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      const res = await fetch(`/api/source-articles/${id}`, { credentials: 'same-origin' });
       if (!res.ok) return;
       const article = await res.json();
       setSourceArticleId(id);
@@ -106,8 +107,10 @@ export default function NewArticlePage() {
     setSubmitting(true);
 
     try {
+      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
       const res = await fetch('/api/ai/generate-outline', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           theme,
