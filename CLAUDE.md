@@ -58,6 +58,16 @@
 - 関連記事の候補が 3 件未満の場合は空配列で保存すること
 - cross-mode (zero ↔ source) の関連付けは禁止
 
+## アンチパターン (P5-31〜P5-59 で繰り返し発生)
+
+- **HTML を `string.replace(regex)` で操作するな**: 必ず htmlparser2/cheerio を使う。
+  理由: P5-49 (buildBodyWithCtas h3 削除過剰), P5-57 (placeholder regex で `-->` 消失) で同種バグ
+- **`[\s\S]*?` で複数行マッチするな**: 段落跨ぎで本文消失。
+- **`{1,200}` などの数値範囲 fallback regex は使うな**: P5-55 で本文 200 文字消失バグ
+- **fetch のエラーを catch で握り潰すな**: 必ず toast / logger.error で UI に伝える
+- **AI 出力を信用するな**: prompt で「必ず X 形式」と指示しても破られる前提で schema validation
+- **同じロジックを複数ファイルに書くな**: replace-placeholders 等は src/lib/ に集約して共有
+
 ---
 
 # 開発・検証プロトコル（5エージェント・クローズドループ）
