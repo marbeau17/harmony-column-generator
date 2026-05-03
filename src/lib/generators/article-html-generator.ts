@@ -555,7 +555,9 @@ export function generateArticleHtml(
     .article-body strong { color: #53352b; }
 
     /* ─── Author Profile ─── */
-    .article-author { margin-bottom: 40px; }
+    /* P5-52: 著者プロフィールを記事本文と同じ max-width:800px / 中央寄せに統一。
+       container 外に配置された場合でも視覚的に揃うよう、要素自身に幅制約と auto margin を持たせる。 */
+    .article-author { margin: 0 auto 40px; max-width: 800px; box-sizing: border-box; }
     .article-author-inner { display: flex; gap: 20px; padding: 24px; background: #fff; border: 1px solid #eee; border-radius: 4px; align-items: flex-start; }
     .article-author-avatar img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
     .article-author-name { font-size: 16px; font-weight: 700; color: #333; margin-bottom: 2px; }
@@ -689,7 +691,20 @@ export function generateArticleHtml(
         ${faqHtml}
       </section>` : ''}
 
-      <!-- 著者プロフィールカード -->
+      <!-- 関連記事3件 -->
+      <section class="article-related">
+        <h2>関連記事</h2>
+        <div class="article-related-grid">
+          ${relatedArticlesHtml}
+        </div>
+      </section>
+
+      <!-- P5-52: 著者プロフィールカードはここ 1 箇所のみ。
+           旧構成では「関連記事の前」にプロフィールを置き、別レイヤで footer 後にも
+           プロフィールが描画されてしまうことで本番ページ
+           (https://harmony-mc.com/spiritual/column/law-of-attraction/) で 2 回表示される
+           不具合が発生していた。本修正で「関連記事 → プロフィール → 免責事項 → footer」の
+           標準順序に統一し、プロフィール挿入は本ブロックの 1 箇所だけに限定する。 -->
       <div class="article-author">
         <div class="article-author-inner">
           <div class="article-author-avatar">
@@ -702,14 +717,6 @@ export function generateArticleHtml(
           </div>
         </div>
       </div>
-
-      <!-- 関連記事3件 -->
-      <section class="article-related">
-        <h2>関連記事</h2>
-        <div class="article-related-grid">
-          ${relatedArticlesHtml}
-        </div>
-      </section>
 
       <!-- 免責事項 -->
       <div class="article-disclaimer">
@@ -775,8 +782,14 @@ export function generateArticleHtml(
  * cta-generator の insertCtasIntoHtml / selectCtaTexts を使用。
  */
 function buildBodyWithCtas(article: Article, slug: string): string {
-  // 本文HTML取得（stage3 > stage2 > content の優先度）
-  let bodyHtml = article.stage3_final_html ?? article.stage2_body_html ?? article.content ?? '';
+  // P5-53 (2026-05-03): stage2_body_html を優先する。
+  //   stage3_final_html はフル HTML ドキュメント (DOCTYPE + head + main + footer)
+  //   なので、これを template の <main> 内に挿入すると HTML が二重出力されてしまう
+  //   (公開記事で <main>×2, <footer>×2, プロフィール×2 が発生していた)。
+  //   stage2_body_html は本文のみのフラグメントなので template の中身に入れて安全。
+  //   fallback として stage3 と content を残す (画像 placeholder 置換が
+  //   完了していない古い記事でも生成できるよう)。
+  let bodyHtml = article.stage2_body_html ?? article.stage3_final_html ?? article.content ?? '';
 
   // Remove hero image from body (template already shows hero)
   bodyHtml = bodyHtml.replace(/<!--IMAGE:hero:[^>]*-->\s*/g, '');
