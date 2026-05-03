@@ -104,12 +104,47 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   // Dangling-deploying recovery.
-  const currentState = (article.visibility_state ?? 'idle') as VisibilityState;
+  let currentState = (article.visibility_state ?? 'idle') as VisibilityState;
   if (currentState === 'deploying') {
     const ts = article.visibility_updated_at ? new Date(article.visibility_updated_at) : new Date(0);
     if (!isDanglingDeploying('deploying', ts)) {
       return NextResponse.json({ error: 'another deploy is in progress' }, { status: 423 });
     }
+  }
+
+  // P5-64 (2026-05-03): visible=true で visibility_state='pending_review' の場合、
+  //   publish ボタンクリック = 由起子さん確認意思の表明とみなして自動承認。
+  //   - pending_review → idle (state machine 経由)
+  //   - reviewed_at = now() / reviewed_by = user.email を audit セット
+  //   その後 idle → deploying に遷移して通常 publish フローへ。
+  //   旧実装は pending_review → deploying 直接遷移を試みて assertTransition で
+  //   throw → 500 になっていた (P5-47 が status='editing' の自動遷移しか考慮
+  //   していなかった補完)。
+  if (body.visible && currentState === 'pending_review') {
+    assertTransition('pending_review', 'idle');
+    const { error: approveErr } = await service
+      .from('articles')
+      .update({
+        visibility_state: 'idle',
+        visibility_updated_at: new Date().toISOString(),
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: user.email ?? null,
+      })
+      .eq('id', articleId)
+      .eq('visibility_state', 'pending_review');
+    if (approveErr) {
+      return NextResponse.json(
+        { error: 'auto-approve failed', detail: approveErr.message },
+        { status: 409 },
+      );
+    }
+    logger.info('api', 'visibility.auto_approved', {
+      articleId,
+      userId: user.id,
+      from: 'pending_review',
+      to: 'idle',
+    });
+    currentState = 'idle';
   }
 
   assertTransition(currentState === 'deploying' ? 'failed' : currentState, 'deploying');
