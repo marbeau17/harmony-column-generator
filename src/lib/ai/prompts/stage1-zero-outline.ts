@@ -116,7 +116,13 @@ function coerceLooseOutline(raw: unknown): unknown {
 
 /**
  * AI 出力 raw を zod で検証する。
- * 失敗時は logger.error を吐いた上で null を返す（呼び出し側で retry / fallback を判断）。
+ * 失敗時は logger.warn を吐いた上で **best-effort で raw を返す**（hard fail 回避）。
+ *
+ * P5-63 (2026-05-03): 旧実装は失敗時 null を返し呼出側 retry → 2 連続失敗で
+ *   throw "outline 生成失敗" としていたが、AI 出力の自然なブレ（opening_hook の
+ *   キー名違い等）でも完全停止していたため本番で生成不能に陥った。
+ *   schema 違反は warn ログ + 必須フィールドが揃っていれば raw を通す形に変更。
+ *   完全に必須フィールドが欠ける場合のみ null を返す。
  */
 export function parseZeroOutlineOutput(
   raw: unknown,
@@ -126,22 +132,36 @@ export function parseZeroOutlineOutput(
   const result = zeroOutlineOutputSchema.safeParse(coerced);
   if (result.success) return result.data;
 
-  logger.error(
+  // 必須最小条件: object であり、h2_chapters / image_prompts / lead_summary が
+  // 何らかの形で存在すれば「使える」と判断。それ以外は本当に壊れた応答。
+  const isMinimallyUsable =
+    coerced !== null &&
+    typeof coerced === 'object' &&
+    'h2_chapters' in (coerced as Record<string, unknown>) &&
+    'image_prompts' in (coerced as Record<string, unknown>) &&
+    'lead_summary' in (coerced as Record<string, unknown>);
+
+  logger.warn(
     'ai',
     'stage1_zero_outline.schema_violation',
     {
       request_id: ctx.requestId,
       attempt: ctx.attempt ?? 1,
-      // 上位 5 件まで（過剰ログ防止）
       issues: result.error.issues.slice(0, 5).map((i) => ({
         path: i.path.join('.'),
         code: i.code,
         message: i.message,
       })),
       received_keys: raw && typeof raw === 'object' ? Object.keys(raw as object) : null,
+      fallback: isMinimallyUsable ? 'raw_passthrough' : 'null_reject',
     },
-    result.error,
   );
+
+  if (isMinimallyUsable) {
+    // best-effort: AI 出力を ZeroOutlineOutput として通す。型は緩むが下流で
+    // null チェックや個別 access で堅牢化されている前提。
+    return coerced as ZeroOutlineOutput;
+  }
   return null;
 }
 
