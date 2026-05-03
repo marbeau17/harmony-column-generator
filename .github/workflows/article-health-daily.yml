@@ -14,6 +14,10 @@ jobs:
   health-check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # P5-61: secrets は環境 "NEXT_PUBLIC_SITE_URL" に集約済み
+    #   - NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (必須)
+    #   - NEXT_PUBLIC_SITE_URL / NEXT_PUBLIC_HUB_PATH / NEXT_PUBLIC_APP_URL (任意)
+    environment: NEXT_PUBLIC_SITE_URL
     permissions:
       contents: read
       issues: write # critical fail 時に Issue 起票
@@ -29,6 +33,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify secrets
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ]; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL secret が設定されていません"
+            exit 1
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY secret が設定されていません"
+            exit 1
+          fi
+          echo "secrets OK: SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:0:30}..."
+
       - name: Run health checks
         id: health
         env:
@@ -38,10 +57,12 @@ jobs:
           NEXT_PUBLIC_HUB_PATH: ${{ secrets.NEXT_PUBLIC_HUB_PATH || '/spiritual/column' }}
           NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL || 'https://blogauto-pi.vercel.app' }}
         run: |
+          set -o pipefail
           mkdir -p out/health
           npx tsx scripts/health/run-all.ts \
             --json out/health/health-$(date -u +%Y%m%d).json \
             2>&1 | tee out/health/console-$(date -u +%Y%m%d).log
+          # tsx exits non-zero on script error → pipefail で propagate
 
       - name: Upload health report
         if: always()
