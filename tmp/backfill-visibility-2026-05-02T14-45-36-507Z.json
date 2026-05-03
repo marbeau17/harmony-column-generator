@@ -1,0 +1,189 @@
+{
+  "timestamp": "2026-05-02T14-45-36-507Z",
+  "note": "P5-43 Step 2 準備 backfill — visibility_state を live に更新した記事の元状態",
+  "rollbackSql": "UPDATE articles SET visibility_state = COALESCE(originalState, 'idle'), visibility_updated_at = NULL WHERE id = ANY(...)",
+  "targets": [
+    {
+      "id": "79307407-ae4f-4a21-b166-98fa6d660ad4",
+      "originalState": "idle",
+      "title": "魂はそばにいる。スピリチュアルから見つめるペットとの永遠の絆"
+    },
+    {
+      "id": "f0f405f1-ab2d-4502-abd2-be7bce3ec7c8",
+      "originalState": "idle",
+      "title": "人生のステージが変わる時のサイン。愛と感謝で迎える新しい私へ"
+    },
+    {
+      "id": "01d52948-056f-45bf-b3ba-e80040b55c1a",
+      "originalState": "idle",
+      "title": "霊視とスピリチュアルから学ぶ、人間関係を楽にする心の距離感"
+    },
+    {
+      "id": "e7f2d9b5-1ccd-462b-b158-d31eef1536a5",
+      "originalState": "idle",
+      "title": "スピリチュアルに疲れた？離れたいと願う魂が教えてくれること"
+    },
+    {
+      "id": "a210147e-7dd1-4043-b912-5853fd2c104d",
+      "originalState": "idle",
+      "title": "やりたいことがない夜に。スピリチュアルが教える人生の温かな涙"
+    },
+    {
+      "id": "2be357e4-6592-43f9-9df3-d125d59e9e2b",
+      "originalState": "idle",
+      "title": "死別から立ち直れない夜に。スピリチュアルが教える愛と涙の真実"
+    },
+    {
+      "id": "f868c2c7-4718-41b7-8dce-cbfe7f1e02c6",
+      "originalState": "idle",
+      "title": "ペットロスのスピリチュアルな意味｜深い悲しみの中にある魂からのメッセージ"
+    },
+    {
+      "id": "a2e2a6ec-ebe8-486c-9e11-2dfb6b7dc590",
+      "originalState": "idle",
+      "title": "魂の使命の簡単な見つけ方。愛を学ぶために生まれてきたあなたへ"
+    },
+    {
+      "id": "d02b66f1-0f30-41c2-bb88-14d66eed09f8",
+      "originalState": "idle",
+      "title": "自己受容できないと悩む夜に。スピリチュアルが教える魂の光と愛"
+    },
+    {
+      "id": "bde474f5-e235-431f-9c00-03f5d0827a99",
+      "originalState": "idle",
+      "title": "あの子が見せてくれた愛。ペットロスの立ち直り方とスピリチュアル"
+    },
+    {
+      "id": "6189ebe2-da45-4908-b79a-fd486718771c",
+      "originalState": "idle",
+      "title": "愛に気づく自己実現。スピリチュアルな意味と心に宿る光のこと"
+    },
+    {
+      "id": "36d152e6-575d-4d37-81e3-667a847af808",
+      "originalState": "idle",
+      "title": "魂の記憶に触れてみませんか？初心者におすすめのスピリチュアル本"
+    },
+    {
+      "id": "c4d354c5-ba08-4c74-a967-c741e5e01bea",
+      "originalState": "idle",
+      "title": "引き寄せの法則に疲れたあなたへ。やめたい夜に見つける本当の愛"
+    },
+    {
+      "id": "2364c718-7f6e-4531-b246-a8ce475dbcf7",
+      "originalState": "idle",
+      "title": "覚醒サインとは？本当の幸せを求め始めた人に訪れる魂の目覚めと使命の前兆"
+    },
+    {
+      "id": "bbce2dc3-41d5-4fe8-9448-02dac77f060a",
+      "originalState": "idle",
+      "title": "人生の転換期の過ごし方。魂が愛と感謝に気づく物語"
+    },
+    {
+      "id": "cfc781e3-d089-4b3a-be91-b5306701f913",
+      "originalState": "idle",
+      "title": "亡くなった人からのサイン。日常に隠れた愛のメッセージに気づく時"
+    },
+    {
+      "id": "3dcc69b8-5c35-45b2-b4ce-5bd44a8ef05a",
+      "originalState": "idle",
+      "title": "自己受容できない夜に。スピリチュアルな視点で紐解く魂の愛"
+    },
+    {
+      "id": "a86c11b9-eebb-4239-b30f-f6f2c3e790fe",
+      "originalState": "idle",
+      "title": "心の想いを光に変えて。初心者でもできるセルフレイキのやり方"
+    },
+    {
+      "id": "b88fb476-06b0-485e-b7fe-1878e0f0426e",
+      "originalState": "idle",
+      "title": "亡くなった人からのメッセージ。日常に隠れたサインと心に残る大切な記憶"
+    },
+    {
+      "id": "e9711a97-ec46-49cc-b855-f7e786804a7a",
+      "originalState": "idle",
+      "title": "心に余白を作る浄化の煙。ホワイトセージの炊き方と優しい注意点"
+    },
+    {
+      "id": "99a3990d-ff8d-433d-b2b8-a8565f7c482f",
+      "originalState": "idle",
+      "title": "チャクラを自分で浄化する方法｜心とエネルギーを整え、本来の自分を取り戻すセルフヒーリング完全ガイドです"
+    },
+    {
+      "id": "ddb6d2fd-fb1d-4f97-858b-89af2a7a47cc",
+      "originalState": "idle",
+      "title": "死別から立ち直れないあなたへ。スピリチュアルが紐解く温かい記憶"
+    },
+    {
+      "id": "e595e435-36e9-449e-b379-21dc06f9cabd",
+      "originalState": "idle",
+      "title": "人生のステージが変わる時。魂が教えてくれる優しいサインのこと"
+    },
+    {
+      "id": "d9c93aff-0898-451c-a60c-f36e3c4b5b17",
+      "originalState": "idle",
+      "title": "愛と命の記憶を辿る。スピリチュアル初心者におすすめの本たち"
+    },
+    {
+      "id": "685337df-0879-411d-8055-50f31ee30954",
+      "originalState": "idle",
+      "title": "部屋の浄化に塩以外を選ぶなら。思い出と愛で空間を満たしませんか"
+    },
+    {
+      "id": "004b8213-a8d2-49d2-8995-16a45fcdea01",
+      "originalState": "idle",
+      "title": "自分を愛で満たすセルフレイキのやり方。初心者が触れる光の道"
+    },
+    {
+      "id": "b76acd38-b952-41bc-9d44-3883764df612",
+      "originalState": "idle",
+      "title": "魂の使命を診断する。心に宿る光と簡単な見つけ方"
+    },
+    {
+      "id": "01c63144-f011-451c-999b-cb801a2691f6",
+      "originalState": "idle",
+      "title": "生まれてきた意味を知りたい。心の奥から溢れる温かな涙が教えてくれること"
+    },
+    {
+      "id": "b39ce741-a505-4c46-b7c6-cc64dba898ff",
+      "originalState": "idle",
+      "title": "ステージアップの前兆。魂が教えてくれる温かい記憶"
+    },
+    {
+      "id": "3b34c58f-58ce-4e4f-977d-cd63912b6aa0",
+      "originalState": "idle",
+      "title": "毎日に疲れた時、スピリチュアルがそっと寄り添ってくれること"
+    }
+  ],
+  "ids": [
+    "79307407-ae4f-4a21-b166-98fa6d660ad4",
+    "f0f405f1-ab2d-4502-abd2-be7bce3ec7c8",
+    "01d52948-056f-45bf-b3ba-e80040b55c1a",
+    "e7f2d9b5-1ccd-462b-b158-d31eef1536a5",
+    "a210147e-7dd1-4043-b912-5853fd2c104d",
+    "2be357e4-6592-43f9-9df3-d125d59e9e2b",
+    "f868c2c7-4718-41b7-8dce-cbfe7f1e02c6",
+    "a2e2a6ec-ebe8-486c-9e11-2dfb6b7dc590",
+    "d02b66f1-0f30-41c2-bb88-14d66eed09f8",
+    "bde474f5-e235-431f-9c00-03f5d0827a99",
+    "6189ebe2-da45-4908-b79a-fd486718771c",
+    "36d152e6-575d-4d37-81e3-667a847af808",
+    "c4d354c5-ba08-4c74-a967-c741e5e01bea",
+    "2364c718-7f6e-4531-b246-a8ce475dbcf7",
+    "bbce2dc3-41d5-4fe8-9448-02dac77f060a",
+    "cfc781e3-d089-4b3a-be91-b5306701f913",
+    "3dcc69b8-5c35-45b2-b4ce-5bd44a8ef05a",
+    "a86c11b9-eebb-4239-b30f-f6f2c3e790fe",
+    "b88fb476-06b0-485e-b7fe-1878e0f0426e",
+    "e9711a97-ec46-49cc-b855-f7e786804a7a",
+    "99a3990d-ff8d-433d-b2b8-a8565f7c482f",
+    "ddb6d2fd-fb1d-4f97-858b-89af2a7a47cc",
+    "e595e435-36e9-449e-b379-21dc06f9cabd",
+    "d9c93aff-0898-451c-a60c-f36e3c4b5b17",
+    "685337df-0879-411d-8055-50f31ee30954",
+    "004b8213-a8d2-49d2-8995-16a45fcdea01",
+    "b76acd38-b952-41bc-9d44-3883764df612",
+    "01c63144-f011-451c-999b-cb801a2691f6",
+    "b39ce741-a505-4c46-b7c6-cc64dba898ff",
+    "3b34c58f-58ce-4e4f-977d-cd63912b6aa0"
+  ]
+}

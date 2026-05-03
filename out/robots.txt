@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /column/
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /login
+
+Sitemap: https://harmony-mc.com/sitemap.xml

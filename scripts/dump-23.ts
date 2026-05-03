@@ -1,0 +1,30 @@
+import { createClient } from "@supabase/supabase-js";
+import * as fs from "fs"; import * as path from "path";
+const e = fs.readFileSync(".env.local","utf-8");
+const v: Record<string,string> = {};
+for (const l of e.split("\n")) { const t = l.trim(); if (!t||t.startsWith("#")) continue; const i = t.indexOf("="); if (i===-1) continue; v[t.slice(0,i)] = t.slice(i+1); }
+const sb = createClient(v["NEXT_PUBLIC_SUPABASE_URL"], v["SUPABASE_SERVICE_ROLE_KEY"]);
+(async () => {
+  const { data } = await sb.from("articles").select("*").eq("id", "bbce2dc3-41d5-4fe8-9448-02dac77f060a").single();
+  console.log("article_number:", data?.article_number);
+  console.log("title:", data?.title);
+  console.log("slug:", data?.slug);
+  console.log("status:", data?.status);
+  console.log("theme:", data?.theme);
+  console.log("persona:", data?.persona);
+  console.log("meta:", data?.meta_description);
+  console.log("keyword:", data?.keyword);
+  console.log("source_article_id:", data?.source_article_id);
+  console.log("perspective_type:", data?.perspective_type);
+  console.log("target_word_count:", data?.target_word_count);
+  console.log("reviewed_at:", data?.reviewed_at);
+  console.log("published_at:", data?.published_at);
+  console.log("updated_at:", data?.updated_at);
+  console.log("stage2 len:", data?.stage2_body_html?.length);
+  console.log("stage3 len:", data?.stage3_final_html?.length);
+  console.log("published len:", data?.published_html?.length);
+  console.log("cta_texts:", JSON.stringify(data?.cta_texts, null, 2));
+  console.log("image_files:", JSON.stringify(data?.image_files));
+  console.log("\n=== stage3 first 1500 ===\n", data?.stage3_final_html?.slice(0, 1500));
+  console.log("\n=== stage3 last 800 ===\n", data?.stage3_final_html?.slice(-800));
+})();

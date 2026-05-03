@@ -1,0 +1,80 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]: H
+        - generic [ref=e6]: Harmony
+      - navigation [ref=e7]:
+        - link "ダッシュボード" [ref=e8] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e9]
+          - generic [ref=e14]: ダッシュボード
+        - link "AIプランナー" [ref=e15] [cursor=pointer]:
+          - /url: /dashboard/planner
+          - img [ref=e16]
+          - generic [ref=e18]: AIプランナー
+        - link "記事作成" [ref=e19] [cursor=pointer]:
+          - /url: /dashboard/articles/new
+          - img [ref=e20]
+          - generic [ref=e23]: 記事作成
+        - link "記事一覧" [ref=e24] [cursor=pointer]:
+          - /url: /dashboard/articles
+          - img [ref=e25]
+          - generic [ref=e28]: 記事一覧
+        - link "元記事管理" [ref=e29] [cursor=pointer]:
+          - /url: /dashboard/source-articles
+          - img [ref=e30]
+          - generic [ref=e32]: 元記事管理
+        - link "設定" [ref=e33] [cursor=pointer]:
+          - /url: /dashboard/settings
+          - img [ref=e34]
+          - generic [ref=e37]: 設定
+      - button "サイドバーを折りたたむ" [ref=e39] [cursor=pointer]:
+        - img [ref=e40]
+    - generic [ref=e42]:
+      - banner [ref=e43]:
+        - generic [ref=e44]:
+          - navigation "パンくずリスト" [ref=e45]:
+            - link "ダッシュボード" [ref=e47] [cursor=pointer]:
+              - /url: /dashboard
+            - generic [ref=e48]:
+              - img [ref=e49]
+              - generic [ref=e51]: 記事一覧
+          - heading "記事一覧" [level=1] [ref=e52]
+        - button "M marbeau17@gmail.com" [ref=e54] [cursor=pointer]:
+          - generic [ref=e55]: M
+          - generic [ref=e56]: marbeau17@gmail.com
+          - img [ref=e57]
+      - main [ref=e59]:
+        - generic [ref=e60]:
+          - generic [ref=e61]:
+            - heading "記事一覧" [level=1] [ref=e63]
+            - generic [ref=e64]:
+              - button "全記事エクスポート" [ref=e65] [cursor=pointer]:
+                - img [ref=e66]
+                - text: 全記事エクスポート
+              - button "関連記事を一括更新" [ref=e69] [cursor=pointer]:
+                - img [ref=e70]
+                - text: 関連記事を一括更新
+              - button "サーバーに更新" [ref=e75] [cursor=pointer]:
+                - img [ref=e76]
+                - text: サーバーに更新
+              - button "新規記事作成" [ref=e79] [cursor=pointer]:
+                - img [ref=e80]
+                - text: 新規記事作成
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - button "全て" [ref=e83] [cursor=pointer]
+              - button "下書き" [ref=e84] [cursor=pointer]
+              - button "レビュー中" [ref=e85] [cursor=pointer]
+              - button "編集中" [ref=e86] [cursor=pointer]
+              - button "公開済み" [ref=e87] [cursor=pointer]
+              - generic [ref=e88]: "|"
+              - 'button "確認: 全て" [ref=e89] [cursor=pointer]'
+              - button "確認済み" [ref=e90] [cursor=pointer]
+              - button "未確認" [ref=e91] [cursor=pointer]
+            - generic [ref=e92]:
+              - img [ref=e93]
+              - textbox "キーワード検索..." [ref=e96]
+          - generic [ref=e100]: 読み込み中...
+  - alert [ref=e101]

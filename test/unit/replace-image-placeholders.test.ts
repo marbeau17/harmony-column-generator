@@ -21,10 +21,11 @@
 //   8. 全 3 つのプレースホルダ (hero/body/summary) が正しく置換される
 // ============================================================================
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   replaceImagePlaceholders,
   type ImageFileRow,
+  type PlaceholderMismatchInfo,
 } from '@/lib/zero-gen/replace-placeholders';
 
 // ─── テスト用 fixture ──────────────────────────────────────────────────────────
@@ -196,5 +197,90 @@ describe('replaceImagePlaceholders — 本文消失 regression 保護', () => {
 
     // Phase 1 で 3 件以上マッチ
     expect(phase1).toBeGreaterThanOrEqual(3);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // ケース 9 (P5-58): 正常系で mismatched は 0
+  //   全 placeholder が Phase 1/2 で置換されきった場合、
+  //   Phase 3 残存検出は何もヒットせず mismatched=0、callback も発火しない。
+  // ────────────────────────────────────────────────────────────────────────────
+  it('9. mismatched 件数: 全 placeholder が置換完了なら 0 になり callback 未発火', () => {
+    const body =
+      '<p>リード文。</p>\n' +
+      '<!-- IMAGE:hero:hero alt -->\n' +
+      '<p>本文。</p>\n' +
+      '<p>IMAGE:body</p>\n' +
+      '<!-- IMAGE:summary:summary alt -->';
+    const onMismatch = vi.fn<(info: PlaceholderMismatchInfo) => void>();
+    const { mismatched } = replaceImagePlaceholders(body, ALL_IMAGES, onMismatch);
+
+    expect(mismatched).toBe(0);
+    expect(onMismatch).not.toHaveBeenCalled();
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // ケース 10 (P5-58): Phase 3 残存検出 — 取りこぼしコメント placeholder
+  //   imageFiles に存在しない位置 (footer) のコメント placeholder を残し、
+  //   Phase 1/2 でも処理されないケースで mismatched > 0 / callback 発火を確認。
+  // ────────────────────────────────────────────────────────────────────────────
+  it('10. Phase 3: 取りこぼしコメント placeholder を検出し callback を発火', () => {
+    // hero / body / summary が全て Phase 1 で matched となるよう本文を構成し、
+    //   Phase 2 fallback (unmatched 起動) が走らない状況を作る。
+    //   その上で imageFiles に存在しない `IMAGE:footer` コメントを残し、
+    //   Phase 1/2 が触らず Phase 3 が検出することを確認する。
+    const body =
+      '<p>導入。</p>\n' +
+      '<!-- IMAGE:hero:hero.webp -->\n' +
+      '<p>本文1。</p>\n' +
+      '<!-- IMAGE:body:body.webp -->\n' +
+      '<p>本文2。</p>\n' +
+      '<!-- IMAGE:summary:summary.webp -->\n' +
+      '<p>結び。</p>\n' +
+      '<!-- IMAGE:footer:unknown.webp -->'; // imageFiles に無い position
+    const onMismatch = vi.fn<(info: PlaceholderMismatchInfo) => void>();
+    const { html, mismatched } = replaceImagePlaceholders(
+      body,
+      ALL_IMAGES,
+      onMismatch,
+    );
+
+    // footer コメントは置換されずに残っている
+    expect(html).toContain('IMAGE:footer');
+    // Phase 3 が検出
+    expect(mismatched).toBeGreaterThanOrEqual(1);
+    expect(onMismatch).toHaveBeenCalledTimes(1);
+    const info = onMismatch.mock.calls[0][0];
+    expect(info.count).toBe(mismatched);
+    expect(info.residual.length).toBeGreaterThan(0);
+    expect(info.residual.some((s) => s.includes('IMAGE:footer'))).toBe(true);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // ケース 11 (P5-58): 不正コメント `<!--<img ...>` 検出
+  //   過去の P5-57 バグで生成され得た「閉じない不正コメント断片」を
+  //   Phase 3 が検出し、residual snippet に含めることを確認。
+  // ────────────────────────────────────────────────────────────────────────────
+  it('11. Phase 3: 不正コメント <!--<img ... を検出', () => {
+    // 既に <!--<img ...> という壊れたコメントが本文に紛れ込んでいる状況。
+    // Phase 1/2 が触らない (どの placeholder パターンとも一致しない) ため、
+    //   Phase 3 が検出する。
+    const body =
+      '<p>本文1。</p>\n' +
+      '<!--<img src="https://example.com/broken.webp" alt="壊れ" />\n' +
+      '<p>本文2。</p>';
+    const onMismatch = vi.fn<(info: PlaceholderMismatchInfo) => void>();
+    const { mismatched, html } = replaceImagePlaceholders(
+      body,
+      ALL_IMAGES,
+      onMismatch,
+    );
+
+    // Phase 3 が検出
+    expect(mismatched).toBeGreaterThanOrEqual(1);
+    expect(onMismatch).toHaveBeenCalledTimes(1);
+    const info = onMismatch.mock.calls[0][0];
+    expect(info.residual.some((s) => s.startsWith('<!--<img'))).toBe(true);
+    // Phase 3 は置換しないため、不正断片は html に残ったまま
+    expect(html).toContain('<!--<img');
   });
 });

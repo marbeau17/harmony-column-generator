@@ -8,7 +8,16 @@
 //
 // run-completion.ts は本モジュールから import して使用するのみで、
 // 振る舞いは完全に同一に保たれる (純粋関数の場所移動 + export 追加のみ)。
+//
+// P5-58 (案 C): 3-tier fallback + 取りこぼし検出
+//   - Phase 1 / Phase 2 の後に Phase 3「残存検出」を追加。
+//   - bodyHtml 内に `IMAGE:` または `<!--<img` 等の異常パターンが残っていれば
+//     `logger.warn('ai', 'placeholder_mismatch', ...)` で記録し、
+//     `onMismatch` callback (optional) を発火する。
+//   - 戻り値に `mismatched: number` を追加 (validateCompletion 等から検出可能に)。
 // ============================================================================
+
+import { logger } from '@/lib/logger';
 
 export interface ImageFileRow {
   position: string;
@@ -18,11 +27,22 @@ export interface ImageFileRow {
 }
 
 /**
+ * Phase 3 で検出した残存パターンの情報。
+ */
+export interface PlaceholderMismatchInfo {
+  /** 残存していた個別の文字列スニペット (最大 8 件) */
+  residual: string[];
+  /** 残存パターンの総ヒット数 */
+  count: number;
+}
+
+/**
  * stage2_body_html に残った IMAGE プレースホルダを <img> タグに置換する。
  * edit/page.tsx の handleApplyImages と同じ多段階パターンを採用。
  *
  * Phase 1: 位置名付き (IMAGE:hero / IMAGE:body / IMAGE:summary)
  * Phase 2: 位置情報なし (順序割当 fallback)
+ * Phase 3: 残存検出 (ログ + callback、置換は行わない)
  *
  * **重要な regression 防止条件 (P5-55):**
  *   - 平文 (HTML タグや HTML コメントで囲まれていない) の `IMAGE:` 表現
@@ -30,13 +50,16 @@ export interface ImageFileRow {
  *     含まれていても保持される。
  *   - Phase 2 fallback は HTML コメント / <p> ラップに限定し、後続文字数も
  *     30 文字以下に制限する。
+ *
+ * @param onMismatch Phase 3 で残存を検出した際に呼ばれる optional callback
  */
 export function replaceImagePlaceholders(
   bodyHtml: string,
   imageFiles: ImageFileRow[],
-): { html: string; phase1: number; phase2: number } {
+  onMismatch?: (info: PlaceholderMismatchInfo) => void,
+): { html: string; phase1: number; phase2: number; mismatched: number } {
   if (!bodyHtml || imageFiles.length === 0) {
-    return { html: bodyHtml, phase1: 0, phase2: 0 };
+    return { html: bodyHtml, phase1: 0, phase2: 0, mismatched: 0 };
   }
   const imgTagFor = (img: ImageFileRow) =>
     `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
@@ -102,5 +125,39 @@ export function replaceImagePlaceholders(
       });
     }
   }
-  return { html, phase1: phase1Count, phase2: phase2Count };
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Phase 3: 残存検出 (置換は行わず、ログ + callback のみ)
+  //   検出対象:
+  //     a) `<!--<img ...` — Phase 1 旧バグで生成され得た不正コメント断片
+  //     b) `<!--IMAGE:` ... `-->` 形式の取りこぼしコメント placeholder
+  //     c) `<p>IMAGE:` ... `</p>` 形式の取りこぼし <p> placeholder
+  //   平文中の「IMAGE:」(自然文) はマッチしない (P5-55 の本文消失防止のため)。
+  // ────────────────────────────────────────────────────────────────────────────
+  const residualPatterns: RegExp[] = [
+    /<!--\s*<img[^>]*>/g, // a) 不正コメント開始 + img タグ
+    /<!--\s*IMAGE[：:][^>]*-->/g, // b) コメント形式の取りこぼし
+    /<p[^>]*>\s*IMAGE[：:][^<]*<\/p>/g, // c) <p> 形式の取りこぼし
+  ];
+  const residualSnippets: string[] = [];
+  let mismatched = 0;
+  for (const rp of residualPatterns) {
+    const hits = html.match(rp);
+    if (hits && hits.length > 0) {
+      mismatched += hits.length;
+      for (const h of hits) {
+        if (residualSnippets.length >= 8) break;
+        residualSnippets.push(h.slice(0, 120));
+      }
+    }
+  }
+  if (mismatched > 0) {
+    logger.warn('ai', 'placeholder_mismatch', {
+      residual: residualSnippets,
+      count: mismatched,
+    });
+    onMismatch?.({ residual: residualSnippets, count: mismatched });
+  }
+
+  return { html, phase1: phase1Count, phase2: phase2Count, mismatched };
 }

@@ -1,0 +1,7 @@
+{
+  "_comment": "Session-scoped guard. When blockArticleWrites=true, src/lib/db/articles.ts::updateArticle will throw for any row whose id is NOT in the allowedIds list. Set allowedIds:[] to reject every write. This file is checked in; remove or set blockArticleWrites=false when you want normal writes to resume.",
+  "blockArticleWrites": false,
+  "allowedIds": [],
+  "setAt": "2026-04-25",
+  "reason": "Publish Control V2 出荷完了（commit dcb596c）— 通常運用に復帰"
+}

@@ -15,6 +15,10 @@ import PreviewPane from '@/components/editor/PreviewPane';
 import type { Article } from '@/types/article';
 import QualityFixMenu from '@/components/articles/QualityFixMenu';
 import type { CheckItem } from '@/lib/content/quality-checklist';
+import {
+  replaceImagePlaceholders,
+  type ImageFileRow,
+} from '@/lib/zero-gen/replace-placeholders';
 import toast from 'react-hot-toast';
 
 // ─── Theme labels ───────────────────────────────────────────────────────────
@@ -343,85 +347,35 @@ export default function ArticleEditPage() {
       const a = json.data as Article;
       setArticle(a);
 
-      let html = bodyHtml;
-      const imageFiles = a.image_files as
-        | { position: string; url: string; alt: string }[]
-        | null;
+      const imageFiles = a.image_files as ImageFileRow[] | null;
 
       if (!imageFiles || !Array.isArray(imageFiles) || imageFiles.length === 0) {
         toast.error('この記事には画像が登録されていません');
         return;
       }
 
-      const imgTagFor = (img: { url: string; alt: string }) =>
-        `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+      // P5-XX: 共通モジュール replaceImagePlaceholders に置換ロジックを統一
+      // (旧 inline regex 配列を削除し、run-completion.ts と同じ実装を共有)。
+      const { html: newHtml, phase1, phase2 } = replaceImagePlaceholders(
+        bodyHtml,
+        imageFiles,
+      );
 
-      // ── Phase 1: 位置名付きパターン (旧形式 IMAGE:hero / IMAGE:body) ─────
-      const matchedPositions = new Set<string>();
-      let phase1Replacements = 0;
-      for (const img of imageFiles) {
-        const tag = imgTagFor(img);
-        const patterns = [
-          new RegExp(`<p>\\s*IMAGE:${img.position}[^<]*<\\/p>`, 'g'),
-          new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)?`, 'g'),
-          new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
-          new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
-        ];
-        for (const p of patterns) {
-          const before = html;
-          html = html.replace(p, tag);
-          if (before !== html) {
-            matchedPositions.add(img.position);
-            phase1Replacements += (before.match(p) || []).length;
-          }
-        }
-      }
-
-      // ── Phase 2: 位置情報なし IMAGE プレースホルダの順序割当 fallback ────
-      // 例: <!--IMAGE: 縁側で温かいお茶を-->  / IMAGE: 説明文-->  / <p>IMAGE: ...</p>
-      // バグ (2026-05-02): 位置名なしの残骸が残っている記事で「画像を反映」が無反応だった
-      const orderedPositions = ['hero', 'body', 'summary'];
-      const unmatched = orderedPositions.filter((p) => !matchedPositions.has(p));
-      const imageByPos = new Map(imageFiles.map((f) => [f.position, f]));
-      let phase2Replacements = 0;
-
-      if (unmatched.length > 0) {
-        // 3 種類の loose パターンを document 順で消費
-        const fallbackPatterns: RegExp[] = [
-          /(?:<!--\s*)?IMAGE[：:]\s*[^<>\n]*?-->/g, // HTML コメント形式 (最優先)
-          /<p[^>]*>\s*IMAGE[：:]\s*[^<]*<\/p>/g, // <p> 包み (TipTap)
-          /(?<![A-Za-z_])IMAGE[：:]\s*[^\n<]{1,200}/g, // bare text 末尾
-        ];
-        let unmatchedIdx = 0;
-        for (const fp of fallbackPatterns) {
-          if (unmatchedIdx >= unmatched.length) break;
-          html = html.replace(fp, (match) => {
-            if (unmatchedIdx >= unmatched.length) return match;
-            const pos = unmatched[unmatchedIdx];
-            const img = imageByPos.get(pos);
-            unmatchedIdx++;
-            phase2Replacements++;
-            return img ? imgTagFor(img) : match;
-          });
-        }
-      }
-
-      const total = phase1Replacements + phase2Replacements;
+      const total = phase1 + phase2;
       if (total === 0) {
-        const imageOccurrences = html.match(/IMAGE[：:][^\n<]{0,100}/gi);
+        const imageOccurrences = newHtml.match(/IMAGE[：:][^\n<]{0,100}/gi);
         console.warn('[handleApplyImages] no replacements; remaining IMAGE patterns:', imageOccurrences);
         toast.error('画像プレースホルダが見つかりませんでした');
       } else {
         console.log('[handleApplyImages] replacements:', {
-          phase1: phase1Replacements,
-          phase2: phase2Replacements,
-          matchedPositions: Array.from(matchedPositions),
+          phase1,
+          phase2,
         });
         toast.success(
-          `画像を反映しました（位置名一致 ${phase1Replacements} 件 / 順序割当 ${phase2Replacements} 件）`,
+          `画像を反映しました（位置名一致 ${phase1} 件 / 順序割当 ${phase2} 件）`,
         );
       }
-      setBodyHtml(html);
+      setBodyHtml(newHtml);
     } catch (err) {
       console.error('[handleApplyImages] Error:', err);
       toast.error('画像反映に失敗しました');

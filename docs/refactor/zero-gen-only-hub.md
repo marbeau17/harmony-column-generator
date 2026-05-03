@@ -76,3 +76,34 @@ NEXT_PUBLIC_HUB_INCLUDE_REWRITES=on
 - `docs/progress.md` P5-55 セクション
 - bug fix W5: `replaceImagePlaceholders` で本文 200 文字欠損
 - 仕様: `CLAUDE.md` ハブ仕様
+
+---
+
+## P5-57 追記 — Pattern 2 regex closing `-->` 消費バグ修正 + 5 記事修復
+
+**Date:** 2026-05-02
+**Status:** 修正完了 + 影響記事 5 件修復済
+
+### 症状
+zero-gen ハブに掲載された記事のうち 5 件で、本文末尾に `-->` が露出 / クローズタグ欠損が発生していた。
+原因は `article-html-generator.ts` の Pattern 2 (hero/body/summary 画像プレースホルダ置換) の正規表現が、closing `-->` を本文キャプチャ側に巻き取るケースがあったため。
+
+### regex 修正詳細
+
+| 対象 | 修正前 | 修正後 |
+|:---|:---|:---|
+| HERO_IMG | `/<!--HERO_IMG-->([\s\S]*?)<!--\/HERO_IMG-->/` | `/<!--HERO_IMG-->([\s\S]*?)(?=<!--\/HERO_IMG-->)/` + 別途 closing 消費 |
+| BODY_IMG | (同形) | (同形 lookahead 化) |
+| SUMMARY_IMG | (同形) | (同形 lookahead 化) |
+
+closing tag を lookahead で参照のみに留め、別ステップで消費することで隣接ブロックへの侵食を排除。
+
+### 修復した 5 記事
+- DB 上の `html_content` を Stage3 で再生成
+- `article_revisions` に履歴 INSERT (HTML History Rule)
+- FTP は再 export で上書き (削除しない = FTP No Delete 方針)
+- 対象 article_id は `scripts/repair-pattern2-articles.ts` 実行ログに保全
+
+### 関連
+- `docs/progress.md` P5-57 セクション
+- 次工程 P5-58 (X2): article-html-generator 全 regex を網羅的に点検 + 境界ケーステスト整備

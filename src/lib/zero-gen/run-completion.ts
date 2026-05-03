@@ -68,9 +68,9 @@ function mimeToExt(mime: string): string {
 function replaceImagePlaceholders(
   bodyHtml: string,
   imageFiles: ImageFileRow[],
-): { html: string; phase1: number; phase2: number } {
+): { html: string; phase1: number; phase2: number; mismatched: number } {
   if (!bodyHtml || imageFiles.length === 0) {
-    return { html: bodyHtml, phase1: 0, phase2: 0 };
+    return { html: bodyHtml, phase1: 0, phase2: 0, mismatched: 0 };
   }
   const imgTagFor = (img: ImageFileRow) =>
     `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
@@ -121,7 +121,14 @@ function replaceImagePlaceholders(
       });
     }
   }
-  return { html, phase1: phase1Count, phase2: phase2Count };
+  // X1: mismatched 検出 — phase1/phase2 で置換できなかった IMAGE プレースホルダ系の残骸数。
+  // 「位置名は付いているが対応する画像がない (例: IMAGE:hero だが imageFiles に hero が無い)」や
+  // 「壊れた IMAGE コメント (例: <!--<img ... )」は未置換のまま残るので、
+  // 残存している IMAGE 系トークンをカウントして提示する。
+  const remainingPlaceholders = (html.match(/IMAGE[：:][a-z_]+/gi) ?? []).length;
+  const remainingBrokenComments = (html.match(/<!--\s*<img/gi) ?? []).length;
+  const mismatched = remainingPlaceholders + remainingBrokenComments;
+  return { html, phase1: phase1Count, phase2: phase2Count, mismatched };
 }
 
 function normalizePromptsToArray(raw: unknown, themeName: string): PromptItem[] {
@@ -181,6 +188,8 @@ export interface CompletionResult {
  *   - seo_filename が空でないか
  *   - stage3_final_html が一定長以上か
  *   - キーワードが本文に出現しているか (loose match)
+ *   - X1: 画像 placeholder ミスマッチ (replaceImagePlaceholders の mismatched > 0) を検出
+ *   - X1: 不正コメント (`<!--<img ...`) が残っていないか検出
  */
 function validateCompletion(args: {
   bodyHtml: string;
@@ -189,6 +198,8 @@ function validateCompletion(args: {
   seoFilename: string;
   stage3Html: string;
   keyword: string | null;
+  /** X1: replaceImagePlaceholders の戻り値 mismatched (置換失敗 / 不正残骸の数) */
+  imagePlaceholderMismatched?: number;
 }): string[] {
   const issues: string[] = [];
 
@@ -198,6 +209,22 @@ function validateCompletion(args: {
   if (placeholders.length > 0) {
     issues.push(
       `本文に未置換 IMAGE プレースホルダが残っています (${placeholders.length} 件): ${placeholders.slice(0, 3).join(', ')}`,
+    );
+  }
+
+  // 1-bis. X1: replaceImagePlaceholders が報告した mismatched 件数を反映 (新規 issue type)
+  //        phase1/phase2 で吸収できなかった placeholder ミスマッチを proactive に通知する。
+  if ((args.imagePlaceholderMismatched ?? 0) > 0) {
+    issues.push(
+      `[image_placeholder_mismatch] 画像 placeholder のミスマッチが ${args.imagePlaceholderMismatched} 件あります (位置名と imageFiles の不一致 / 不正残骸)`,
+    );
+  }
+
+  // 1-ter. X1: 不正コメント `<!--<img` が残っていないか (Stage2 生成系のバグ残骸)
+  const brokenImgComments = args.bodyHtml.match(/<!--\s*<img/gi) ?? [];
+  if (brokenImgComments.length > 0) {
+    issues.push(
+      `[image_broken_comment] 不正な画像コメント "<!--<img" が ${brokenImgComments.length} 件残っています`,
     );
   }
 
@@ -432,6 +459,7 @@ export async function runZeroGenCompletion(args: {
     seoFilename,
     stage3Html,
     keyword: (article.keyword as string) ?? null,
+    imagePlaceholderMismatched: replaced.mismatched, // X1: 画像 placeholder ミスマッチ件数
   });
   if (validationIssues.length > 0) {
     logger.error('ai', 'completion.validation_failed', {
