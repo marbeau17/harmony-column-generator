@@ -235,11 +235,36 @@ h2, h3, p, ul, ol, strong, em, span のみ。
 \`\`\`
 - リンク先は必ず ${CTA_URL}
 
-### 画像プレースホルダー
-形式: \`<!--IMAGE:{slot}:{filename}-->\`
-- body: 本文中盤
-- summary: まとめセクション冒頭
-※ hero はテンプレートが自動挿入するため本文には含めない
+### 画像プレースホルダー（厳格統一・ブレ禁止）
+// P5-56: AI 出力 placeholder 形式のブレ（<p>IMAGE:body</p> / IMAGE: hero / 位置情報なし等）
+// による正規表現マッチ失敗を防ぐため、許可形式を 1 種類だけに限定する。
+**画像プレースホルダは必ず以下の形式のみで出力してください。他の形式は一切禁止します。**
+
+許可形式（HTML コメント + slot 位置情報必須・この 1 形式のみ）:
+- \`<!--IMAGE:body:body.webp-->\` （本文中盤に 1 箇所）
+- \`<!--IMAGE:summary:summary.webp-->\` （まとめセクション冒頭に 1 箇所）
+
+絶対禁止形式（出力したら即不合格）:
+- \`<!-- IMAGE:hero -->\` のような **空白入り** HTML コメント
+- \`IMAGE: hero\` / \`IMAGE:body\` のような **裸テキスト**（コメントタグ無し）
+- \`<p>IMAGE:body</p>\` のような **<p> 等のタグで包んだ形式**
+- slot 位置情報（hero/body/summary）が無い形式
+- ファイル名が無い形式（必ず \`{slot}.webp\` を含めること）
+
+few-shot 例:
+\`\`\`html
+<p><span data-claim-idx="12">あなたの中の小さな声に、そっと耳を澄ませてみてくださいね。</span></p>
+<!--IMAGE:body:body.webp-->
+<h2 id="section-3">受容のひととき</h2>
+\`\`\`
+
+\`\`\`html
+<h2 id="section-5">あなたへの祈り</h2>
+<!--IMAGE:summary:summary.webp-->
+<p><span data-claim-idx="42">遠回りしてもいいんです。</span></p>
+\`\`\`
+
+※ hero はテンプレートが自動挿入するため本文には **絶対に含めない**（body / summary の 2 箇所のみ）
 
 ### FAQ セクション
 \`\`\`html
@@ -350,6 +375,12 @@ ${faqText || '(FAQ 未設定)'}
 ## 画像プレースホルダー（一字一句変えずにコピー / 2 箇所）
 ${imageBlock || '(画像プレースホルダーなし)'}
 
+// P5-56: 形式厳格化（system 側「画像プレースホルダー」セクションと整合）
+**注意**: 上記 2 行は HTML コメント形式 \`<!--IMAGE:{slot}:{slot}.webp-->\` の **完全な 1 行** です。
+- 一字一句変えずにそのままコピーしてください（前後に空白・タグ・改行記号を追加しないこと）
+- \`<p>\` 等のタグで囲まない・slot 位置情報を省かない・\`IMAGE: body\` のような裸テキスト化禁止
+- hero は絶対に含めないこと（テンプレート側が自動挿入する）
+
 ## 目標文字数
 ${targetTotal}字（h2_chapters の target_chars 合計、±20% 以内）
 
@@ -391,6 +422,7 @@ ${targetTotal}字（h2_chapters の target_chars 合計、±20% 以内）
 □ **すべての本文 <p> 内に \`data-claim-idx\` 属性付き <span> が連番で付与されているか？**
 □ retrievedChunks の事実・固有名詞をコピーしていないか？文体のみ吸収できているか？
 □ h2_chapters の各章を順次展開できているか？
+□ 画像プレースホルダーが \`<!--IMAGE:body:body.webp-->\` / \`<!--IMAGE:summary:summary.webp-->\` の 1 形式のみで body と summary の 2 箇所だけに配置されているか？（P5-56 / hero は含めない・<p> で包まない・空白入り禁止）
 
 記事本文を HTML で出力してください。`;
 }

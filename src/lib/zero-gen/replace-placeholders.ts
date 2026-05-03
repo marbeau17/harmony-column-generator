@@ -43,15 +43,25 @@ export function replaceImagePlaceholders(
 
   let html = bodyHtml;
   // Phase 1
+  // P5-57 (2026-05-03): Pattern 順序を「コメント→div→<p>→裸」に変更し、
+  //   裸プレースホルダ regex の `[^\\s<]*` が `>` を除外していなかったため
+  //   `<!--IMAGE:body:body.webp-->` の closing `-->` まで貪欲に消費してしまい、
+  //   結果 `<!--<img...>` という閉じない不正コメントが残るバグを修正。
+  //   修正: コメント / div ラップ形式を **先に** マッチさせ、それから裸形式を試す。
+  //   さらに裸形式の filename 部分は `[\\w./_-]*` (安全文字のみ) に制限。
   const matched = new Set<string>();
   let phase1Count = 0;
   for (const img of imageFiles) {
     const tag = imgTagFor(img);
     const patterns = [
+      // 1. div でラップされた HTML コメント (最も具体的)
+      new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}(?::[^-]*)?-->\\s*</div>`, 'g'),
+      // 2. HTML コメント (filename の有無問わず)
+      new RegExp(`<!--\\s*IMAGE:${img.position}(?::[^-]*)?-->`, 'g'),
+      // 3. <p> タグでラップ
       new RegExp(`<p>\\s*IMAGE:${img.position}[^<]*<\\/p>`, 'g'),
-      new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)?`, 'g'),
-      new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
-      new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
+      // 4. 裸プレースホルダ (filename は安全文字のみ、`>` を含まない)
+      new RegExp(`IMAGE:${img.position}(?::[\\w./_-]+)?`, 'g'),
     ];
     for (const p of patterns) {
       const before = html;
