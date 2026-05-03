@@ -32,7 +32,12 @@ async function getArticleBySlug(slug: string): Promise<Article | null> {
     .select('*')
     .eq('slug', slug)
     .eq('status', 'published');
-  const { data, error } = await applyPubliclyVisibleFilter(baseQuery).maybeSingle();
+  let filtered = applyPubliclyVisibleFilter(baseQuery);
+  // P5-55: 新規作成記事 (generation_mode='zero') のみ公開対象。NEXT_PUBLIC_HUB_INCLUDE_REWRITES=on で書き換え記事も含める
+  if (process.env.NEXT_PUBLIC_HUB_INCLUDE_REWRITES !== 'on') {
+    filtered = filtered.eq('generation_mode', 'zero');
+  }
+  const { data, error } = await filtered.maybeSingle();
 
   if (error || !data) return null;
   return data as Article;

@@ -453,8 +453,15 @@ export async function buildArticleCards(): Promise<HubArticleCard[]> {
     .from('articles')
     .select('id, title, slug, seo_filename, meta_description, stage2_body_html, stage3_final_html, theme, published_at, image_files')
     .eq('status', 'published');
-  const { data, error } = await applyPubliclyVisibleFilter(baseQuery)
-    .order('published_at', { ascending: false });
+  let visibleQuery = applyPubliclyVisibleFilter(baseQuery);
+
+  // P5-55: 新規作成記事 (generation_mode='zero') のみハブに掲載。
+  //        NEXT_PUBLIC_HUB_INCLUDE_REWRITES=on の場合のみ書き換え記事 (source/null) も含める。
+  if (process.env.NEXT_PUBLIC_HUB_INCLUDE_REWRITES !== 'on') {
+    visibleQuery = visibleQuery.eq('generation_mode', 'zero');
+  }
+
+  const { data, error } = await visibleQuery.order('published_at', { ascending: false });
 
   if (error) {
     throw new Error(`buildArticleCards failed: ${error.message}`);

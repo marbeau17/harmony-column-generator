@@ -33,11 +33,17 @@ export default async function sitemap(): Promise<SitemapEntry[]> {
   try {
     const supabase = await createServiceRoleClient();
     // P5-43 Step 2: reviewed_at から visibility_state ベース判定に統一 (§4.2)
-    const baseQuery = supabase
+    // P5-55: 既定では generation_mode='zero'（新規作成）のみを sitemap に含める。
+    //        NEXT_PUBLIC_HUB_INCLUDE_REWRITES=on のときは zero/source 両方を含める。
+    const includeRewrites = process.env.NEXT_PUBLIC_HUB_INCLUDE_REWRITES === 'on';
+    const baseSelect = supabase
       .from('articles')
       .select('slug, published_at, updated_at')
-      .eq('status', 'published')
-      .not('slug', 'is', null);
+      .eq('status', 'published');
+    // P5-55: zero 限定モードのみ generation_mode フィルタを掛ける
+    const baseQuery = (
+      includeRewrites ? baseSelect : baseSelect.eq('generation_mode', 'zero')
+    ).not('slug', 'is', null);
     const { data, error } = await applyPubliclyVisibleFilter(baseQuery)
       .order('published_at', { ascending: false });
 
