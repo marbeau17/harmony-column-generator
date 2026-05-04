@@ -33,15 +33,16 @@ import {
   generateSlug,
 } from '@/lib/seo/meta-generator';
 import { logger } from '@/lib/logger';
+// P5-69 (Phase A): ローカル実装は P5-55/57/58 で見つかった危険な fallback regex
+//   (`{1,200}` 数値範囲、lazy `[\s\S]*?`、`>` を消費する `[^\\s<]*`) を残したまま
+//   replace-placeholders.ts への移行が伝播しておらず、本文消失バグや closing `-->`
+//   消失バグの再発リスクがあった。安全実装に統一する。
+import {
+  replaceImagePlaceholders,
+  type ImageFileRow,
+} from './replace-placeholders';
 
 const STORAGE_BUCKET = 'article-images';
-
-interface ImageFileRow {
-  position: string;
-  url: string;
-  alt: string;
-  filename: string;
-}
 
 interface PromptItem {
   position: string;
@@ -56,79 +57,6 @@ function mimeToExt(mime: string): string {
     'image/webp': 'webp',
   };
   return m[mime] ?? 'webp';
-}
-
-/**
- * stage2_body_html に残った IMAGE プレースホルダを <img> タグに置換する。
- * edit/page.tsx の handleApplyImages と同じ多段階パターンを採用。
- *
- * Phase 1: 位置名付き (IMAGE:hero / IMAGE:body / IMAGE:summary)
- * Phase 2: 位置情報なし (順序割当 fallback)
- */
-function replaceImagePlaceholders(
-  bodyHtml: string,
-  imageFiles: ImageFileRow[],
-): { html: string; phase1: number; phase2: number; mismatched: number } {
-  if (!bodyHtml || imageFiles.length === 0) {
-    return { html: bodyHtml, phase1: 0, phase2: 0, mismatched: 0 };
-  }
-  const imgTagFor = (img: ImageFileRow) =>
-    `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
-
-  let html = bodyHtml;
-  // Phase 1
-  const matched = new Set<string>();
-  let phase1Count = 0;
-  for (const img of imageFiles) {
-    const tag = imgTagFor(img);
-    const patterns = [
-      new RegExp(`<p>\\s*IMAGE:${img.position}[^<]*<\\/p>`, 'g'),
-      new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)?`, 'g'),
-      new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
-      new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
-    ];
-    for (const p of patterns) {
-      const before = html;
-      html = html.replace(p, tag);
-      if (before !== html) {
-        matched.add(img.position);
-        phase1Count += (before.match(p) || []).length;
-      }
-    }
-  }
-
-  // Phase 2: position 情報なしの残骸を順序で割当
-  const orderedPositions = ['hero', 'body', 'summary'];
-  const unmatched = orderedPositions.filter((p) => !matched.has(p));
-  const imageByPos = new Map(imageFiles.map((f) => [f.position, f]));
-  let phase2Count = 0;
-  if (unmatched.length > 0) {
-    const fallbackPatterns: RegExp[] = [
-      /(?:<!--\s*)?IMAGE[：:]\s*[^<>\n]*?-->/g,
-      /<p[^>]*>\s*IMAGE[：:]\s*[^<]*<\/p>/g,
-      /(?<![A-Za-z_])IMAGE[：:]\s*[^\n<]{1,200}/g,
-    ];
-    let unmatchedIdx = 0;
-    for (const fp of fallbackPatterns) {
-      if (unmatchedIdx >= unmatched.length) break;
-      html = html.replace(fp, (match) => {
-        if (unmatchedIdx >= unmatched.length) return match;
-        const pos = unmatched[unmatchedIdx];
-        const img = imageByPos.get(pos);
-        unmatchedIdx++;
-        phase2Count++;
-        return img ? imgTagFor(img) : match;
-      });
-    }
-  }
-  // X1: mismatched 検出 — phase1/phase2 で置換できなかった IMAGE プレースホルダ系の残骸数。
-  // 「位置名は付いているが対応する画像がない (例: IMAGE:hero だが imageFiles に hero が無い)」や
-  // 「壊れた IMAGE コメント (例: <!--<img ... )」は未置換のまま残るので、
-  // 残存している IMAGE 系トークンをカウントして提示する。
-  const remainingPlaceholders = (html.match(/IMAGE[：:][a-z_]+/gi) ?? []).length;
-  const remainingBrokenComments = (html.match(/<!--\s*<img/gi) ?? []).length;
-  const mismatched = remainingPlaceholders + remainingBrokenComments;
-  return { html, phase1: phase1Count, phase2: phase2Count, mismatched };
 }
 
 function normalizePromptsToArray(raw: unknown, themeName: string): PromptItem[] {

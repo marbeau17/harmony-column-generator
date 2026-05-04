@@ -250,19 +250,47 @@ h2, h3, p, ul, ol, strong, em, span のみ。
 - \`<p>IMAGE:body</p>\` のような **<p> 等のタグで包んだ形式**
 - slot 位置情報（hero/body/summary）が無い形式
 - ファイル名が無い形式（必ず \`{slot}.webp\` を含めること）
+- \`<!--<img src="..." />-->\` のような **コメント開始 \`<!--\` の直後に生 \`<img>\` タグを書く形**（closing \`-->\` の有無に関わらず絶対禁止）
+- \`<!--<img src="..." /\` / \`<!--<img …\` のような **closing \`-->\` が欠落した未閉じコメント**（後続 HTML を巻き込み本文崩壊の原因になるため即不合格）
+- \`<!--IMAGE:body:body.webp--><img src="body.webp" />\` のような **placeholder と img タグを混成した形式**
+
+**重要原則**: 正しい placeholder は \`<!--IMAGE:body:body.webp-->\` / \`<!--IMAGE:summary:summary.webp-->\` の 2 形式のみです。
+**\`<img …>\` タグそのものを AI が出力してはいけません。** 画像挿入は後処理側（テンプレート / replace-placeholders）の責務であり、AI は HTML コメント形式の placeholder のみを残してください。
 
 few-shot 例:
+
+【正しい例 1】
 \`\`\`html
 <p><span data-claim-idx="12">あなたの中の小さな声に、そっと耳を澄ませてみてくださいね。</span></p>
 <!--IMAGE:body:body.webp-->
 <h2 id="section-3">受容のひととき</h2>
 \`\`\`
 
+【正しい例 2】
 \`\`\`html
 <h2 id="section-5">あなたへの祈り</h2>
 <!--IMAGE:summary:summary.webp-->
 <p><span data-claim-idx="42">遠回りしてもいいんです。</span></p>
 \`\`\`
+
+【間違い例 1（コメント内に生 img タグ・即不合格）】
+\`\`\`html
+<!--<img src="body.webp" />-->
+\`\`\`
+→ 正しくは \`<!--IMAGE:body:body.webp-->\` のみ。\`<img>\` タグは絶対に書かない。
+
+【間違い例 2（closing \`-->\` 欠落・後続 HTML を巻き込む）】
+\`\`\`html
+<!--<img src="body.webp"
+<h2>次の見出し</h2>
+\`\`\`
+→ コメントが閉じておらず、見出しまでコメントとして消失する致命的バグ。絶対禁止。
+
+【間違い例 3（placeholder と img タグの混成）】
+\`\`\`html
+<!--IMAGE:body:body.webp--><img src="body.webp" alt="" />
+\`\`\`
+→ \`<img>\` タグは出力しない。コメント形式の placeholder だけを残すこと。
 
 ※ hero はテンプレートが自動挿入するため本文には **絶対に含めない**（body / summary の 2 箇所のみ）
 

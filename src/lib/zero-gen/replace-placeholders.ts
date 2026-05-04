@@ -30,10 +30,30 @@ export interface ImageFileRow {
  * Phase 3 で検出した残存パターンの情報。
  */
 export interface PlaceholderMismatchInfo {
-  /** 残存していた個別の文字列スニペット (最大 8 件) */
+  /** 残存していた個別の文字列スニペット (最大 8 件 / 各 120 文字 truncate 版、後方互換用) */
   residual: string[];
   /** 残存パターンの総ヒット数 */
   count: number;
+  /** P5-68: 残存スニペットの **truncate しない全文** 版 (最大 8 件、closing `-->` や alt 属性を保持) */
+  residualFull?: string[];
+  /** P5-68: bodyHtml の FNV-1a 32-bit fingerprint (ブラウザ/Node 両対応、debug 相関用) */
+  bodyHash?: string;
+  /** P5-68: bodyHtml の総文字数 (debug 相関用) */
+  bodyLength?: number;
+}
+
+/**
+ * P5-68: bodyHtml の fingerprint を計算する。
+ * 暗号用途ではないため crypto に依存せず、ブラウザ/Node 両環境で同一結果になる
+ * FNV-1a 32-bit を採用 (debug ログでの記事/HTML 同一性チェック用)。
+ */
+function computeBodyFingerprint(s: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
 }
 
 /**
@@ -139,7 +159,11 @@ export function replaceImagePlaceholders(
     /<!--\s*IMAGE[：:][^>]*-->/g, // b) コメント形式の取りこぼし
     /<p[^>]*>\s*IMAGE[：:][^<]*<\/p>/g, // c) <p> 形式の取りこぼし
   ];
+  // P5-68: residual は後方互換のため 120 char truncate 版を維持しつつ、
+  //   residualFull で全文版も別フィールドに格納。`-->` 終端や alt 属性が
+  //   消えると debug 困難になるため (count:2 なのに closing がどこにも無い等)。
   const residualSnippets: string[] = [];
+  const residualFullSnippets: string[] = [];
   let mismatched = 0;
   for (const rp of residualPatterns) {
     const hits = html.match(rp);
@@ -148,15 +172,27 @@ export function replaceImagePlaceholders(
       for (const h of hits) {
         if (residualSnippets.length >= 8) break;
         residualSnippets.push(h.slice(0, 120));
+        residualFullSnippets.push(h);
       }
     }
   }
   if (mismatched > 0) {
+    const bodyHash = computeBodyFingerprint(html);
+    const bodyLength = html.length;
     logger.warn('ai', 'placeholder_mismatch', {
       residual: residualSnippets,
+      residualFull: residualFullSnippets,
+      bodyHash,
+      bodyLength,
       count: mismatched,
     });
-    onMismatch?.({ residual: residualSnippets, count: mismatched });
+    onMismatch?.({
+      residual: residualSnippets,
+      residualFull: residualFullSnippets,
+      bodyHash,
+      bodyLength,
+      count: mismatched,
+    });
   }
 
   return { html, phase1: phase1Count, phase2: phase2Count, mismatched };
