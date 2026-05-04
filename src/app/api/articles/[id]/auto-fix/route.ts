@@ -163,6 +163,8 @@ export async function POST(
       }
 
       // P5-28: keyword 自動補正時は articles.keyword から自動抽出 (FE が知らなくて済む)
+      // P5-65: 区切り文字に空白・全角空白・スラッシュ・中黒も追加し、
+      //        "気功 自然 東洋医学" のようなスペース区切りも各トークンに分割。
       const enrichedParams = { ...req.auto_fix_params! };
       if (
         enrichedParams.fix_type === 'keyword' &&
@@ -170,7 +172,7 @@ export async function POST(
         row.keyword
       ) {
         enrichedParams.keywords = row.keyword
-          .split(/[,、]/)
+          .split(/[,、\s\/・]+/u)
           .map((s) => s.trim())
           .filter((s) => s.length >= 2);
       }

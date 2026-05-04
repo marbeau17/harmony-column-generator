@@ -16,8 +16,13 @@ import type { FixStrategy, AutoFixType } from '@/lib/auto-fix/types';
 interface Props {
   articleId: string;
   item: CheckItem;
-  /** 修復成功後に親側で品質チェックを再実行するためのコールバック */
-  onAfter: () => Promise<void>;
+  /**
+   * 修復成功後に親側で品質チェックを再実行するためのコールバック。
+   * P5-65: auto-fix 戦略の場合は after_html を渡すことで、編集画面の
+   * bodyHtml state を新しい修正済 HTML で同期できる（auto-save が古い
+   * 本文で DB を上書きしてしまう問題の回避）。
+   */
+  onAfter: (result?: { after_html?: string }) => Promise<void>;
   /** 編集ページへの遷移コールバック (manual-edit 戦略時) */
   onManualEdit?: () => void;
 }
@@ -155,13 +160,17 @@ export default function QualityFixMenu({ articleId, item, onAfter, onManualEdit 
         ok?: boolean;
         diff_summary?: string;
         cost_estimate?: number;
+        after_html?: string;
       };
       if (strategy === 'auto-fix') {
+        // P5-65: 補正成功を明示的に表示し、after_html を親に伝搬する。
         toast.success(
-          `🔧 自動補正 完了 (${json.diff_summary ?? ''} / 概算 $${(
+          `✅ 補正完了 (${json.diff_summary ?? ''} / 概算 $${(
             json.cost_estimate ?? 0
           ).toFixed(3)})`,
         );
+        await onAfter({ after_html: json.after_html });
+        return;
       } else if (strategy === 'ignore-warn') {
         toast.success('⏭️ 警告を無視に登録しました');
       }

@@ -336,52 +336,126 @@ export default function ArticleEditPage() {
     }
   }, [articleId]);
 
+  // P5-66: handleApplyImages 完全書き直し。
+  // 旧実装は (1) DB 永続化していなかったため auto-save の race で消える、
+  // (2) image_files を最新化していなかったため stale データで置換していた、
+  // (3) editor 同期が ambiguous で「効かない」ように見える、という 3 つの
+  // バグを抱えていた。新仕様:
+  //   1. service-role エンドポイント (`GET /api/articles/[id]`) から
+  //      cache: 'no-store' で最新の article (image_files 含む) を取得
+  //   2. 共通モジュール replaceImagePlaceholders で stage2_body_html を置換
+  //   3. PUT /api/articles/[id] で stage2_body_html を即時保存（永続化）
+  //   4. setBodyHtml(newHtml) でローカル state 更新
+  //      → TipTapEditor の content prop watch useEffect が
+  //        editor.commands.setContent(commentsToSpans(newHtml)) を呼び、
+  //        editor が同期される（要件 5「editor.commands.setContent」と等価）
+  //   5. toast.success(`画像 N 枚を反映しました`)
+  //   6. エラー時は toast.error + console.error で可視化
   const handleApplyImages = useCallback(async () => {
     try {
-      // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
-      const res = await fetch(`/api/articles/${articleId}`, { credentials: 'same-origin' });
+      // P5-66: 最新 article をキャッシュ無視で取得（image_files が最新であることを保証）
+      const res = await fetch(`/api/articles/${articleId}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
       if (!res.ok) {
         toast.error('記事の取得に失敗しました');
         return;
       }
       const json = await res.json();
-      const a = json.data as Article;
-      setArticle(a);
+      const latest = json.data as Article;
+      setArticle(latest);
 
-      const imageFiles = a.image_files as ImageFileRow[] | null;
-
+      const imageFiles = latest.image_files as ImageFileRow[] | null;
       if (!imageFiles || !Array.isArray(imageFiles) || imageFiles.length === 0) {
         toast.error('この記事には画像が登録されていません');
         return;
       }
 
-      // P5-XX: 共通モジュール replaceImagePlaceholders に置換ロジックを統一
-      // (旧 inline regex 配列を削除し、run-completion.ts と同じ実装を共有)。
+      // P5-66: 共通モジュールで置換（run-completion.ts と同じ実装）。
+      // 起点 HTML は最新 DB の stage2_body_html を優先し、空のときのみ
+      // ローカル bodyHtml にフォールバック（未保存編集の保護）。
+      const sourceHtml =
+        ((latest.stage2_body_html ?? '').trim().length > 0
+          ? (latest.stage2_body_html as string)
+          : bodyHtml) || '';
       const { html: newHtml, phase1, phase2 } = replaceImagePlaceholders(
-        bodyHtml,
+        sourceHtml,
         imageFiles,
       );
 
       const total = phase1 + phase2;
       if (total === 0) {
-        const imageOccurrences = newHtml.match(/IMAGE[：:][^\n<]{0,100}/gi);
-        console.warn('[handleApplyImages] no replacements; remaining IMAGE patterns:', imageOccurrences);
+        console.warn('[handleApplyImages] no replacements; image_files:', imageFiles);
         toast.error('画像プレースホルダが見つかりませんでした');
-      } else {
-        console.log('[handleApplyImages] replacements:', {
-          phase1,
-          phase2,
-        });
-        toast.success(
-          `画像を反映しました（位置名一致 ${phase1} 件 / 順序割当 ${phase2} 件）`,
-        );
+        return;
       }
+
+      // P5-66: DB UPDATE — stage2_body_html を即座に永続化（auto-save race 回避）
+      const putRes = await fetch(`/api/articles/${articleId}`, {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage2_body_html: newHtml }),
+      });
+      if (!putRes.ok) {
+        const errJson = (await putRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(errJson.error ?? `保存失敗: HTTP ${putRes.status}`);
+      }
+
+      // P5-66: ローカル state 更新 → TipTapEditor の prop-watch useEffect が
+      // editor.commands.setContent を発火し editor が同期される。
       setBodyHtml(newHtml);
+      setInitialBodyHtml(newHtml);
+
+      console.log('[handleApplyImages] applied:', {
+        phase1,
+        phase2,
+        total,
+        imageCount: imageFiles.length,
+      });
+      toast.success(`画像 ${imageFiles.length} 枚を反映しました`);
     } catch (err) {
       console.error('[handleApplyImages] Error:', err);
-      toast.error('画像反映に失敗しました');
+      const msg = err instanceof Error ? err.message : '不明なエラー';
+      toast.error(`画像反映に失敗しました: ${msg}`);
     }
   }, [articleId, bodyHtml]);
+
+  // ─── P5-66: 記事ロード後の画像自動反映 ──────────────────────────────────
+  // ユーザー要件: 記事生成後、毎回「画像反映」ボタンを押すのは煩雑なため
+  // article ロード完了直後に handleApplyImages を自動実行する。
+  // 無限ループ回避のため articleId 単位で 1 回のみ発火する。
+  // 反映必要判定: image_files があり、かつ
+  //   - <!--IMAGE:--> もしくは IMAGE: プレースホルダが残存している、または
+  //   - <img> タグ数が image_files 件数に満たない
+  // のいずれかを満たす場合のみ実行する（既に全件反映済ならスキップ）。
+  const autoApplyArticleIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (loading || !article) return;
+    if (autoApplyArticleIdRef.current === articleId) return;
+
+    const imageFiles = article.image_files as ImageFileRow[] | null;
+    if (!imageFiles || !Array.isArray(imageFiles) || imageFiles.length === 0) {
+      // 画像なし → 以後判定しない
+      autoApplyArticleIdRef.current = articleId;
+      return;
+    }
+
+    const imgCount = (bodyHtml.match(/<img\b/gi) ?? []).length;
+    const hasPlaceholder = /<!--\s*IMAGE:|(?<![\w:])IMAGE[：:][\w.\-]*/i.test(bodyHtml);
+    const needsApply = hasPlaceholder || imgCount < imageFiles.length;
+
+    if (!needsApply) {
+      autoApplyArticleIdRef.current = articleId;
+      return;
+    }
+
+    // 1 回のみ発火するよう先にフラグを立てる（handleApplyImages の setBodyHtml で
+    // 再実行されるのを防ぐ）。
+    autoApplyArticleIdRef.current = articleId;
+    handleApplyImages();
+  }, [loading, article, articleId, bodyHtml, handleApplyImages]);
 
   // ─── Loading / Error ────────────────────────────────────────────────────
 
@@ -911,7 +985,13 @@ export default function ArticleEditPage() {
                             <QualityFixMenu
                               articleId={articleId}
                               item={item}
-                              onAfter={async () => {
+                              onAfter={async (result) => {
+                                // P5-65: auto-fix が返した after_html で editor 状態を同期。
+                                //        これをやらないと auto-save が古い bodyHtml で
+                                //        DB を上書きし、補正が「効かない」ように見える。
+                                if (result?.after_html) {
+                                  setBodyHtml(result.after_html);
+                                }
                                 setQualityLoading(true);
                                 try {
                                   // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
@@ -948,7 +1028,11 @@ export default function ArticleEditPage() {
                               <QualityFixMenu
                                 articleId={articleId}
                                 item={item}
-                                onAfter={async () => {
+                                onAfter={async (result) => {
+                                  // P5-65: auto-fix が返した after_html で editor 状態を同期。
+                                  if (result?.after_html) {
+                                    setBodyHtml(result.after_html);
+                                  }
                                   setQualityLoading(true);
                                   try {
                                     // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
