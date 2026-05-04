@@ -216,6 +216,16 @@ export async function runZeroGenCompletion(args: {
 }): Promise<CompletionResult> {
   const { articleId, onProgress, skipImages = false } = args;
   const t0 = Date.now();
+
+  // P5-69 (Phase β): 関数入口の transition log。
+  //   RCA: ある記事で stage2_body_html が空のまま run-completion に入った疑いが
+  //   あったが、entered ログが無いため呼び出し有無の判別が出来なかった。観測点を敷設。
+  logger.info('ai', 'run_completion.entered', {
+    article_id: articleId,
+    skip_images: skipImages,
+  });
+
+  try {
   const supabase = await createServiceRoleClient();
 
   // 1. 記事ロード (zero-gen 用に必要なフィールド)
@@ -227,12 +237,34 @@ export async function runZeroGenCompletion(args: {
   if (aErr || !article) {
     throw new Error(`runZeroGenCompletion: article not found: ${articleId}`);
   }
-  if (!article.stage2_body_html) {
-    throw new Error('runZeroGenCompletion: stage2_body_html が空です');
+
+  // P5-69 (Phase β): Stage2 入力検査 (silent 進行を禁止する)。
+  //   article ロード後に stage2_body_html / outline / image_prompts の有無を
+  //   構造化ログとして記録し、空 or 100 文字未満なら logger.error + throw する。
+  const outlineRaw = (article.stage1_outline as Record<string, unknown>) ?? {};
+  const bodyHtmlRaw = (article.stage2_body_html as string | null) ?? '';
+  const imagePromptsRaw = outlineRaw.image_prompts;
+  logger.info('ai', 'run_completion.input_check', {
+    article_id: articleId,
+    body_length: bodyHtmlRaw.length,
+    outline_present: !!article.stage1_outline,
+    image_prompts_count: Array.isArray(imagePromptsRaw)
+      ? imagePromptsRaw.length
+      : 0,
+  });
+  if (!bodyHtmlRaw || bodyHtmlRaw.trim().length < 100) {
+    logger.error('ai', 'run_completion.body_invalid', {
+      article_id: articleId,
+      body_length: bodyHtmlRaw.length,
+      body_head: bodyHtmlRaw.slice(0, 100),
+    });
+    throw new Error(
+      `runZeroGenCompletion: bodyHtml が短すぎます (${bodyHtmlRaw.length} chars)`,
+    );
   }
 
   // outline 内の image_prompts を articles 列にコピー (P5-24)
-  const outline = (article.stage1_outline as Record<string, unknown>) ?? {};
+  const outline = outlineRaw;
   const themeName = (article.theme as string) ?? '';
   let prompts = normalizePromptsToArray(article.image_prompts, themeName);
   if (prompts.length === 0) {
@@ -255,6 +287,13 @@ export async function runZeroGenCompletion(args: {
       count: imageFiles.length,
     });
   } else {
+    // P5-69 (Phase β): 画像生成フェーズ start。
+    logger.info('ai', 'image.start', {
+      article_id: articleId,
+      prompts_count: Math.min(prompts.length, 3),
+    });
+    const tImageStart = Date.now();
+    let totalBytes = 0;
     const newImageFiles: ImageFileRow[] = [];
     for (const p of prompts.slice(0, 3)) {
       const tImg = Date.now();
@@ -279,6 +318,8 @@ export async function runZeroGenCompletion(args: {
         const { data: urlData } = supabase.storage
           .from(STORAGE_BUCKET)
           .getPublicUrl(path);
+        // P5-69 (Phase β): 各画像の bytes を集計して end ログで吐く。
+        totalBytes += result.imageBuffer?.byteLength ?? 0;
         newImageFiles.push({
           position: p.position,
           url: urlData.publicUrl,
@@ -300,11 +341,24 @@ export async function runZeroGenCompletion(args: {
       }
     }
     if (newImageFiles.length > 0) imageFiles = newImageFiles;
+    // P5-69 (Phase β): 画像生成フェーズ end (個別の image.ok / image.failed は既存)。
+    logger.info('ai', 'image.end', {
+      article_id: articleId,
+      url_count: newImageFiles.length,
+      total_bytes: totalBytes,
+      elapsed_ms: Date.now() - tImageStart,
+    });
   }
 
   // 3. P5-26: 画像 placeholder を stage2_body_html 内で <img> タグに置換
   //    (Stage2 では IMAGE:body / IMAGE:summary 等の placeholder が残るため)
   const originalBody = (article.stage2_body_html as string) ?? '';
+  // P5-69 (Phase β): placeholder 置換 start。
+  logger.info('ai', 'placeholder_replace.start', {
+    article_id: articleId,
+    body_chars_before: originalBody.length,
+    image_files_count: imageFiles.length,
+  });
   const replaced = replaceImagePlaceholders(originalBody, imageFiles);
   const updatedBodyHtml = replaced.html;
   logger.info('ai', 'image_placeholders.replaced', {
@@ -314,8 +368,23 @@ export async function runZeroGenCompletion(args: {
     body_chars_before: originalBody.length,
     body_chars_after: updatedBodyHtml.length,
   });
+  // P5-69 (Phase β): placeholder 置換 end (上記 image_placeholders.replaced と並行で
+  //   B2 マトリクスの命名規約に合わせた end ログを追加。phase1/phase2/mismatched を一括出力)。
+  logger.info('ai', 'placeholder_replace.end', {
+    article_id: articleId,
+    phase1: replaced.phase1,
+    phase2: replaced.phase2,
+    mismatched: replaced.mismatched,
+    body_chars_after: updatedBodyHtml.length,
+  });
 
   // 4. meta_description / seo_filename
+  // P5-69 (Phase β): meta start。
+  logger.info('ai', 'meta.start', {
+    article_id: articleId,
+    has_existing_meta: !!article.meta_description,
+    has_existing_seo_filename: !!article.seo_filename,
+  });
   const metaDescription =
     (article.meta_description as string | null) ??
     generateMetaDescription(
@@ -325,9 +394,22 @@ export async function runZeroGenCompletion(args: {
   const seoFilename =
     (article.seo_filename as string | null) ??
     generateSlug((article.title as string) ?? '');
+  // P5-69 (Phase β): meta end。
+  logger.info('ai', 'meta.end', {
+    article_id: articleId,
+    meta_description_length: metaDescription?.length ?? 0,
+    seo_filename: seoFilename,
+  });
 
   // 5. Stage3 final HTML — placeholder 置換済 body で生成
   onProgress?.('stage3');
+  // P5-69 (Phase β): stage3 start。
+  logger.info('ai', 'stage3.start', {
+    article_id: articleId,
+    body_chars: updatedBodyHtml.length,
+    image_files_count: imageFiles.length,
+  });
+  const tStage3 = Date.now();
   const articleForHtml = {
     ...article,
     stage2_body_html: updatedBodyHtml, // ← 置換済を使用
@@ -340,9 +422,22 @@ export async function runZeroGenCompletion(args: {
     heroImage: imageFiles.find((f) => f.position === 'hero')?.url,
     heroImageAlt: imageFiles.find((f) => f.position === 'hero')?.alt,
   });
+  // P5-69 (Phase β): stage3 end。
+  logger.info('ai', 'stage3.end', {
+    article_id: articleId,
+    length: stage3Html?.length ?? 0,
+    elapsed_ms: Date.now() - tStage3,
+  });
 
   // 6. articles UPDATE — stage2 も更新 (placeholder 解決済 body)
   onProgress?.('persist');
+  // P5-69 (Phase β): articles.update.start。
+  logger.info('ai', 'articles.update.start', {
+    article_id: articleId,
+    stage2_chars: updatedBodyHtml.length,
+    stage3_chars: stage3Html?.length ?? 0,
+    image_files_count: imageFiles.length,
+  });
   const { error: updErr } = await supabase
     .from('articles')
     .update({
@@ -355,7 +450,18 @@ export async function runZeroGenCompletion(args: {
       reviewed_at: null, // ← 承認ゲートは触らない (人間判断)
     })
     .eq('id', articleId);
-  if (updErr) throw new Error(`articles UPDATE failed: ${updErr.message}`);
+  if (updErr) {
+    // P5-69 (Phase β): articles.update.failed。
+    logger.error('ai', 'articles.update.failed', {
+      article_id: articleId,
+      error_message: updErr.message,
+    });
+    throw new Error(`articles UPDATE failed: ${updErr.message}`);
+  }
+  // P5-69 (Phase β): articles.update.end。
+  logger.info('ai', 'articles.update.end', {
+    article_id: articleId,
+  });
 
   // 6. revision snapshot (revision_number=2、Stage3 完成版)
   try {
@@ -380,6 +486,10 @@ export async function runZeroGenCompletion(args: {
   }
 
   // 7. P5-27: Post-completion validation — 契約違反を即時検出
+  // P5-69 (Phase β): validation.start。
+  logger.info('ai', 'validation.start', {
+    article_id: articleId,
+  });
   const validationIssues = validateCompletion({
     bodyHtml: updatedBodyHtml,
     imageFiles,
@@ -389,7 +499,19 @@ export async function runZeroGenCompletion(args: {
     keyword: (article.keyword as string) ?? null,
     imagePlaceholderMismatched: replaced.mismatched, // X1: 画像 placeholder ミスマッチ件数
   });
+  // P5-69 (Phase β): validation.end (issue 件数を必ず吐く)。
+  logger.info('ai', 'validation.end', {
+    article_id: articleId,
+    issues_count: validationIssues.length,
+  });
   if (validationIssues.length > 0) {
+    // P5-69 (Phase β): validation.issues_found (既存 completion.validation_failed と
+    //   並行で B2 マトリクスの命名規約に合わせた transition log を追加)。
+    logger.info('ai', 'validation.issues_found', {
+      article_id: articleId,
+      issues_count: validationIssues.length,
+      issues: validationIssues,
+    });
     logger.error('ai', 'completion.validation_failed', {
       articleId,
       issues: validationIssues,
@@ -456,6 +578,17 @@ export async function runZeroGenCompletion(args: {
     validation_issues_count: validationIssues.length,
     total_elapsed_ms: Date.now() - t0,
   });
+  // P5-69 (Phase β): run_completion.success — 最終出口の transition log。
+  logger.info('ai', 'run_completion.success', {
+    article_id: articleId,
+    images_count: imageFiles.length,
+    stage3_chars: stage3Html.length,
+    meta_chars: metaDescription.length,
+    seo_filename: seoFilename,
+    partial: imageGenPartial,
+    validation_issues_count: validationIssues.length,
+    total_elapsed_ms: Date.now() - t0,
+  });
 
   return {
     imageFilesCount: imageFiles.length,
@@ -465,4 +598,14 @@ export async function runZeroGenCompletion(args: {
     partial: imageGenPartial || validationIssues.length > 0,
     validationIssues,
   };
+  } catch (e) {
+    // P5-69 (Phase β): run_completion.failed — 例外時の最終 transition log。
+    //   silent に異常終了させない (上位 async route 側でも catch するが二重に観測点を残す)。
+    logger.error('ai', 'run_completion.failed', {
+      article_id: articleId,
+      error_message: (e as Error)?.message ?? String(e),
+      total_elapsed_ms: Date.now() - t0,
+    });
+    throw e;
+  }
 }

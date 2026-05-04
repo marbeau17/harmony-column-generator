@@ -204,12 +204,32 @@ async function runAsyncPipeline(args: {
         validation_issues: r.validationIssues,
       });
     } catch (e) {
-      completionError = (e as Error).message;
+      // P5-69: silent 'done' 遷移を排除。runZeroGenCompletion が throw された場合は
+      //   後続の stage='done' UPDATE に到達させず、必ず stage='failed' + error 付きで返す。
+      //   これまでは catch 後にそのまま stage='done' を書いていたため、Stage3 仕上げが
+      //   完全失敗しても error=null で「成功扱い」になり、本文ゼロの記事がそのまま
+      //   draft に残る silent failure (記事 65b3d12b の事故原因) を起こしていた。
+      const errorMsg = (e as Error).message;
       logger.error('api', 'zero-generate-async.completion.failed', {
         job_id: jobId,
         article_id: json.article_id,
-        error: completionError,
+        error: errorMsg,
+        elapsed_ms: Date.now() - t0,
       });
+      await safeUpdate({
+        stage: 'failed',
+        progress: 1.0,
+        eta_seconds: 0,
+        article_id: json.article_id,
+        error: `画像/Stage3 仕上げ失敗: ${errorMsg}`,
+      });
+      logger.info('api', 'zero-generate-async.failed', {
+        job_id: jobId,
+        article_id: json.article_id,
+        reason: 'completion_threw',
+        elapsed_ms: Date.now() - t0,
+      });
+      return;
     }
 
     await safeUpdate({
@@ -217,10 +237,10 @@ async function runAsyncPipeline(args: {
       progress: 1.0,
       eta_seconds: 0,
       article_id: json.article_id,
-      // 仕上げが部分的に失敗していた場合は error にメッセージを付ける
+      // 仕上げで validation 警告のみあった場合は error にメッセージを付ける
       // (記事自体は draft で残っており、後から手動補正可能)
       error: completionError
-        ? `画像/Stage3 仕上げ失敗: ${completionError}`
+        ? `品質警告: ${completionError}`
         : completionPartial
           ? '画像の一部生成に失敗。記事は作成済'
           : undefined,

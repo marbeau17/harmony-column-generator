@@ -34,6 +34,9 @@ const getArg = (k: string, fallback?: string) => {
 const articleId = getArg('id');
 const dryRun = args.includes('--dry-run');
 const force = args.includes('--force');
+// P5-69 Phase δ: 個別記事救済用に change_type を上書きできるようにする
+// （production-test 用途のデフォルトは従来通り 'auto_snapshot'）
+const changeType = getArg('change-type', 'auto_snapshot') ?? 'auto_snapshot';
 
 if (!articleId) {
   console.error('Usage: --id=<article uuid> [--dry-run] [--force]');
@@ -475,13 +478,21 @@ async function main() {
   let revisionSnapshotOk = true;
   const rsT0 = Date.now();
   try {
+    // 既存 revision の MAX を取得して +1 する（再実行時に UNIQUE 衝突を避ける）
+    const { data: maxRev } = await sb
+      .from('article_revisions')
+      .select('revision_number')
+      .eq('article_id', articleId!)
+      .order('revision_number', { ascending: false })
+      .limit(1);
+    const nextRev = (maxRev && maxRev[0]?.revision_number ? maxRev[0].revision_number : 0) + 1;
     const { error: rErr } = await sb.from('article_revisions').insert({
       article_id: articleId,
-      revision_number: 1,
+      revision_number: nextRev,
       html_snapshot: bodyHtml,
-      change_type: 'auto_snapshot',
+      change_type: changeType,
       changed_by: null,
-      comment: JSON.stringify({ title: article.title, source: 'zero-gen-stage2-onwards' }),
+      comment: JSON.stringify({ title: article.title, source: 'zero-gen-stage2-onwards', change_type: changeType }),
     });
     if (rErr) throw rErr;
     console.log('  ✓ article_revisions snapshot');

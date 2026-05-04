@@ -114,7 +114,11 @@ describe('runZeroGenCompletion — post-completion validation (P5-27)', () => {
   });
 
   it('IMAGE プレースホルダ残存を検出', async () => {
-    const dirtyBody = '<p>本文</p>IMAGE:body<p>続き</p>IMAGE:summary';
+    // P5-69 (Phase β): runZeroGenCompletion 入口で stage2_body_html.trim().length < 100 は
+    // logger.error + throw する仕様になったため、テスト本文を 100 文字超に調整。
+    // placeholder 検出ロジックの目的 (置換が working していれば残らない) は維持する。
+    const dirtyBody =
+      '<p>本文 本文 本文 本文 本文 本文 本文 本文 本文 本文 本文 本文 本文 本文 本文 本文</p>IMAGE:body<p>続き 続き 続き 続き 続き 続き 続き 続き 続き 続き 続き 続き</p>IMAGE:summary';
     mockArticleSelect.mockResolvedValue({
       data: { ...baseArticle, stage2_body_html: dirtyBody },
       error: null,

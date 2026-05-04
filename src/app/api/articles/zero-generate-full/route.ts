@@ -43,7 +43,10 @@ import {
   createServiceRoleClient,
 } from '@/lib/supabase/server';
 import { generateJson } from '@/lib/ai/gemini-client';
-import { normalizeStage2Html } from '@/lib/ai/stage2-html-normalize';
+import {
+  normalizeStage2Html,
+  deriveStage2ResponseShape,
+} from '@/lib/ai/stage2-html-normalize';
 import {
   zeroGenerateRequestSchema,
   type ZeroGenerateRequest,
@@ -309,7 +312,7 @@ async function generateStage2Body(args: {
   theme: ThemeRow;
   persona: PersonaRow;
   retrievedChunks: ZeroWritingRetrievedChunk[];
-}): Promise<string> {
+}): Promise<{ html: string; raw: unknown }> {
   const writingInput: ZeroWritingInput = {
     outline: args.outline,
     persona: {
@@ -337,7 +340,9 @@ async function generateStage2Body(args: {
   // Gemini は { html } / string / [string] / [{html}] の 4 形を返しうるため正規化。
   // バグD (2026-05-02): 旧コードは前2形のみ扱い、後2形では空文字に潰れていた
   // (記事 #71 が editing 状態で stage2_body_html="" になった原因)。
-  return normalizeStage2Html(data);
+  // P5-69 (2026-05-04): raw `data` を呼び出し側まで持ち帰り、空文字検査時に
+  // response shape を導出できるようにした。
+  return { html: normalizeStage2Html(data), raw: data };
 }
 
 // ─── articles INSERT ──────────────────────────────────────────────────────
@@ -434,9 +439,9 @@ function buildArticleSlug(articleId: string, title: string): string {
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   const requestId = generateRequestId();
-  console.log('[zero-gen.full.request.begin]', {
-    requestId,
-    startedAt: new Date().toISOString(),
+  logger.info('ai', 'zero_gen.request.begin', {
+    request_id: requestId,
+    started_at: new Date().toISOString(),
   });
   const failures: FailureEntry[] = [];
   const stages: PipelineStageStatus = {
@@ -470,9 +475,9 @@ export async function POST(request: NextRequest) {
     userId = user.id;
     const email = user.email ?? '';
     const emailLocal = email.includes('@') ? email.split('@')[0] : email;
-    console.log('[zero-gen.full.auth.ok]', {
-      requestId,
-      userId,
+    logger.info('ai', 'zero_gen.auth.ok', {
+      request_id: requestId,
+      user_id: userId,
       email_masked: emailLocal.slice(0, 3) + '***',
     });
   } catch (err) {
@@ -523,8 +528,8 @@ export async function POST(request: NextRequest) {
       );
     }
     body = parsed.data;
-    console.log('[zero-gen.full.body.validated]', {
-      requestId,
+    logger.info('ai', 'zero_gen.body.validated', {
+      request_id: requestId,
       theme_id: body.theme_id,
       persona_id: body.persona_id,
       intent: body.intent,
@@ -556,8 +561,8 @@ export async function POST(request: NextRequest) {
     const fetched = await fetchThemeAndPersona(body.theme_id, body.persona_id);
     theme = fetched.theme;
     persona = fetched.persona;
-    console.log('[zero-gen.full.refs.resolved]', {
-      requestId,
+    logger.info('ai', 'zero_gen.refs.resolved', {
+      request_id: requestId,
       theme_name: theme.name,
       persona_name: persona.name,
       has_visual_mood: theme.visual_mood != null,
@@ -587,7 +592,7 @@ export async function POST(request: NextRequest) {
 
   // 4. Stage1 outline 生成（upstream Gemini → 502）
   let outline: ZeroOutlineOutput;
-  console.log('[zero-gen.full.outline.begin]', { requestId });
+  logger.info('ai', 'zero_gen.outline.start', { request_id: requestId });
   const outlineStartedAt = Date.now();
   try {
     const zeroInput: ZeroOutlineInput = {
@@ -608,8 +613,8 @@ export async function POST(request: NextRequest) {
     };
     outline = await generateStage1Outline(zeroInput, { requestId });
     stages.outline = 'ok';
-    console.log('[zero-gen.full.outline.end]', {
-      requestId,
+    logger.info('ai', 'zero_gen.outline.end', {
+      request_id: requestId,
       ok: true,
       h2_chapters_count: Array.isArray(outline.h2_chapters)
         ? outline.h2_chapters.length
@@ -623,8 +628,8 @@ export async function POST(request: NextRequest) {
       elapsed_ms: Date.now() - outlineStartedAt,
     });
   } catch (err) {
-    console.log('[zero-gen.full.outline.end]', {
-      requestId,
+    logger.info('ai', 'zero_gen.outline.end', {
+      request_id: requestId,
       ok: false,
       error_message: errorMessage(err),
       elapsed_ms: Date.now() - outlineStartedAt,
@@ -652,8 +657,8 @@ export async function POST(request: NextRequest) {
     keywords: body.keywords,
   });
   stages.rag = rag.status;
-  console.log('[zero-gen.full.rag.end]', {
-    requestId,
+  logger.info('ai', 'zero_gen.rag.end', {
+    request_id: requestId,
     status: rag.status,
     chunks_count: rag.chunks.length,
     elapsed_ms: Date.now() - ragStartedAt,
@@ -664,25 +669,46 @@ export async function POST(request: NextRequest) {
 
   // 6. Stage2 writing 生成（upstream Gemini → 502）
   let bodyHtml = '';
-  console.log('[zero-gen.full.writing.begin]', { requestId });
+  logger.info('ai', 'zero_gen.writing.start', { request_id: requestId });
   const writingStartedAt = Date.now();
   try {
-    bodyHtml = await generateStage2Body({
+    const stage2 = await generateStage2Body({
       outline,
       theme,
       persona,
       retrievedChunks: rag.chunks,
     });
+    bodyHtml = stage2.html;
+
+    // P5-69 (2026-05-04): Stage2 直後の空文字ブラックホール対策。
+    // 65b3d12b-022a-444f-add9-85e7966d90a1 で stage1_outline は完全だが
+    // stage2_body_html='' のまま INSERT が静かに通った事故を防ぐ。
+    if (!bodyHtml || bodyHtml.trim().length === 0) {
+      const shape = deriveStage2ResponseShape(stage2.raw);
+      const rawDataLength =
+        typeof stage2.raw === 'string'
+          ? stage2.raw.length
+          : JSON.stringify(stage2.raw ?? '').length;
+      logger.error('ai', 'stage2_body_html.empty', {
+        request_id: requestId,
+        response_shape: shape,
+        raw_data_type: typeof stage2.raw,
+        raw_data_length: rawDataLength,
+      });
+      throw new Error(`Stage2 が空の本文を返しました (shape=${shape})`);
+    }
+
     stages.writing = 'ok';
-    console.log('[zero-gen.full.writing.end]', {
-      requestId,
+    logger.info('ai', 'zero_gen.writing.end', {
+      request_id: requestId,
       ok: true,
       body_chars: bodyHtml.length,
+      response_shape: deriveStage2ResponseShape(stage2.raw),
       elapsed_ms: Date.now() - writingStartedAt,
     });
   } catch (err) {
-    console.log('[zero-gen.full.writing.end]', {
-      requestId,
+    logger.info('ai', 'zero_gen.writing.end', {
+      request_id: requestId,
       ok: false,
       error_message: errorMessage(err),
       elapsed_ms: Date.now() - writingStartedAt,
@@ -703,8 +729,8 @@ export async function POST(request: NextRequest) {
   }
 
   // 7. 並列検証 (claim 抽出 + 4 検証 + tone)
-  console.log('[zero-gen.full.validation.begin]', {
-    requestId,
+  logger.info('ai', 'zero_gen.validation.start', {
+    request_id: requestId,
     body_chars: bodyHtml.length,
   });
   const [halluSettled, toneSettled] = await Promise.all([
@@ -721,8 +747,8 @@ export async function POST(request: NextRequest) {
   const halluResult = halluSettled.ok ? halluSettled.result : null;
   if (halluSettled.ok) {
     stages.hallucination = 'ok';
-    console.log('[zero-gen.full.hallucination.result]', {
-      requestId,
+    logger.info('ai', 'zero_gen.hallucination.result', {
+      request_id: requestId,
       ok: true,
       score:
         halluResult && typeof halluResult.hallucination_score === 'number'
@@ -735,8 +761,8 @@ export async function POST(request: NextRequest) {
     });
   } else {
     stages.hallucination = 'failed';
-    console.log('[zero-gen.full.hallucination.result]', {
-      requestId,
+    logger.info('ai', 'zero_gen.hallucination.result', {
+      request_id: requestId,
       ok: false,
       score: null,
       claims_count: 0,
@@ -754,8 +780,8 @@ export async function POST(request: NextRequest) {
   const toneResult = toneSettled.ok ? toneSettled.result : null;
   if (toneSettled.ok) {
     stages.tone = 'ok';
-    console.log('[zero-gen.full.tone.result]', {
-      requestId,
+    logger.info('ai', 'zero_gen.tone.result', {
+      request_id: requestId,
       ok: true,
       total: toneResult?.tone?.total ?? null,
       passed: toneResult?.passed ?? null,
@@ -765,8 +791,8 @@ export async function POST(request: NextRequest) {
     });
   } else {
     stages.tone = 'failed';
-    console.log('[zero-gen.full.tone.result]', {
-      requestId,
+    logger.info('ai', 'zero_gen.tone.result', {
+      request_id: requestId,
       ok: false,
       total: null,
       passed: null,
@@ -792,8 +818,8 @@ export async function POST(request: NextRequest) {
       },
     });
     stages.images = 'ok';
-    console.log('[zero-gen.full.image.end]', {
-      requestId,
+    logger.info('ai', 'zero_gen.image.end', {
+      request_id: requestId,
       ok: true,
       hero_chars: imagePrompts.hero.length,
       body_chars: imagePrompts.body.length,
@@ -802,8 +828,8 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     recordStageFailure(failures, 'image', err, { requestId });
     stages.images = 'failed';
-    console.log('[zero-gen.full.image.end]', {
-      requestId,
+    logger.info('ai', 'zero_gen.image.end', {
+      request_id: requestId,
       ok: false,
       hero_chars: 0,
       body_chars: 0,
@@ -823,8 +849,37 @@ export async function POST(request: NextRequest) {
       : null;
 
   let articleId: string;
-  console.log('[zero-gen.full.db.insert.begin]', { requestId });
+  logger.info('ai', 'zero_gen.db_insert.start', { request_id: requestId });
   const dbInsertStartedAt = Date.now();
+
+  // P5-69 (2026-05-04): INSERT 直前の最終ガード。
+  // Stage2 直後の検査と二重防壁。100 文字未満は本文として明らかに破綻なので
+  // ここで検出して通知し、DB に空 / 極小本文の記事が残らないようにする。
+  if (!bodyHtml || bodyHtml.trim().length < 100) {
+    const tooShort = bodyHtml ? bodyHtml.trim().length : 0;
+    logger.error('ai', 'zero_gen.db_insert.body_too_short', {
+      request_id: requestId,
+      body_chars: tooShort,
+      threshold: 100,
+    });
+    const err = new Error(
+      `articles INSERT 直前の本文が短すぎます (chars=${tooShort}, threshold=100)`,
+    );
+    recordStageFailure(failures, 'db_insert', err, { requestId });
+    stages.insert_article = 'failed';
+    return NextResponse.json(
+      {
+        error: 'articles INSERT 直前ガード',
+        stage: 'db_insert',
+        request_id: requestId,
+        detail: errorMessage(err),
+        stages,
+        failures,
+      },
+      { status: 500 },
+    );
+  }
+
   try {
     const inserted = await insertZeroArticle({
       keywords: body.keywords,
@@ -839,17 +894,18 @@ export async function POST(request: NextRequest) {
     });
     articleId = inserted.id;
     stages.insert_article = 'ok';
-    console.log('[zero-gen.full.db.insert.end]', {
-      requestId,
+    logger.info('ai', 'zero_gen.db_insert.end', {
+      request_id: requestId,
       ok: true,
-      articleId,
+      article_id: articleId,
+      body_chars: bodyHtml.length,
       elapsed_ms: Date.now() - dbInsertStartedAt,
     });
   } catch (err) {
-    console.log('[zero-gen.full.db.insert.end]', {
-      requestId,
+    logger.info('ai', 'zero_gen.db_insert.end', {
+      request_id: requestId,
       ok: false,
-      articleId: null,
+      article_id: null,
       error_message: errorMessage(err),
       elapsed_ms: Date.now() - dbInsertStartedAt,
     });
@@ -905,9 +961,9 @@ export async function POST(request: NextRequest) {
   } else {
     stages.insert_claims = 'skipped';
   }
-  console.log('[zero-gen.full.persist.claims]', {
-    requestId,
-    articleId,
+  logger.info('ai', 'zero_gen.persist.claims', {
+    request_id: requestId,
+    article_id: articleId,
     status: stages.insert_claims,
   });
 
@@ -925,9 +981,9 @@ export async function POST(request: NextRequest) {
   } else {
     stages.insert_cta_variants = 'skipped';
   }
-  console.log('[zero-gen.full.persist.cta]', {
-    requestId,
-    articleId,
+  logger.info('ai', 'zero_gen.persist.cta', {
+    request_id: requestId,
+    article_id: articleId,
     status: stages.insert_cta_variants,
     count: Array.isArray(ctaVariants) ? ctaVariants.length : 0,
   });
@@ -946,9 +1002,9 @@ export async function POST(request: NextRequest) {
   } else {
     stages.insert_tone = 'skipped';
   }
-  console.log('[zero-gen.full.persist.tone]', {
-    requestId,
-    articleId,
+  logger.info('ai', 'zero_gen.persist.tone', {
+    request_id: requestId,
+    article_id: articleId,
     status: stages.insert_tone,
   });
 
@@ -963,9 +1019,9 @@ export async function POST(request: NextRequest) {
     });
     stages.insert_revision = 'failed';
   }
-  console.log('[zero-gen.full.persist.revision]', {
-    requestId,
-    articleId,
+  logger.info('ai', 'zero_gen.persist.revision', {
+    request_id: requestId,
+    article_id: articleId,
     status: stages.insert_revision,
   });
 
@@ -1012,19 +1068,19 @@ export async function POST(request: NextRequest) {
     duration_ms: Date.now() - startedAt,
   };
 
-  logger.info('api', 'zero-generate-full.completed', {
-    articleId,
+  logger.info('ai', 'zero_gen.complete', {
+    request_id: requestId,
+    article_id: articleId,
     partial,
     stages,
     failures_count: failures.length,
-    request_id: requestId,
-    durationMs: responseBody.duration_ms,
+    duration_ms: responseBody.duration_ms,
   });
 
   const statusCode = partial ? 207 : 201;
-  console.log('[zero-gen.full.request.end]', {
-    requestId,
-    articleId,
+  logger.info('ai', 'zero_gen.request.end', {
+    request_id: requestId,
+    article_id: articleId,
     partial,
     status_code: statusCode,
     total_elapsed_ms: Date.now() - startedAt,

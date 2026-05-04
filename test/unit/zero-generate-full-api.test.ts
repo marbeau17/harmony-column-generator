@@ -210,7 +210,12 @@ const FIXTURE_OUTLINE = {
   ],
 };
 
-const FIXTURE_BODY_HTML = '<h2 id="section-1">あの子のいない朝</h2><p>本文...</p>';
+// P5-69 (2026-05-04): INSERT 直前ガード (100 char 未満は throw) のため、
+// 本文が短い旧フィクスチャだとガードに引っ掛かるので 100 char 以上に拡張。
+const FIXTURE_BODY_HTML =
+  '<h2 id="section-1">あの子のいない朝</h2>' +
+  '<p>朝の光が差し込む静かな部屋で、彼女は深く息をつき、自分の心と向き合う時間を過ごしました。' +
+  '小さな違和感の正体を、一つひとつ言葉にしていく作業は、想像していたよりも穏やかなものでした。</p>';
 const NEW_ARTICLE_ID = '99999999-9999-9999-9999-999999999999';
 
 function makeReq(body: unknown): NextRequest {
