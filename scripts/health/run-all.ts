@@ -380,6 +380,42 @@ async function main(): Promise<void> {
     failedSamples: h12Failed.slice(0, 5),
   });
 
+  // P5-67: H-13 — stuck finalizing ジョブ検知 ─────────────────────────────────
+  // generation_jobs で stage IN ('image_generating','finalizing') かつ
+  // updated_at から 5 分以上経過しているジョブをカウント。期待値 0 件。
+  const STUCK_THRESHOLD_MS = 5 * 60 * 1000;
+  const stuckCutoffIso = new Date(Date.now() - STUCK_THRESHOLD_MS).toISOString();
+  const { data: stuckJobs, error: stuckErr } = await sb
+    .from('generation_jobs')
+    .select('id, stage, updated_at, article_id')
+    .in('stage', ['image_generating', 'finalizing'])
+    .lt('updated_at', stuckCutoffIso);
+
+  const h13Failed: HealthResult['failedSamples'] = [];
+  if (stuckErr) {
+    h13Failed.push({
+      id: 'query-error',
+      slug: null,
+      note: `SELECT error: ${stuckErr.message}`,
+    });
+  } else {
+    for (const j of stuckJobs ?? []) {
+      h13Failed.push({
+        id: j.id as string,
+        slug: (j.article_id as string) ?? null,
+        note: `stage=${j.stage} updated_at=${j.updated_at}`,
+      });
+    }
+  }
+  results.push({
+    id: 'H-13', label: 'stuck finalizing ジョブ 0 件', severity: 'high',
+    ok: !stuckErr && (stuckJobs ?? []).length === 0,
+    detail: stuckErr
+      ? `query failed: ${stuckErr.message}`
+      : `stuck: ${(stuckJobs ?? []).length} 件 (>5min in image_generating/finalizing)`,
+    failedSamples: h13Failed.slice(0, 5),
+  });
+
   // ── サマリ出力 ────────────────────────────────────────────────────────────
   const summary = {
     timestamp: new Date().toISOString(),

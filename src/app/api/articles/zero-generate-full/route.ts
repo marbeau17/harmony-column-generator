@@ -73,6 +73,13 @@ import { logger } from '@/lib/logger';
 
 // ─── 型定義 ────────────────────────────────────────────────────────────────
 
+// P5-67 (2026-05-04): maxDuration を Vercel default 60s から 300s に拡張。
+//   zero-generate-async (300s) → fetch zero-generate-full の構成だが、
+//   full 側は default 60s だったため画像生成 (Banana Pro 90s × 3) +
+//   Storage upload + Stage3 で容易に超過し finalizing 90% で hang していた。
+//   Vercel Pro plan は 300s を許容するため明示設定に変更。
+export const maxDuration = 300;
+
 interface ThemeRow {
   id: string;
   name: string;

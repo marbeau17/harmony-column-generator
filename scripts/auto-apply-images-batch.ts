@@ -272,11 +272,16 @@ async function main() {
       alreadyOkCount++;
       continue;
     }
-    // 修復試行
+    // 修復試行 1: replaceImagePlaceholders で残存プレースホルダを置換
     const r = replaceImagePlaceholders(body, files);
-    const imgAfter = countImgTags(r.html);
+    let workHtml = r.html;
+    // 修復試行 2: 不足分を position に応じて挿入
+    const inj = injectMissingImages(workHtml, files);
+    workHtml = inj.html;
+
+    const imgAfter = countImgTags(workHtml);
     if (imgAfter <= imgBefore) {
-      // 置換器が増やせなかった (プレースホルダがそもそも無いケース等)
+      // どちらの工程でも増やせなかった = 修復対象外
       cannotRepairCount++;
       continue;
     }
@@ -286,10 +291,11 @@ async function main() {
       imgCountBefore: imgBefore,
       imageFilesCount: files.length,
       beforeHtml: body,
-      afterHtml: r.html,
+      afterHtml: workHtml,
       imgCountAfter: imgAfter,
       phase1: r.phase1,
       phase2: r.phase2,
+      injected: inj.inserted,
       imageFiles: files,
     });
   }
@@ -309,7 +315,7 @@ async function main() {
   console.log(`次の ${candidates.length} 件を再置換${args.apply ? 'します' : '対象として表示します (dry-run)'}:`);
   for (const c of candidates) {
     console.log(
-      `  - id=${c.id} slug=${c.slug ?? '(none)'} img:${c.imgCountBefore}→${c.imgCountAfter}/${c.imageFilesCount} phase1=${c.phase1} phase2=${c.phase2}`,
+      `  - id=${c.id} slug=${c.slug ?? '(none)'} img:${c.imgCountBefore}→${c.imgCountAfter}/${c.imageFilesCount} phase1=${c.phase1} phase2=${c.phase2} inject=${c.injected}`,
     );
   }
 
@@ -339,6 +345,7 @@ async function main() {
         img_after: c.imgCountAfter,
         phase1: c.phase1,
         phase2: c.phase2,
+        injected: c.injected,
       })),
       null,
       2,

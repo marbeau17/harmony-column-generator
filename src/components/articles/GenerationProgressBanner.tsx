@@ -37,6 +37,11 @@ const STAGE_BADGE: Record<GenerationJobStage, string> = {
   failed: '❌ 失敗',
 };
 
+// P5-67: 同一 stage が継続しているとみなす上限秒数。これを超えると警告表示。
+const STAGE_STALL_THRESHOLD_SEC = 5 * 60;
+// P5-67: 経過時間表示を 1 秒刻みで再評価するためのティック間隔。
+const TICK_INTERVAL_MS = 5_000;
+
 export default function GenerationProgressBanner() {
   const { job, clearJob } = useGenerationJob();
   const { jobs: batchJobs, summary, removeJob, clearAll } = useGenerationJobs();
@@ -47,6 +52,26 @@ export default function GenerationProgressBanner() {
     total: 0,
   });
   const [batchDetailsOpen, setBatchDetailsOpen] = useState(false);
+  // P5-67: stage の最終変更時刻と現在 epoch を保持し、5 分停滞検知に利用
+  const stageChangedAtRef = useRef<number>(Date.now());
+  const [now, setNow] = useState<number>(() => Date.now());
+
+  // P5-67: 進行中ジョブが存在する間、定期的に now を更新してリレンダ
+  useEffect(() => {
+    if (!job) return;
+    if (job.stage === 'done' || job.stage === 'failed') return;
+    const id = setInterval(() => setNow(Date.now()), TICK_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [job?.stage, Boolean(job)]);
+
+  // P5-67: stage が変化したタイミングで stageChangedAtRef を更新
+  useEffect(() => {
+    if (!job) {
+      stageChangedAtRef.current = Date.now();
+      return;
+    }
+    stageChangedAtRef.current = Date.now();
+  }, [job?.stage, job?.job_id]);
 
   // ─── done/failed への遷移を検知して toast (single) ────────────────────
   useEffect(() => {
@@ -229,21 +254,44 @@ export default function GenerationProgressBanner() {
 
   // 進行中
   const pct = Math.round((job.progress ?? 0) * 100);
+  // P5-67: eta_seconds <= 0 の場合の表示分岐 + 5 分以上 stage 停滞時の警告
+  const stageElapsedSec = Math.floor((now - stageChangedAtRef.current) / 1000);
+  const isStalled = stageElapsedSec >= STAGE_STALL_THRESHOLD_SEC;
+  const eta = job.eta_seconds;
+  const etaLabel =
+    eta > 0
+      ? `残り ~${eta}s`
+      : eta === 0
+        ? 'もうすぐ完了します'
+        : '処理中…(時間超過)';
   return (
-    <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-800 dark:bg-amber-950/40">
-      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-700 dark:text-amber-200" />
-      <span className="shrink-0 text-xs font-medium text-amber-900 dark:text-amber-100">
-        📝 {STAGE_LABEL[job.stage]} ({pct}%)
-      </span>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-amber-200/60 dark:bg-amber-900/40">
-        <div
-          className="h-full bg-amber-500 transition-all duration-700 dark:bg-amber-400"
-          style={{ width: `${pct}%` }}
-        />
+    <div
+      className={`border-b px-4 py-2 ${
+        isStalled
+          ? 'border-orange-300 bg-orange-50 dark:border-orange-700 dark:bg-orange-950/40'
+          : 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-700 dark:text-amber-200" />
+        <span className="shrink-0 text-xs font-medium text-amber-900 dark:text-amber-100">
+          📝 {STAGE_LABEL[job.stage]} ({pct}%)
+        </span>
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-amber-200/60 dark:bg-amber-900/40">
+          <div
+            className="h-full bg-amber-500 transition-all duration-700 dark:bg-amber-400"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className="shrink-0 text-[10px] tabular-nums text-amber-800 dark:text-amber-200">
+          {etaLabel}
+        </span>
       </div>
-      <span className="shrink-0 text-[10px] tabular-nums text-amber-800 dark:text-amber-200">
-        残り ~{job.eta_seconds}s
-      </span>
+      {isStalled && (
+        <div className="mt-1 text-[11px] font-medium text-orange-800 dark:text-orange-200">
+          ⚠️ 処理が長引いています。記事一覧に戻って後で確認してください。
+        </div>
+      )}
     </div>
   );
 }
