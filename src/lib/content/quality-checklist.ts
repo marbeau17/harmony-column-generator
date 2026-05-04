@@ -221,9 +221,21 @@ function checkKeywordDensity(text: string, keyword?: string): CheckItem[] {
     }];
   }
 
-  // スペース区切りのキーワードは個別トークンでもカウント
-  const tokens = keyword.split(/\s+/).filter(t => t.length > 0);
-  const fullCount = countOccurrences(text, keyword);
+  // P5-65: 「カンマ + 空白」区切りの複数キーワードに対応
+  // 第一段階: ", " でキーワードフレーズ単位に分割（例: "気功 自然, 東洋医学 自然" → ["気功 自然", "東洋医学 自然"]）
+  // 第二段階: 各フレーズを空白で分割し個別トークン化（→ ["気功", "自然", "東洋医学", "自然"]）
+  // 最後に重複除去（unique tokens）。コンマや余分な空白がトークンに混入しないよう [、,，] と \s 全体で分割する。
+  const phrases = keyword
+    .split(/[、,，]\s*/)
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
+
+  const rawTokens = phrases.flatMap(p => p.split(/\s+/).filter(t => t.length > 0));
+  const tokens = Array.from(new Set(rawTokens)); // unique tokens
+
+  // フルフレーズ一致は「最初のフレーズ」を基準にカウント（複数キーワード時はフレーズ別評価）
+  const primaryPhrase = phrases[0] ?? keyword;
+  const fullCount = countOccurrences(text, primaryPhrase);
 
   // 個別トークンの最小出現数
   let minTokenCount = Infinity;
@@ -237,7 +249,8 @@ function checkKeywordDensity(text: string, keyword?: string): CheckItem[] {
   }
   if (!isFinite(minTokenCount)) minTokenCount = 0;
 
-  const effectiveCount = tokens.length > 1
+  const isMulti = tokens.length > 1;
+  const effectiveCount = isMulti
     ? Math.max(fullCount, minTokenCount)
     : fullCount;
 
@@ -248,8 +261,8 @@ function checkKeywordDensity(text: string, keyword?: string): CheckItem[] {
     label: `キーワード「${keyword}」の出現回数（最低${MIN}回）`,
     status: effectiveCount >= MIN ? 'pass' : effectiveCount >= 1 ? 'warn' : 'fail',
     severity: effectiveCount >= 1 ? 'warning' : 'error',
-    detail: tokens.length > 1
-      ? `フルフレーズ${fullCount}回、最少トークン「${weakToken}」${minTokenCount}回`
+    detail: isMulti
+      ? `フルフレーズ「${primaryPhrase}」${fullCount}回、最少トークン「${weakToken}」${minTokenCount}回`
       : `${fullCount}回`,
     value: effectiveCount,
   }];

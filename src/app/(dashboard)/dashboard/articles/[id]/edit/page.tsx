@@ -1001,20 +1001,51 @@ export default function ArticleEditPage() {
                     );
                     setPublishing(true);
                     try {
-                      // bulk override: 各 item を ignore-warn で登録
+                      // P5-65: bulk override の auto-fix 呼び出しでも失敗を可視化する。
+                      // タイムアウト/HTTPエラー/空レスポンス/非JSON応答は toast で通知し、
+                      // 後続の transition?force=true による bypass に任せる前にユーザーへ
+                      // 状況を伝える (silent failure を撲滅)。processing(setPublishing) は
+                      // 外側の try/finally で必ず false にリセットされる。
                       for (const it of failingItems) {
-                        // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
-                        await fetch(`/api/articles/${articleId}/auto-fix`, {
-                          method: 'POST',
-                          credentials: 'same-origin',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            fix_strategy: 'ignore-warn',
-                            check_item_id: it.id,
-                            ignore_params: { reason: `[緊急公開] ${reason}` },
-                          }),
-                          // eslint-disable-next-line no-restricted-syntax -- 緊急公開時の事前 ignore-warn 適用は fire-and-forget、後続の transition?force=true で確実に bypass する
-                        }).catch(() => {});
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 30_000);
+                        try {
+                          // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                          const r = await fetch(`/api/articles/${articleId}/auto-fix`, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              fix_strategy: 'ignore-warn',
+                              check_item_id: it.id,
+                              ignore_params: { reason: `[緊急公開] ${reason}` },
+                            }),
+                            signal: controller.signal,
+                          });
+                          if (!r.ok) {
+                            const errJson = (await r.json().catch(() => ({}))) as { error?: string };
+                            throw new Error(errJson.error ?? `HTTP ${r.status}`);
+                          }
+                          const text = await r.text();
+                          if (!text || text.trim().length === 0) {
+                            throw new Error('空レスポンス');
+                          }
+                          try {
+                            JSON.parse(text);
+                          } catch {
+                            throw new Error('JSON 形式ではない応答');
+                          }
+                        } catch (fixErr) {
+                          const reasonMsg =
+                            fixErr instanceof Error
+                              ? fixErr.name === 'AbortError'
+                                ? 'タイムアウト (30s)'
+                                : fixErr.message
+                              : '不明なエラー';
+                          toast.error(`補正失敗: ${reasonMsg}`);
+                        } finally {
+                          clearTimeout(timeoutId);
+                        }
                       }
                       // P5-35: 緊急公開は transition?force=true で backend check も bypass
                       // 通常 handlePublish の transition 呼出を上書きする形で直接実行
