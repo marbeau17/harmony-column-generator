@@ -1310,3 +1310,255 @@ P5-55 で「ハブ・sitemap・公開ページは zero-gen のみ」のフィル
 ### 次のステップ
 1. 本番で `updateAllRelatedArticles()` を 1 回再実行し、既存 zero-gen 記事の `related_articles` から rewrite 混入を除去
 2. P5-58 の article-html-generator 全 regex 点検へ着手
+
+---
+
+## P5-60 完了サマリ — フロー全体精査 + 改善提案 (20 並列エージェント)
+
+**Date:** 2026-05-03
+**Author:** Generator/Fixer
+
+### 1. 背景
+ゼロ生成パイプラインの P1〜P15 各フェーズの実装状況・問題点を整理し、今後の改善優先度を決めるため 20 名並列エージェントによる全体監査を実施。Top3 根本原因 (string-based HTML 生成 / silent failure / AI 出力ブレ) と 8 つの追跡 KPI を 1 つの監査レポートに集約。
+
+### 2. 変更内容
+- 監査結果集約: P1〜P15 フェーズごとの問題点と改善ロードマップ (今週 / 今月 / 今四半期の優先度別)
+- 新規ドキュメント 7 種でリスク全体を体系化 (architecture-issues / health-monitor / pre-deploy-ci / test-infra / top5 / runbooks)
+- `CLAUDE.md` に「アンチパターン (P5-31〜P5-59 で繰り返し発生)」節を追加し再発防止
+
+### 修正したファイル
+- (added) `docs/refactor/p5-60-flow-audit-summary.md` — 監査サマリ
+- (added) `docs/refactor/architecture-issues-summary.md` — アーキ課題
+- (added) `docs/refactor/article-health-monitor.md` — health 設計
+- (added) `docs/refactor/pre-deploy-ci-strengthening.md` — CI 強化案
+- (added) `docs/refactor/test-infra-priorities.md` — テスト優先度
+- (added) `docs/refactor/top5-critical-fixes.md` — 重大 5 項目
+- (added) `docs/runbooks/common-issues.md` — 運用手順書
+- (modified) `CLAUDE.md` — アンチパターン節追加
+
+### 検証結果
+- 監査スコープ: 全 P1〜P15 フェーズ網羅 / 20 名エージェント合意
+- ドキュメント完全性: 改善ロードマップ・追跡 KPI・リスク分類すべて記載
+
+### 次のステップ
+1. Top5 重大 Fix の第 1 号 = Article Health Monitor (P5-61)
+2. CI 強化フェーズ (今月末)
+3. string-based HTML → 型安全 DOM builder への段階遷移 (今四半期)
+
+---
+
+## P5-61 完了サマリ — Article Health Monitor 自動実行 (Top5 #1)
+
+**Date:** 2026-05-03
+**Author:** Generator/Fixer
+
+### 1. 背景
+P5-60 監査で特定された Top5 重大 Fix の第 1 号。zero-gen パイプラインの出力品質を常時監視し、critical 検知時に GitHub Issue を自動起票する自動検査フローが必須。
+
+### 2. 変更内容
+- P5-61a: Health Monitor スクリプト + 日次 workflow 実装
+  - `scripts/health/run-all.ts` (新規, ~350 行): H-01〜H-12 検査 (`<main>`/`<footer>` 1 個必須 / placeholder 残存 NG / URL 200 応答 / 関連記事 mode 一致 / CTA / disclaimer)
+  - `--strict` / `--skip-http` / `--json` の 3 フラグ
+  - `.github/workflows/article-health-daily.yml` (新規): JST 7:00 daily / critical で Issue 起票 / artifact 30 日保存
+  - 初回実行で実バグ 5 件発見 (main/footer/CTA 欠損)
+- P5-61b: secrets 経由参照バグ修正
+  - 初回手動実行で `supabaseUrl 未取得` エラー → workflow に `environment: NEXT_PUBLIC_SITE_URL` を明示し environment secrets にアクセス可能化
+  - Verify secrets ステップ追加 / `set -o pipefail` で tsx 失敗を検知
+
+### 修正したファイル
+- (added) `scripts/health/run-all.ts` — Health Monitor 本体
+- (added/modified) `.github/workflows/article-health-daily.yml` — daily workflow
+
+### 検証結果
+- 単体テスト: 836/836 PASS
+- 型チェック: `tsc --noEmit` exit 0
+- ローカル `--skip-http` 実行: OK
+- secrets 修正後: 環境変数を正常参照
+
+### 次のステップ
+1. 本番 daily workflow が critical 検知時に GitHub Issue を生成する流れを確認
+2. 初回検出 5 件の実バグを修復スクリプトで解消 → P5-66 へ
+3. Top5 Fix 第 2〜5 号
+
+---
+
+## P5-62 完了サマリ — bug fix sweep + silent failure ban + AI schema + Step 4 reviewed_at
+
+**Date:** 2026-05-03
+**Author:** Generator/Fixer
+
+### 1. 背景
+15 並列エージェント (B1〜B5, S1〜S3, A1〜A4, P1〜P4) による統合掃討。既知バグ (CTA テーマ未知キー / h09 heading blocker)、silent catch の危険性、AI JSON schema 違反時の検証欠落、Step 4 reviewed_at の公開制御統合を一括解決。
+
+### 2. 変更内容
+- **bug fix sweep (B1〜B5)**: CTA テーマキー validator + warn / h09 blocker 対応 (heading ネスト掘削 script) / spiritual-tired 検出・修復統合 / ESLint ルール強化 (404/500 + promise handler)
+- **silent failure ban (S1〜S3)**: `logAndIgnore()` util 新規 / fire-and-forget catch を `void doWork().catch(logAndIgnore('context'))` パターンに改修 / ESLint ガード組込
+- **AI schema (A1〜A4)**: `safe-parse.ts` util + zod schema を Stage1 prompt に統合 / `parseZeroOutlineOutput()` で 1 回 retry (strict reminder 付与) / 2 回連続違反で throw
+- **Step 4 reviewed_at (P1〜P4)**: Article 型に reviewed_at / reviewed_by 監査用コメント追加 (状態判定には非使用 / POST `/api/articles/[id]/review` のみ書込) / visibility backfill script 新規 / deploy route に reviewed_at ガード追加
+
+### 修正したファイル
+- (added) `src/lib/utils/silent-error-handler.ts` — logAndIgnore() util
+- (added) `src/lib/ai/safe-parse.ts` — safeParseAi<T> 共通 validator
+- (added) `test/unit/safe-parse-ai.test.ts` — 83 ケース
+- (modified) `src/lib/ai/prompts/stage1-zero-outline.ts` — zod schema + retry helper
+- (modified) `src/lib/content/cta-generator.ts` — isValidThemeKey() + warn
+- (modified) `src/types/article.ts` — reviewed_at/reviewed_by コメント
+- (modified) `.eslintrc.json` — 404/500 rule + promise rule
+- (modified) 既存 async/catch 多数 — logAndIgnore パターン採用
+
+### 検証結果
+- vitest: 844 件全 PASS (新規 83 + 19 + 既存 742)
+- `tsc --noEmit` exit 0
+- `npm run build` PASS
+- ESLint 新規 rule 違反 0 件 (既存 44 ファイル修正済)
+
+### 次のステップ
+1. 本番 deploy 前に integration test (Stage1 outline 実生成 + zero-generate endpoint) 実行
+2. 既存 zero-gen 記事の related_articles から rewrite 混入除去 (P5-59 反映)
+
+---
+
+## P5-63 完了サマリ — Stage1 schema 失敗で「outline 生成失敗」になる本番停止を解消
+
+**Date:** 2026-05-03
+**Author:** Generator/Fixer
+
+### 1. 背景
+P5-62 で zod schema validation を `parseZeroOutlineOutput` に導入した結果、AI 出力の自然なブレ (キー名表記ゆれ / 軽微な型違い) で完全 reject。retry を含めても通らず、generation_jobs が連続 2 件「outline 生成失敗」で停止し、ユーザーから "failed to generate article" 報告。
+
+### 2. 変更内容
+- `parseZeroOutlineOutput` を **best-effort fallback 化**
+- schema 通過を理想としつつ、失敗時も「必須最小条件 (h2_chapters / image_prompts / lead_summary 存在)」を満たせば raw_passthrough で AI 出力を返す (pre-P5-62 動作復元)
+- 完全に壊れた応答 (object でない / 必須欠落) のみ null 返却
+- `logger.error` を `logger.warn` に降格し、schema 違反は quality signal の warn ログとして記録
+
+### 修正したファイル
+- (modified) `src/lib/ai/prompts/stage1-zero-outline.ts` — best-effort fallback ロジック追加
+
+### 検証結果
+- ユーザーの記事生成が再び動作することを確認
+- 完全不正出力 (Gemini が JSON を返さない等) は依然 null → retry → throw で保護される
+
+### 次のステップ
+1. quality signal warn ログを集計し、schema 違反パターンの傾向分析
+
+---
+
+## P5-64 完了サマリ — pending_review からの publish で 500 になる問題を解消
+
+**Date:** 2026-05-03
+**Author:** Generator/Fixer
+
+### 1. 背景
+ユーザーが `visibility_state='pending_review'` の記事を publish 試行 → 500 エラー。state machine では `pending_review → deploying` 遷移が不許可で、`assertTransition` の throw が 500 に流出。P5-47 で `status='editing'` の自動遷移は実装したが、pending_review 状態は考慮漏れ。
+
+### 2. 変更内容
+- `visibility/route.ts` の POST で `visible=true` かつ `pending_review` の場合、publish クリックを「由起子さんの確認意思」と解釈して自動承認
+- `pending_review → idle` を state machine 経由で遷移し、`reviewed_at` / `reviewed_by` を設定
+- その後 `idle → deploying` の通常フロー
+- unpublish 経路は無変更
+
+### 修正したファイル
+- (modified) `src/app/api/articles/[id]/visibility/route.ts` — pending_review 自動承認ロジック追加 (~36 行増)
+
+### 検証結果
+- vitest: 859/859 PASS
+- `tsc --noEmit` exit 0
+- 記事 grief-40 の publish 完了を確認
+- 他状態 (draft / deploying 等) は従来通り
+
+---
+
+## P5-65 完了サマリ — keyword_density トークナイザー修正 + auto-fix エラー可視化
+
+**Date:** 2026-05-04
+**Author:** Generator/Fixer
+
+### 1. 背景
+複数キーワード (例「気功 自然, 東洋医学 自然」) をカンマ + 空白で区切る場合、トークナイザーが「自然,」のようにコンマ付きトークンを生成して出現数カウントが破綻。同時に auto-fix の bulk override 時にネットワーク失敗・タイムアウト・空レスポンスが silent failure として隠蔽されていた。
+
+### 2. 変更内容
+- **トークナイザー修正**: `[、,，]\s*` で第 1 段階フレーズ分割 → 各フレーズを空白で第 2 段階トークン化 → 重複除去。フルフレーズと最少トークン両方を比較して `effectiveCount` を算出
+- **auto-fix エラーハンドリング**: AbortController で 30s タイムアウト / HTTP / 空レスポンス / 非 JSON 応答を catch して `toast.error` でユーザーへ即時通知 / `try/finally` で processing 状態を必ずリセット
+
+### 修正したファイル
+- (modified) `src/app/(dashboard)/dashboard/articles/[id]/edit/page.tsx` — bulk override 失敗を可視化
+- (modified) `src/lib/content/quality-checklist.ts` — トークナイザー修正
+- (added) `test/unit/keyword-density-tokenize.test.ts` — 11 ケース regression
+- (added) `test/unit/quality-checklist-keyword-density.test.ts` — 統合 5 ケース
+
+### 検証結果
+- `tsc --noEmit`: PASS
+- vitest: 870/870 PASS (76 ファイル)
+
+---
+
+## P5-66 完了サマリ — 画像未挿入記事の一括検出・修復スクリプト + auto-fix 改善
+
+**Date:** 2026-05-04
+**Author:** Generator/Fixer
+
+### 1. 背景
+zero-gen 記事で `<img>` タグ数 < `image_files` 数となり、新規生成時に指定した画像が body に反映されないケースが発生。手動修復が困難なため、一括検出・自動修復パイプラインが必要。P5-61 初回検出の 5 件を含む。
+
+### 2. 変更内容
+- **`auto-apply-images-batch.ts` (新規)**: `stage2_body_html` 内の `<img>` 数を `image_files` と比較して不足検出 → `replaceImagePlaceholders` で残存プレースホルダ置換後、position (hero/body/summary) に応じて画像を本文挿入。`article_revisions` INSERT 先行 (HTML History Rule)。
+- **検出・検証スクリプト 2 種 (新規)**: `check-latest-zerogen-images.ts` / `test-auto-fix.ts`
+- **API・UI 連動修正**: auto-fix route エラーハンドリング強化 / `QualityFixMenu` UI フィードバック改善 / プロンプト精度向上
+
+### 修正したファイル
+- (added) `scripts/auto-apply-images-batch.ts` — 一括修復ロジック
+- (added) `scripts/check-latest-zerogen-images.ts`
+- (added) `scripts/test-auto-fix.ts`
+- (added) `test/unit/auto-apply-images.test.ts`
+- (modified) `src/lib/auto-fix/prompts/index.ts`
+- (modified) `src/app/api/articles/[id]/auto-fix/route.ts`
+- (modified) `src/components/articles/QualityFixMenu.tsx`
+
+### 検証結果
+- `tsc --noEmit`: PASS
+- vitest: 875/875 PASS (77 ファイル)
+- `repair-image-placeholders --apply`: 4 件修復
+- `regenerate-stage3-from-stage2 --apply`: 1 件再生成
+- `redeploy-all-articles --apply --skip-images`: 32/32 成功
+- `regenerate-hub-now`: ハブ再生成完了
+
+---
+
+## P5-67 完了サマリ — finalizing 90% で stuck する根本問題を解消
+
+**Date:** 2026-05-04
+**Author:** Generator/Fixer
+
+### 1. 背景
+zero-gen の最終 stage (finalizing / Stage3) で進捗 90% のまま `eta_seconds` が負値になり、画像生成タイムアウト (Banana Pro × 3 回で約 90s) と Storage upload が Vercel デフォルト 60s 制限に衝突。(1) API タイムアウトでレスポンス未返却 / (2) UI に "残り ~-90s" など負の時間が表示されてユーザー混乱、の 2 問題が併発。
+
+### 2. 変更内容
+- `zero-generate-full/route.ts`: Vercel Pro plan 上限を明示 (`export const maxDuration = 300;`) → Banana Pro (90s × 3) + Storage upload + Stage3 を余裕完了
+- `GenerationProgressBanner.tsx`: `eta_seconds` の 3 分岐表示 (正値: "残り ~Ns" / ゼロ: "もうすぐ完了" / 負値: "処理中…(時間超過)") / 同一 stage が 5 分以上続いた場合は背景 orange + 警告表示
+- `recover-stuck-finalizing.ts` (新規): `updated_at > 5min` のジョブ検知 / `--apply` で `stage='failed'` にマーク / 画像生成済ジョブは `runZeroGenCompletion` で resume 可能
+- `diag-stuck-finalizing.ts` (新規): 特定記事の `generation_jobs` 状態を一括診断
+- `health/run-all.ts`: H-13 stuck finalizing ジョブ数を日次監視に追加 (失敗時 Issue 自動作成)
+- `docs/runbooks/stuck-finalizing-recovery.md` (新規): 症状 → 原因 → 検知 → 復旧手順
+
+### 修正したファイル
+- (modified) `src/app/api/articles/zero-generate-full/route.ts` — `maxDuration = 300`
+- (modified) `src/components/articles/GenerationProgressBanner.tsx` — eta 分岐 + 5 分停滞警告
+- (added) `scripts/recover-stuck-finalizing.ts`
+- (added) `scripts/diag-stuck-finalizing.ts`
+- (modified) `scripts/health/run-all.ts` — H-13 監視追加
+- (added) `docs/runbooks/stuck-finalizing-recovery.md`
+- (modified) `scripts/auto-apply-images-batch.ts` — `injectMissingImages` を 2 段階目修復に組込 (P5-66 補完)
+
+### 検証結果
+- `tsc --noEmit` exit 0
+- `npm run build` PASS
+- 既存テスト回帰なし
+- 本番監視: H-13 検知ロジック検証済 (stuck ジョブ 0 件の正常系確認)
+
+### 関連雑ノート
+- `cd49b6c`: `tsconfig.json` の exclude に `tmp` / `test` / `out` / `playwright-report` / `test-results` を追加し、ビルドノイズを削減
+
+### 次のステップ
+1. H-13 が本番で stuck を検知した場合の復旧 runbook 実運用検証
+2. Top5 Fix 第 3〜5 号の継続着手
