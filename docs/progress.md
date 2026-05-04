@@ -1562,3 +1562,94 @@ zero-gen の最終 stage (finalizing / Stage3) で進捗 90% のまま `eta_seco
 ### 次のステップ
 1. H-13 が本番で stuck を検知した場合の復旧 runbook 実運用検証
 2. Top5 Fix 第 3〜5 号の継続着手
+
+---
+
+## P5-68 完了サマリ — No Replacement Image bug 根本対策 (旧実装撤去 + Stage2 prompt 強化)
+
+**Date:** 2026-05-04
+**Author:** Generator/Fixer
+**Commit:** c0e404b
+
+### 1. 背景
+zero-gen 記事で本文に `<!--<img ...-->` プレースホルダコメントが残り、画像が一切挿入されない事象が再発。表面上は P5-57/P5-66 で修復済のはずだったが、再発記事 (95a75cf4) を解析したところ「主犯が 2 つ」存在することが判明:
+- run-completion.ts に **旧 `replaceImagePlaceholders` のコピー**が生きており、安全実装 (`src/lib/content/replace-placeholders.ts`) を経由せずに通る経路があった
+- Stage2 prompt の禁止形式リストに `<!--<img...` が含まれておらず、AI 出力がコメント形式のプレースホルダを混入させていた
+
+「同じロジックを複数ファイルに書くな」(systemic antipattern #3) と「AI 出力は post-validate」(同 #5) の典型的な再発。
+
+### 2. 変更内容
+- **A. 旧実装撤去**: `run-completion.ts` 内の旧 `replaceImagePlaceholders` コピーを削除し、`src/lib/content/replace-placeholders.ts` の安全実装に統一
+- **B. Stage2 prompt 強化**: `<!--<img...`, `<!-- IMG_*-->`, `<img>` 直書きを禁止形式として明示 + few-shot 3 件追加
+- **C. saveRevision 経路確認**: `handleApplyImages` の auto_snapshot は `updateArticle()` 経由で既に article_revisions INSERT を実施していたため変更不要 (HTML History Rule 遵守済)
+- **D. 実記事修復**: 95a75cf4 を `article_revisions` rev3 + rev4 で履歴保全しつつ修復
+- **E. Tier 1 観測ログ**: `placeholder_mismatch` ログに `residualFull` / `bodyHash` / `bodyLength` を追加、検出時の証跡保全を強化
+
+### 修正したファイル
+- (modified) `src/app/api/articles/zero-generate/run-completion.ts` — 旧実装削除 + 共通モジュール呼び出しに変更
+- (modified) `src/lib/ai/prompts/stage2-body.ts` — 禁止形式 + few-shot 追加
+- (modified) `src/lib/content/replace-placeholders.ts` — Tier 1 ログフィールド追加
+- (modified) (関連 logger 呼び出しのコンテキスト拡張)
+
+### 検証結果
+- `tsc --noEmit` exit 0
+- vitest 既存テスト回帰なし
+- 記事 95a75cf4 の本文に画像 3 枚が反映されたことを確認 (revisions 履歴保全)
+
+### 関連雑ノート
+- 教訓: 「過去のバグ修正で消したつもりの旧実装」が別ファイルにコピーで残るパターン。grep ベースの重複検出を CI で恒久化検討
+- AI 出力の禁止形式は few-shot を増やすほど効くが、最終的には post-validate が最後の砦
+
+### 次のステップ
+1. P5-69 の silent done 遷移問題と接続: 観測ログを使って同種事故の再発検知
+2. 旧実装コピー検出 lint ルール (重複関数名の semantic similarity) の導入検討
+
+---
+
+## P5-69 完了サマリ — 本文ゼロ事故 + silent done 遷移を遮断 (zero-generate-async / Stage2 / run-completion)
+
+**Date:** 2026-05-04
+**Author:** Generator/Fixer
+**Commit:** bf51b55
+
+### 1. 背景
+記事 65b3d12b で「Stage2 が空文字を返したまま `stage='done'` に遷移し、UI 上は完了表示なのに本文ゼロで DB に INSERT される」事故が発生。原因調査の結果、真犯人は `zero-generate-async/route.ts` の **catch 後に無条件で `stage='done'` を UPDATE していた箇所**。Stage2 / run-completion 側にも以下のガード不足があり、silent failure が層を超えて伝播していた:
+- Stage2 で空文字を弾かないまま INSERT へ流す
+- run-completion 入口で本文長さチェックが無く、sub-100 char body もそのまま完了扱い
+- stage transition が logger.debug 止まりで、本番でトラッキング困難
+
+「fetch エラーは UI に出せ」(systemic antipattern #4) の DB transition 版。silent done UPDATE は最も検知が遅れる種類のバグ。
+
+### 2. 変更内容
+- **α. Stage2 ガード強化** (`zero-generate-full/route.ts`):
+  - Stage2 出力が空文字の場合 throw
+  - INSERT 前に本文 100 char 未満なら throw (`sub-100 char body INSERT 禁止`)
+  - 全 stage transition (`stage1_outline→stage2_body→stage3_finalize→done` 等) を `logger.info` 化
+- **β. run-completion 入口検査** (`run-completion.ts`):
+  - 引数の body が 100 char 未満なら throw early return
+  - 全 transition を logger.info に昇格
+- **γ. silent done 遮断** (`zero-generate-async/route.ts`):
+  - catch 後に無条件で `stage='done'` していた UPDATE を撤去
+  - エラー時は `stage='failed'` + `last_error` を保存して early return
+- **δ. 実記事救済**: 65b3d12b を Stage2 再実行 (4406 chars) で復活。Stage3 は未実行のため UI / scripts で別途完了させる
+
+### 修正したファイル
+- (modified) `src/app/api/articles/zero-generate-async/route.ts` — silent done 遮断 + failed early return
+- (modified) `src/app/api/articles/zero-generate-full/route.ts` — Stage2 空文字検査 + sub-100 ガード + logger.info 化
+- (modified) `src/app/api/articles/zero-generate/run-completion.ts` — body 100 char 入口検査 + logger.info 化
+- (script ad-hoc) Stage2 再実行スクリプトで 65b3d12b 救済
+
+### 検証結果
+- `tsc --noEmit` exit 0
+- 既存テスト回帰なし
+- 65b3d12b 本文 4406 chars 反映確認 (Stage3 残課題あり)
+- stage transition ログが本番 logger 出力に昇格していることを smoke 確認
+
+### 関連雑ノート
+- silent done は「成功扱いで終わる」最も悪質な silent failure。今後 stage UPDATE は必ず assert 経由 (P5-43 系の state-machine と同思想で transition 関数を介す検討)
+- sub-100 char body は外部 prompt 改変だけでなくモデル側の出力切れでも発生し得るため、入口/出口の double guard が必須
+
+### 次のステップ
+1. 65b3d12b の Stage3 完了 + 公開フロー
+2. stage transition assert helper (state-machine 形式) の導入検討
+3. silent failure 横断教訓を `feedback_silent_failure_lessons.md` に切り出し (memory hygiene)

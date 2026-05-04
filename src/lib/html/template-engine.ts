@@ -67,9 +67,23 @@ export function extractHeadings(html: string): { id: string; text: string; level
 }
 
 /**
- * 画像プレースホルダーを実際のパスに置換
+ * P5-68 E3: 旧 `replaceImagePlaceholders` をリネーム。
+ *
+ * **これは canonical な `src/lib/zero-gen/replace-placeholders.ts` の
+ * `replaceImagePlaceholders` とは別目的の関数である。**
+ *
+ * canonical: 本文 HTML 内の `<!--IMAGE:hero:hero.webp-->` 等のプレースホルダコメントを
+ *            `<img src="...">` タグに置換 (Phase 1/2/3 + 安全な regex + mismatched 検出)。
+ *
+ * こちら (mapImageUrlsForTemplate): FTP デプロイ時のテンプレート置換ヘルパ。
+ *   引数で渡された任意の placeholder 文字列を `placeholders/${filename}` という
+ *   相対パスに単純置換するだけで、IMAGE:position 形式は扱わない。
+ *
+ * 関数名衝突を避けるために `mapImageUrlsForTemplate` にリネーム。
+ * 現状 caller は存在しないが、export を残すのは将来の FTP テンプレート差し替えで
+ * 利用される可能性があるため (削除すると挙動が壊れる外部 caller を想定して保守的に保持)。
  */
-export function replaceImagePlaceholders(
+export function mapImageUrlsForTemplate(
   html: string,
   ftpDirectory: string,
   imageMap: Record<string, string>,

@@ -17,6 +17,14 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { generateImage } from '@/lib/ai/gemini-client';
 import { uploadImage } from '@/lib/storage/image-storage';
 import { logger } from '@/lib/logger';
+// P5-68 E3: ローカル独自実装の replaceImagePlaceholders を canonical 共通実装に統合。
+//   旧実装は Phase 1 のみ・class="placeholder" 限定の div ラップを扱っていたが、
+//   canonical (src/lib/zero-gen/replace-placeholders.ts) は
+//     - Phase 1 (位置名付き) + Phase 2 (順序割当) + Phase 3 (残存検出ログ)
+//     - <div[^>]*>...</div> による class 非依存マッチ
+//     - 安全な裸 placeholder regex (`>` を含まない安全文字のみ)
+//   をすべて備え、過去のミスマッチ事例 (P5-55/57/58) に対する regression テストで保護されている。
+import { replaceImagePlaceholders } from '@/lib/zero-gen/replace-placeholders';
 
 // Vercel Serverless 最大実行時間を300秒に設定
 export const maxDuration = 300;
@@ -165,26 +173,21 @@ export async function POST(
       filename: `${r.position}.webp`,
     }));
 
-    // 本文HTMLのプレースホルダーを実画像に自動置換
-    function replaceImagePlaceholders(html: string | null): string | null {
+    // 本文HTMLのプレースホルダーを実画像に自動置換 (canonical 共通実装を使用)
+    const replacePlaceholdersInHtml = (html: string | null): string | null => {
       if (!html) return null;
-      let updated = html;
-      for (const img of imageFiles) {
-        const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
-        const patterns = [
-          new RegExp(`<div[^>]*class="[^"]*placeholder[^"]*"[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->\\s*</div>`, 'g'),
-          new RegExp(`<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->`, 'g'),
-          new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)?`, 'g'),
-        ];
-        for (const pattern of patterns) {
-          updated = updated.replace(pattern, imgTag);
-        }
+      const { html: replaced, mismatched } = replaceImagePlaceholders(html, imageFiles);
+      if (mismatched > 0) {
+        logger.warn('ai', 'generate_images.placeholder_mismatch', {
+          articleId,
+          mismatched,
+        });
       }
-      return updated;
-    }
+      return replaced;
+    };
 
-    const updatedStage2 = replaceImagePlaceholders(article.stage2_body_html as string | null);
-    const updatedStage3 = replaceImagePlaceholders(article.stage3_final_html as string | null);
+    const updatedStage2 = replacePlaceholdersInHtml(article.stage2_body_html as string | null);
+    const updatedStage3 = replacePlaceholdersInHtml(article.stage3_final_html as string | null);
 
     try {
       const updateFields: Record<string, unknown> = {
