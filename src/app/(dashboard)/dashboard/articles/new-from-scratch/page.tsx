@@ -794,7 +794,7 @@ export default function NewFromScratchPage() {
                     </p>
                     <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-200">
                       他の画面に移動しても継続します。完了すると上部バナーで通知されます。
-                      ステージ: {activeJob?.stage ?? 'queued'} ({Math.round((activeJob?.progress ?? 0) * 100)}%)
+                      ステージ: {activeJob?.stage ?? 'queued'} ({Math.max(0, Math.min(100, Math.round(activeJob?.progress ?? 0)))}%)
                     </p>
                   </div>
                 </div>

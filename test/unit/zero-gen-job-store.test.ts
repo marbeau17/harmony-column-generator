@@ -103,23 +103,23 @@ describe('createJobState', () => {
 });
 
 describe('updateJobState', () => {
-  it('部分更新が反映される', async () => {
+  it('部分更新が反映される (0-100 整数スケール)', async () => {
     await createJobState('bbbb1111-1111-1111-1111-111111111111');
     const updated = await updateJobState('bbbb1111-1111-1111-1111-111111111111', {
       stage: 'stage2',
-      progress: 0.4,
+      progress: 40,
       eta_seconds: 50,
     });
     expect(updated.stage).toBe('stage2');
-    expect(updated.progress).toBe(0.4);
+    expect(updated.progress).toBe(40);
     expect(updated.eta_seconds).toBe(50);
   });
 
-  it('progress が 0..1 にクランプされる', async () => {
+  it('progress が 0..100 にクランプされる (spec v2.1)', async () => {
     const upper = await updateJobState('cccc1111-1111-1111-1111-111111111111', {
-      progress: 5,
+      progress: 500,
     });
-    expect(upper.progress).toBe(1);
+    expect(upper.progress).toBe(100);
     const lower = await updateJobState('cccc2222-2222-2222-2222-222222222222', {
       progress: -3,
     });

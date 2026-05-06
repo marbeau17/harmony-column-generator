@@ -30,7 +30,7 @@ export type JobStage =
 
 export interface JobState {
   stage: JobStage;
-  progress: number;        // 0.0 - 1.0
+  progress: number;        // 0 - 100 整数スケール (spec v2.1)
   eta_seconds: number;
   error?: string;
   article_id?: string;
@@ -139,9 +139,10 @@ export async function updateJobState(
   };
   if (partial.stage !== undefined) updateFields.stage = partial.stage;
   if (partial.progress !== undefined) {
+    // spec v2.1: progress は 0-100 整数スケール。NaN は 0、範囲外はクランプ。
     let p = partial.progress;
     if (typeof p === 'number' && Number.isNaN(p)) p = 0;
-    if (typeof p === 'number') p = Math.max(0, Math.min(1, p));
+    if (typeof p === 'number') p = Math.max(0, Math.min(100, p));
     updateFields.progress = p;
   }
   if (partial.eta_seconds !== undefined) {

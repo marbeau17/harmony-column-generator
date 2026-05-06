@@ -253,7 +253,9 @@ export default function GenerationProgressBanner() {
   }
 
   // 進行中
-  const pct = Math.round((job.progress ?? 0) * 100);
+  // spec v2.1: progress は 0-100 整数スケールで届くため、× 100 不要。
+  // 異常値ガード: 範囲外をクランプし、整数化。
+  const pct = Math.max(0, Math.min(100, Math.round(job.progress ?? 0)));
   // P5-67: eta_seconds <= 0 の場合の表示分岐 + 5 分以上 stage 停滞時の警告
   const stageElapsedSec = Math.floor((now - stageChangedAtRef.current) / 1000);
   const isStalled = stageElapsedSec >= STAGE_STALL_THRESHOLD_SEC;

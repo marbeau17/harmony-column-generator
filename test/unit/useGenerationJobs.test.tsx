@@ -57,7 +57,7 @@ describe('useGenerationJobs', () => {
       {
         job_id: '99999999-9999-4999-8999-999999999999',
         stage: 'stage1',
-        progress: 0.2,
+        progress: 20, // spec v2.1: 0-100 整数スケール
         eta_seconds: 70,
         startedAt: new Date().toISOString(),
       },
@@ -72,7 +72,7 @@ describe('useGenerationJobs', () => {
       {
         job_id: '88888888-8888-4888-8888-888888888888',
         stage: 'stage1',
-        progress: 0.2,
+        progress: 20, // spec v2.1: 0-100 整数スケール
         eta_seconds: 70,
         startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
       },
@@ -90,11 +90,12 @@ describe('useGenerationJobs', () => {
   });
 
   it('summary の集計が正しい', () => {
+    // spec v2.1: progress は 0-100 整数スケール
     const mixed = [
       { job_id: 'a-1', stage: 'queued', progress: 0, eta_seconds: 90, startedAt: new Date().toISOString() },
-      { job_id: 'a-2', stage: 'stage2', progress: 0.5, eta_seconds: 50, startedAt: new Date().toISOString() },
-      { job_id: 'a-3', stage: 'done', progress: 1, eta_seconds: 0, article_id: 'art-1', startedAt: new Date().toISOString() },
-      { job_id: 'a-4', stage: 'failed', progress: 1, eta_seconds: 0, error: 'oops', startedAt: new Date().toISOString() },
+      { job_id: 'a-2', stage: 'stage2', progress: 50, eta_seconds: 50, startedAt: new Date().toISOString() },
+      { job_id: 'a-3', stage: 'done', progress: 100, eta_seconds: 0, article_id: 'art-1', startedAt: new Date().toISOString() },
+      { job_id: 'a-4', stage: 'failed', progress: 100, eta_seconds: 0, error: 'oops', startedAt: new Date().toISOString() },
     ];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(mixed));
     const { result } = renderHook(() => useGenerationJobs());
@@ -109,9 +110,10 @@ describe('useGenerationJobs', () => {
   });
 
   it('全 job が終端なら all_terminal=true', () => {
+    // spec v2.1: progress は 0-100 整数スケール
     const terminal = [
-      { job_id: 'b-1', stage: 'done', progress: 1, eta_seconds: 0, article_id: 'x', startedAt: new Date().toISOString() },
-      { job_id: 'b-2', stage: 'failed', progress: 1, eta_seconds: 0, error: 'oops', startedAt: new Date().toISOString() },
+      { job_id: 'b-1', stage: 'done', progress: 100, eta_seconds: 0, article_id: 'x', startedAt: new Date().toISOString() },
+      { job_id: 'b-2', stage: 'failed', progress: 100, eta_seconds: 0, error: 'oops', startedAt: new Date().toISOString() },
     ];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(terminal));
     const { result } = renderHook(() => useGenerationJobs());

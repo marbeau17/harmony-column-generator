@@ -49,7 +49,7 @@ describe('useGenerationJob', () => {
     const existing = {
       job_id: '33333333-3333-3333-3333-333333333333',
       stage: 'stage2',
-      progress: 0.4,
+      progress: 40, // spec v2.1: 0-100 整数スケール
       eta_seconds: 50,
       startedAt: new Date().toISOString(),
     };
@@ -63,7 +63,7 @@ describe('useGenerationJob', () => {
     const old = {
       job_id: '44444444-4444-4444-4444-444444444444',
       stage: 'stage2',
-      progress: 0.4,
+      progress: 40, // spec v2.1: 0-100 整数スケール
       eta_seconds: 50,
       startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 時間前
     };
@@ -84,7 +84,7 @@ describe('useGenerationJob', () => {
     const done = {
       job_id: '55555555-5555-5555-5555-555555555555',
       stage: 'done',
-      progress: 1,
+      progress: 100, // spec v2.1: 0-100 整数スケール
       eta_seconds: 0,
       article_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       startedAt: new Date().toISOString(),

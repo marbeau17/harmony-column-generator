@@ -8,7 +8,8 @@
 //     - 認証必須（未ログインは 401）
 //     - job_id (UUID) で zero-gen-job-store から状態を polling
 //     - Content-Type: text/event-stream
-//     - フォーマット: data: {"stage":"stage1","progress":0.1,"eta_seconds":30}\n\n
+//     - フォーマット: data: {"stage":"stage1","progress":15,"eta_seconds":30}\n\n
+//       (spec v2.1: progress は 0-100 整数スケール)
 //     - 5 秒間隔で送信、stage が 'done' / 'failed' になったら close
 //     - クライアント切断 (request.signal abort) で polling を停止
 //
