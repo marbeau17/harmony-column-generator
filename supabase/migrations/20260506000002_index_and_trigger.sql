@@ -29,12 +29,15 @@ CREATE INDEX IF NOT EXISTS idx_article_claims_article
 -- DEFAULT NOW() のみで UPDATE 時に自動更新されない。
 -- spec v2.1 §D22 に合わせ、行更新のたびに NOW() を書き込む。
 CREATE OR REPLACE FUNCTION update_generation_jobs_timestamp()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
 BEGIN
   NEW.updated_at := NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS tg_gen_jobs_updated ON generation_jobs;
 CREATE TRIGGER tg_gen_jobs_updated
@@ -56,12 +59,15 @@ CREATE TRIGGER tg_gen_jobs_updated
 --   - is_hub_visible を直接書こうとした値は上書きする
 --     （アプリ側が両方書いていた場合でも結果は state ベースで一貫）
 CREATE OR REPLACE FUNCTION sync_is_hub_visible()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
 BEGIN
   NEW.is_hub_visible := NEW.visibility_state IN ('live','live_hub_stale');
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS tg_articles_sync_visibility ON articles;
 CREATE TRIGGER tg_articles_sync_visibility

@@ -136,6 +136,9 @@ COMMENT ON POLICY "service_role_only" ON generation_jobs IS
 --   - position が NULL の行も許容するため UNIQUE は (article_id, position) のまま。
 --     PostgreSQL は NULL を区別する仕様のため NULL 行は重複検出対象外。
 -- ─────────────────────────────────────────────────────────────────────────────
+-- 再実行耐性: 既に同名制約があれば一度落としてから付け直す（idempotent）。
+ALTER TABLE cta_variants
+  DROP CONSTRAINT IF EXISTS cta_variants_article_position_uniq;
 ALTER TABLE cta_variants
   ADD CONSTRAINT cta_variants_article_position_uniq
   UNIQUE (article_id, position);
