@@ -18,32 +18,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { isPublishControlEnabled } from '@/lib/publish-control/feature-flag';
 import { isValidRequestId } from '@/lib/publish-control/idempotency';
-import { assertTransition, type VisibilityState } from '@/lib/publish-control/state-machine';
-import { logger } from '@/lib/logger';
+import type { VisibilityState } from '@/lib/publish-control/state-machine';
+import { performReviewAction, type ReviewAction } from '@/lib/publish-control/review-actions';
 
 export const maxDuration = 60;
 
 type RouteParams = { params: { id: string } };
-
-type ReviewAction = 'submit' | 'approve' | 'reject';
 
 interface ReviewBody {
   action: ReviewAction;
   requestId: string;
   reason?: string;
 }
-
-const ACTION_TO_PUBLISH_EVENT: Record<ReviewAction, 'review_submit' | 'review_approve' | 'review_reject'> = {
-  submit: 'review_submit',
-  approve: 'review_approve',
-  reject: 'review_reject',
-};
-
-const ACTION_TO_TARGET_STATE: Record<ReviewAction, VisibilityState> = {
-  submit: 'pending_review',
-  approve: 'idle',
-  reject: 'draft',
-};
 
 function isReviewAction(v: unknown): v is ReviewAction {
   return v === 'submit' || v === 'approve' || v === 'reject';
@@ -100,78 +86,44 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   const currentState = (article.visibility_state ?? 'idle') as VisibilityState;
-  const targetState = ACTION_TO_TARGET_STATE[body.action];
 
-  // State machine 検証 (draft→pending_review / pending_review→idle / pending_review→draft)
-  try {
-    assertTransition(currentState, targetState);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { error: msg, code: 'ILLEGAL_TRANSITION', from: currentState, to: targetState },
-      { status: 422 },
-    );
-  }
-
-  // 状態 + audit 列の更新。approve 時のみ reviewed_at / reviewed_by を更新する。
-  const nowIso = new Date().toISOString();
-  const patch: Record<string, unknown> = {
-    visibility_state: targetState,
-    visibility_updated_at: nowIso,
-  };
-  if (body.action === 'approve') {
-    patch['reviewed_at'] = nowIso;
-    patch['reviewed_by'] = user.email ?? 'publish-control-v2';
-  }
-
-  // Optimistic concurrency: 取得時の visibility_state と一致する行のみ更新する。
-  const { error: updErr, data: updRows } = await service
-    .from('articles')
-    // guard-approved: review action state transition (P5-43 Step 3)
-    .update(patch)
-    .eq('id', articleId)
-    .eq('visibility_state', currentState)
-    .select('id');
-  if (updErr) {
-    logger.error('api', 'review.update_failed', { articleId, action: body.action, err: updErr.message });
-    return NextResponse.json({ error: 'state update failed', detail: updErr.message }, { status: 502 });
-  }
-  if (!updRows || updRows.length === 0) {
-    // 競合: 別リクエストが先に状態を変えた。
-    return NextResponse.json(
-      { error: 'state changed by concurrent request', code: 'CONCURRENT_UPDATE' },
-      { status: 409 },
-    );
-  }
-
-  // Audit ログ INSERT。state 変更後に追記し、失敗しても状態は維持する (logger に記録)。
-  const { error: evtErr } = await service.from('publish_events').insert({
-    article_id: articleId,
-    action: ACTION_TO_PUBLISH_EVENT[body.action],
-    actor_id: user.id,
-    actor_email: user.email,
-    request_id: body.requestId,
-    hub_deploy_status: 'skipped',
-    reason: body.reason,
-  });
-  if (evtErr) {
-    logger.error('api', 'review.audit_failed', { articleId, action: body.action, err: evtErr.message });
-  }
-
-  logger.info('api', 'review.ok', {
+  // P5-43 Step 3: 共有ヘルパー performReviewAction に処理を委譲。
+  // visibility/route.ts の auto-approve とロジックを共通化している。
+  const result = await performReviewAction({
+    service,
     articleId,
     action: body.action,
-    from: currentState,
-    to: targetState,
-    actor: user.email,
+    currentState,
+    actor: { id: user.id, email: user.email ?? null },
+    requestId: body.requestId,
+    reason: body.reason,
   });
+
+  if (!result.ok) {
+    if (result.code === 'ILLEGAL_TRANSITION') {
+      return NextResponse.json(
+        { error: result.message, code: 'ILLEGAL_TRANSITION', from: result.from, to: result.to },
+        { status: 422 },
+      );
+    }
+    if (result.code === 'CONCURRENT_UPDATE') {
+      return NextResponse.json(
+        { error: result.message, code: 'CONCURRENT_UPDATE' },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json(
+      { error: 'state update failed', detail: result.message },
+      { status: 502 },
+    );
+  }
 
   return NextResponse.json(
     {
       status: 'ok',
       action: body.action,
-      from: currentState,
-      to: targetState,
+      from: result.from,
+      to: result.to,
     },
     { status: 200 },
   );

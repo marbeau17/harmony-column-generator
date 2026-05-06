@@ -12,6 +12,8 @@ import { isPublishControlEnabled } from '@/lib/publish-control/feature-flag';
 import { checkVisibilityGuard } from '@/lib/publish-control/guards';
 import { isValidRequestId } from '@/lib/publish-control/idempotency';
 import { assertTransition, isDanglingDeploying, type VisibilityState } from '@/lib/publish-control/state-machine';
+import { performReviewAction } from '@/lib/publish-control/review-actions';
+import { ulid } from '@/lib/publish-control/ulid';
 import { renderSoftWithdrawalHtml } from '@/lib/publish-control/soft-withdrawal';
 import { getFtpConfig, softWithdrawFile } from '@/lib/deploy/ftp-uploader';
 import { logger } from '@/lib/logger';
@@ -114,28 +116,29 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   // P5-64 (2026-05-03): visible=true で visibility_state='pending_review' の場合、
   //   publish ボタンクリック = 由起子さん確認意思の表明とみなして自動承認。
-  //   - pending_review → idle (state machine 経由)
-  //   - reviewed_at = now() / reviewed_by = user.email を audit セット
-  //   その後 idle → deploying に遷移して通常 publish フローへ。
-  //   旧実装は pending_review → deploying 直接遷移を試みて assertTransition で
-  //   throw → 500 になっていた (P5-47 が status='editing' の自動遷移しか考慮
-  //   していなかった補完)。
+  //
+  // P5-43 Step 3 リファクタ: review_actions.performReviewAction(action='approve') に
+  //   処理を委譲し、reviewed_at / reviewed_by の audit 書込みは review API と同じ
+  //   ロジックで行う。これにより visibility_state 直接書換のレシピがこのルート内
+  //   から消え、書き手 (writer) は review API or 通常の publish/unpublish 遷移のみとなる。
+  //   旧実装は assertTransition('pending_review','deploying') で throw → 500 になって
+  //   いた (P5-47 が status='editing' の自動遷移しか考慮していなかった補完)。
   if (body.visible && currentState === 'pending_review') {
-    assertTransition('pending_review', 'idle');
-    const { error: approveErr } = await service
-      .from('articles')
-      .update({
-        visibility_state: 'idle',
-        visibility_updated_at: new Date().toISOString(),
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: user.email ?? null,
-      })
-      .eq('id', articleId)
-      .eq('visibility_state', 'pending_review');
-    if (approveErr) {
+    const approveResult = await performReviewAction({
+      service,
+      articleId,
+      action: 'approve',
+      currentState: 'pending_review',
+      actor: { id: user.id, email: user.email ?? null },
+      // ULID は冪等性キー。auto-approve は同じ requestId(=publish 用) と分けるため
+      // 別 ULID を生成する。publish_events は (article_id, request_id) ユニーク制約のみ。
+      requestId: ulid(),
+      reason: 'auto-approve via publish action',
+    });
+    if (!approveResult.ok) {
       return NextResponse.json(
-        { error: 'auto-approve failed', detail: approveErr.message },
-        { status: 409 },
+        { error: 'auto-approve failed', detail: approveResult.message, code: approveResult.code },
+        { status: approveResult.code === 'CONCURRENT_UPDATE' ? 409 : 502 },
       );
     }
     logger.info('api', 'visibility.auto_approved', {
