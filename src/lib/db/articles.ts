@@ -2,7 +2,9 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { saveRevision } from '@/lib/db/article-revisions';
 import { assertArticleWriteAllowed, assertArticleDeleteAllowed } from '@/lib/publish-control/session-guard';
 // P5-59: generation_mode の厳密型を共通 types から取り込む
-import type { GenerationMode } from '@/types/article';
+// spec v2.1 §2.1 — articles テーブル拡張 12 列の追加分は ArticleRow にも反映する。
+import type { ArticleIntent, GenerationMode } from '@/types/article';
+import type { VisibilityState } from '@/lib/publish-control/state-machine';
 
 // ---------- 型定義 ----------
 
@@ -61,10 +63,35 @@ export interface ArticleRow {
   //   状態判定には使用しない (詳細: src/types/article.ts のコメント)。
   reviewed_at: string | null;
   reviewed_by: string | null;
+
+  // ─── spec v2.1 §2.1 articles テーブル拡張 12 列 ────────────────────────────
+  /** 生成モード（zero / source）。DB 側 DEFAULT 'source'。 */
+  generation_mode?: GenerationMode | null;
+  /** 記事の意図ラベル。NULL 許可。 */
+  intent?: ArticleIntent | null;
+  /** LLMO 用 100-150字 概要。 */
+  lead_summary?: string | null;
+  /** 引用ハイライト 3 件（JSONB）。 */
+  citation_highlights?: unknown;
+  /** 物語アーク（v2.1 で TEXT→JSONB に訂正）。 */
+  narrative_arc?: unknown;
+  /** 感情曲線（JSONB）。 */
+  emotion_curve?: unknown;
+  /** 0-100 のハルシネーション安全性スコア。 */
+  hallucination_score?: number | null;
+  /** 0-1 の由起子トーン類似度スコア。 */
+  yukiko_tone_score?: number | null;
+  /** 可読性スコア。 */
+  readability_score?: number | null;
+  /** 品質ゲート override 配列（JSONB）。 */
+  quality_overrides?: unknown;
+  /** publish-control v2 の可視性ステート（spec §3.1 の 8 値）。 */
+  visibility_state?: VisibilityState | null;
+  /** visibility_state 最終更新時刻 (ISO8601)。 */
+  visibility_updated_at?: string | null;
+
   // Publish Control V2（step7 で legacy 公開経路にも書込同期）
   is_hub_visible?: boolean | null;
-  visibility_state?: string | null;
-  visibility_updated_at?: string | null;
   deployed_hash?: string | null;
   created_at: string;
   updated_at: string;

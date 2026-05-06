@@ -227,9 +227,14 @@ describe('POST /api/articles/[id]/hallucination-check', () => {
     expect(htmlArg).toBe('<p>本文。</p>');
     expect(typeof retrieveArg).toBe('function');
 
-    // persistClaims が articleId + claims で呼ばれる
+    // persistClaims が articleId + claims + { results } で呼ばれる
+    // (spec v2.1 §D17/§D18: ClaimResult[] を opts.results で持ち回す新シグネチャ)
     expect(persistClaimsMock).toHaveBeenCalledTimes(1);
-    expect(persistClaimsMock).toHaveBeenCalledWith(ARTICLE_ID, FIXTURE_CLAIMS);
+    expect(persistClaimsMock).toHaveBeenCalledWith(
+      ARTICLE_ID,
+      FIXTURE_CLAIMS,
+      { results: [] },
+    );
 
     // articles.hallucination_score のみが UPDATE される（本文は触らない）
     expect(articlesUpdateMock).toHaveBeenCalledTimes(1);

@@ -235,8 +235,31 @@ function buildSupabaseMock() {
         error: null,
       }),
     },
-    rpc: async (fnName: string, _args: Record<string, unknown>) => {
+    rpc: async (fnName: string, args: Record<string, unknown>) => {
       store.ops.push({ table: '<rpc>', op: 'rpc', payload: fnName, ts: Date.now() });
+      // spec v2.1 §D24: persist_claims_atomic は DELETE WHERE article_id = p_article_id
+      //   → JSONB 配列 p_claims を分解して INSERT する。テスト側はこの挙動を
+      //   in-memory store で再現する必要がある（旧実装は .delete().eq() + .insert()
+      //   をそのまま store に流していたため自然に動いていたが RPC 化で要追従）。
+      if (fnName === 'persist_claims_atomic') {
+        const articleId = args.p_article_id as string;
+        const claimsArg = args.p_claims as Array<Record<string, unknown>> | null;
+        // DELETE
+        store.data.article_claims = store.data.article_claims.filter(
+          (row) => (row as Record<string, unknown>).article_id !== articleId,
+        );
+        // INSERT（NULL / 非配列 / 空配列なら 0 を返す）
+        if (!Array.isArray(claimsArg) || claimsArg.length === 0) {
+          return { data: 0, error: null };
+        }
+        const inserted = claimsArg.map((c) => ({
+          ...c,
+          article_id: articleId,
+          id: nextUuid('claim'),
+        }));
+        store.data.article_claims.push(...inserted);
+        return { data: inserted.length, error: null };
+      }
       return store.rpcResponse;
     },
     from(table: string) {

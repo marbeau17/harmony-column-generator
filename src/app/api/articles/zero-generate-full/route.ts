@@ -949,7 +949,10 @@ export async function POST(request: NextRequest) {
   // 11. persistClaims / persistCtaVariants / persistToneScore
   if (halluResult && Array.isArray(halluResult.claims) && halluResult.claims.length > 0) {
     try {
-      await persistClaims(articleId, halluResult.claims);
+      // spec v2.1 §D17/§D18: ClaimResult[] を渡して evidence/similarity_score を充実
+      await persistClaims(articleId, halluResult.claims, {
+        results: halluResult.results,
+      });
       stages.insert_claims = 'ok';
     } catch (err) {
       recordStageFailure(failures, 'persist_claims', err, {

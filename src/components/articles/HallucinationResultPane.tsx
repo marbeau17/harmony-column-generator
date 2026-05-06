@@ -64,14 +64,14 @@ const VERDICT_LABEL: Record<HallucinationResult['verdict'], string> = {
 
 /**
  * Risk 配列を表示用 ClaimResult にマージ。
- * `Risk.risk_level` は型定義上 'low' | 'medium' | 'high' のみだが、
- * 実体側で 'critical' が来てもそのまま透過する。
+ * spec v2.1 で共通 RiskLevel が `critical` を含む 4 値に統一されたため、
+ * `Risk.risk_level` をそのまま `DisplayRiskLevel` として扱える。
  */
 function buildClaimResultMap(result: HallucinationResult): Map<number, ClaimResult> {
   const map = new Map<number, ClaimResult>();
   for (const r of result.risks) {
     map.set(r.sentence_idx, {
-      risk_level: (r.risk_level as unknown as DisplayRiskLevel) ?? 'low',
+      risk_level: (r.risk_level ?? 'low') as DisplayRiskLevel,
       risk_score: r.risk_score,
       reason: r.reason,
     });
@@ -107,7 +107,7 @@ export default function HallucinationResultPane({ articleId, htmlBody, result }:
   const counts = useMemo(() => {
     const c: Record<DisplayRiskLevel, number> = { critical: 0, high: 0, medium: 0, low: 0 };
     for (const r of result.risks) {
-      const level = (r.risk_level as unknown as DisplayRiskLevel) ?? 'low';
+      const level = (r.risk_level ?? 'low') as DisplayRiskLevel;
       if (level in c) c[level] += 1;
     }
     return c;
@@ -234,7 +234,7 @@ function cssId(s: string): string {
  * risk_level → ハイライト背景色 (light/dark 両対応の semi-transparent)。
  * dark mode は media query で切替（Tailwind の dark: は inline style では使えないため）。
  */
-function riskBgVar(level: DisplayRiskLevel | RiskLevel): string {
+function riskBgVar(level: RiskLevel): string {
   switch (level) {
     case 'critical':
       return 'rgba(239,68,68,0.30)'; // red-500 @ 30%

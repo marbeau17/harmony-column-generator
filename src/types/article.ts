@@ -5,6 +5,27 @@
 // ============================================================================
 
 import type { Stage1OutlineResult } from './ai';
+// P5-43 / spec v2.1 §3.1 — visibility_state は publish-control の 8 値を参照する。
+import type { VisibilityState } from '@/lib/publish-control/state-machine';
+
+// 再 export: 既存の callers が `@/types/article` 経由で取得できるようにする。
+export type { VisibilityState } from '@/lib/publish-control/state-machine';
+
+/**
+ * 記事の意図ラベル（spec v2.1 §2.1）。
+ *  - info       : 情報提供
+ *  - empathy    : 共感寄り添い
+ *  - solve      : 解決策提示
+ *  - introspect : 内省促し
+ */
+export type ArticleIntent = 'info' | 'empathy' | 'solve' | 'introspect';
+
+export const ARTICLE_INTENTS: readonly ArticleIntent[] = [
+  'info',
+  'empathy',
+  'solve',
+  'introspect',
+] as const;
 
 // ─── Enum / Union Types ──────────────────────────────────────────────────────
 
@@ -150,10 +171,36 @@ export interface Article {
   //   詳細: docs/refactor/publish-control-unification.md §3.2 / §5 Step 4。
   reviewed_at: string | null;
   reviewed_by: string | null;
-  // P5-43 publish-control v2: visibility_state ベースの公開制御
-  visibility_state?: string | null;
-  is_hub_visible?: boolean | null;
+
+  // ─── spec v2.1 §2.1 articles テーブル拡張 12 列 ────────────────────────────
+  /** 生成モード（zero=新規生成 / source=既存記事書換）。DB 側 DEFAULT 'source'。 */
+  generation_mode?: GenerationMode | null;
+  /** 記事の意図ラベル。NULL 許可。 */
+  intent?: ArticleIntent | null;
+  /** LLMO 用 100-150字 概要（v2.1 で追加）。 */
+  lead_summary?: string | null;
+  /** 引用ハイライト 3 件（JSONB。配列形式を想定）。 */
+  citation_highlights?: unknown;
+  /** 物語アーク（v2.1 で TEXT→JSONB に訂正）。 */
+  narrative_arc?: unknown;
+  /** 感情曲線（JSONB）。 */
+  emotion_curve?: unknown;
+  /** 0-100 のハルシネーション安全性スコア。 */
+  hallucination_score?: number | null;
+  /** 0-1 の由起子トーン類似度スコア。 */
+  yukiko_tone_score?: number | null;
+  /** 可読性スコア。 */
+  readability_score?: number | null;
+  /** 品質ゲート override 配列（check_item_id ignore リスト。JSONB）。 */
+  quality_overrides?: unknown;
+  /** publish-control v2 の可視性ステート（spec §3.1 の 8 値）。 */
+  visibility_state?: VisibilityState | null;
+  /** visibility_state 最終更新時刻 (ISO8601)。 */
   visibility_updated_at?: string | null;
+
+  // 既存（spec v2.1 で legacy/parallel 列として残置）
+  is_hub_visible?: boolean | null;
+
   created_at: string;
   updated_at: string;
 }

@@ -23,6 +23,7 @@ import {
   validateSpiritualClaim,
   validateLogicalPair,
 } from './index';
+import { logger } from '@/lib/logger';
 import type {
   ClaimsPayload,
   ClaimResult,
@@ -34,6 +35,88 @@ import type {
 } from './types';
 import type { Claim } from '@/types/hallucination';
 
+// ─── タイムアウト / slow 検知の閾値 ───────────────────────────────────────
+// Stage 3 (75% stuck) の根本原因可視化のため、超過時に warn / error を出す。
+const PER_CLAIM_TIMEOUT_MS = 60_000; // 個別 claim verify の上限
+const PER_CLAIM_SLOW_MS = 30_000; // 個別 claim が遅いと warn
+const RUN_TOTAL_TIMEOUT_MS = 5 * 60_000; // 全体 5 分の保護
+const RUN_TOTAL_SLOW_MS = 60_000; // 全体 60s 超で warn
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
+/**
+ * 個別 claim の verify を timeout + slow 検知付きで実行する。
+ */
+async function timedClaimVerify<T extends ClaimResult>(
+  validatorName: 'factual' | 'attribution' | 'spiritual' | 'logical',
+  claimIdx: number,
+  claimText: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const t0 = Date.now();
+  const claim_text_len = claimText.length;
+  try {
+    const result = await withTimeout(
+      fn(),
+      PER_CLAIM_TIMEOUT_MS,
+      `hallucination.verify_claim.${validatorName}[${claimIdx}]`,
+    );
+    const elapsed_ms = Date.now() - t0;
+    logger.debug('ai', 'hallucination.verify_claim', {
+      validator: validatorName,
+      claim_idx: claimIdx,
+      claim_text_len,
+      elapsed_ms,
+      verdict: result.verdict,
+      severity: result.severity,
+      similarity: result.similarity,
+    });
+    if (elapsed_ms >= PER_CLAIM_SLOW_MS) {
+      logger.warn('ai', 'hallucination.claim_slow', {
+        validator: validatorName,
+        claim_idx: claimIdx,
+        claim_text_len,
+        elapsed_ms,
+        threshold_ms: PER_CLAIM_SLOW_MS,
+      });
+    }
+    return result;
+  } catch (err) {
+    const elapsed_ms = Date.now() - t0;
+    const errObj = err as Error;
+    logger.error(
+      'ai',
+      'hallucination.verify_claim.failed',
+      {
+        validator: validatorName,
+        claim_idx: claimIdx,
+        claim_text_len,
+        elapsed_ms,
+        error_message: errObj?.message,
+        stack: errObj?.stack?.slice(0, 500),
+      },
+      err,
+    );
+    throw err;
+  }
+}
+
 // ─── ログ用ヘルパ ───────────────────────────────────────────────────────────
 
 /**
@@ -43,28 +126,40 @@ import type { Claim } from '@/types/hallucination';
  */
 async function runValidatorGroupTimed(
   name: 'factual' | 'attribution' | 'spiritual' | 'logical',
+  inputCount: number,
   fn: () => Promise<ClaimResult[]>,
 ): Promise<ClaimResult[]> {
   const t0 = Date.now();
+  logger.info('ai', `hallucination.validator_group.start`, {
+    validator: name,
+    input_count: inputCount,
+  });
   try {
     const results = await fn();
     const elapsed_ms = Date.now() - t0;
-    console.log('[hallucination.validator.end]', {
-      name,
-      ok: true,
+    logger.info('ai', `hallucination.validator_group.end`, {
+      validator: name,
+      input_count: inputCount,
       findings_count: results.length,
       elapsed_ms,
+      status: 'ok',
     });
     return results;
   } catch (err) {
     const elapsed_ms = Date.now() - t0;
-    const error_message = err instanceof Error ? err.message : String(err);
-    console.error('[hallucination.validator.end]', {
-      name,
-      ok: false,
-      error_message,
-      elapsed_ms,
-    });
+    const errObj = err as Error;
+    logger.error(
+      'ai',
+      `hallucination.validator_group.failed`,
+      {
+        validator: name,
+        input_count: inputCount,
+        elapsed_ms,
+        error_message: errObj?.message,
+        stack: errObj?.stack?.slice(0, 500),
+      },
+      err,
+    );
     throw err;
   }
 }
@@ -200,19 +295,62 @@ export async function runHallucinationChecks(
   judgeFn?: ContradictionJudgeFn,
   opts: Pick<RunChecksOpts, 'extractClaimsFn' | 'validateHallucinationFn'> = {},
 ): Promise<HallucinationCheckResult> {
+  return withTimeout(
+    runHallucinationChecksInner(htmlBody, retrieveTopK, judgeFn, opts),
+    RUN_TOTAL_TIMEOUT_MS,
+    'hallucination.run_checks',
+  ).catch((err) => {
+    const errObj = err as Error;
+    if (errObj?.message?.includes('timed out')) {
+      logger.error('ai', 'hallucination.run_checks.failed', {
+        error_message: errObj.message,
+        timeout_ms: RUN_TOTAL_TIMEOUT_MS,
+        phase: 'overall_timeout',
+      });
+    }
+    throw err;
+  });
+}
+
+async function runHallucinationChecksInner(
+  htmlBody: string,
+  retrieveTopK: RetrieveChunksFn | undefined,
+  judgeFn: ContradictionJudgeFn | undefined,
+  opts: Pick<RunChecksOpts, 'extractClaimsFn' | 'validateHallucinationFn'>,
+): Promise<HallucinationCheckResult> {
   const extractFn = opts.extractClaimsFn ?? defaultExtractClaims;
   const validateFn = opts.validateHallucinationFn ?? defaultValidateHallucination;
   const useDefaultValidator = !opts.validateHallucinationFn;
 
   const t_run_start = Date.now();
-  console.log('[hallucination.run-checks.begin]', {
+  logger.info('ai', 'hallucination.run_checks.start', {
     body_chars: htmlBody.length,
     started_at: new Date().toISOString(),
+    use_default_validator: useDefaultValidator,
+    has_retriever: !!retrieveTopK,
+    has_judge: !!judgeFn,
   });
 
   // step1: claim 抽出（タイミング計測付き）
   const t_claims_start = Date.now();
-  const claims: Claim[] = await extractFn(htmlBody);
+  let claims: Claim[];
+  try {
+    claims = await extractFn(htmlBody);
+  } catch (err) {
+    const errObj = err as Error;
+    logger.error(
+      'ai',
+      'hallucination.run_checks.failed',
+      {
+        elapsed_ms: Date.now() - t_run_start,
+        error_message: errObj?.message,
+        stack: errObj?.stack?.slice(0, 500),
+        phase: 'extract_claims',
+      },
+      err,
+    );
+    throw err;
+  }
   const claims_elapsed_ms = Date.now() - t_claims_start;
 
   // claim_type 別件数を集計（factual / attribution / spiritual / logical）
@@ -223,8 +361,8 @@ export async function runHallucinationChecks(
     else if (c.claim_type === 'spiritual') byType.spiritual += 1;
     else if (c.claim_type === 'logical') byType.logical += 1;
   }
-  console.log('[hallucination.claims_extracted]', {
-    count: claims.length,
+  logger.info('ai', 'hallucination.claims_extracted', {
+    claims_count: claims.length,
     by_type: byType,
     elapsed_ms: claims_elapsed_ms,
   });
@@ -232,12 +370,13 @@ export async function runHallucinationChecks(
   // 空入力は score=100 / criticals=0 で早期 return
   if (claims.length === 0) {
     const total_elapsed_ms = Date.now() - t_run_start;
-    console.log('[hallucination.run-checks.end]', {
+    logger.info('ai', 'hallucination.run_checks.end', {
       hallucination_score: 100,
       claims_count: 0,
       critical_count: 0,
       warning_count: 0,
-      total_elapsed_ms,
+      elapsed_ms: total_elapsed_ms,
+      status: 'empty_claims',
     });
     return {
       hallucination_score: 100,
@@ -257,6 +396,12 @@ export async function runHallucinationChecks(
 
   // step2: ClaimsPayload に整形
   const payload = buildClaimsPayload(claims);
+  logger.info('ai', 'hallucination.payload_built', {
+    factual_count: payload.factualClaims.length,
+    attribution_count: payload.attributionClaims.length,
+    spiritual_count: payload.spiritualClaims.length,
+    logical_pairs_count: payload.logicalPairs.length,
+  });
 
   // step3: 4 種 validator を並列実行
   const deps: HallucinationDeps = {
@@ -267,25 +412,41 @@ export async function runHallucinationChecks(
   let result: ValidateResult;
   if (useDefaultValidator) {
     // デフォルト経路: 4 グループを個別に時間計測しつつ並列実行する。
-    // Promise.all の rejection-bubbling 挙動を維持するため、各グループは
-    // try/catch で計測ログを出した後にエラーを再 throw する（呼び出し側の
-    // エラーセマンティクスは既存実装と等価）。
+    // 各 claim は per-claim timeout + slow 検知を適用する。
     const all = await Promise.all([
-      runValidatorGroupTimed('factual', () =>
+      runValidatorGroupTimed('factual', payload.factualClaims.length, () =>
         Promise.all(
-          payload.factualClaims.map((c) => validateFactualClaim(c, deps.retrieveTopK)),
+          payload.factualClaims.map((c, idx) =>
+            timedClaimVerify('factual', idx, c, () =>
+              validateFactualClaim(c, deps.retrieveTopK),
+            ),
+          ),
         ),
       ),
-      runValidatorGroupTimed('attribution', () =>
-        Promise.all(payload.attributionClaims.map((c) => validateAttributionClaim(c))),
-      ),
-      runValidatorGroupTimed('spiritual', () =>
-        Promise.all(payload.spiritualClaims.map((c) => validateSpiritualClaim(c))),
-      ),
-      runValidatorGroupTimed('logical', () =>
+      runValidatorGroupTimed('attribution', payload.attributionClaims.length, () =>
         Promise.all(
-          payload.logicalPairs.map(([a, b]) =>
-            validateLogicalPair(a, b, deps.judgeContradiction),
+          payload.attributionClaims.map((c, idx) =>
+            timedClaimVerify('attribution', idx, c, () =>
+              validateAttributionClaim(c),
+            ),
+          ),
+        ),
+      ),
+      runValidatorGroupTimed('spiritual', payload.spiritualClaims.length, () =>
+        Promise.all(
+          payload.spiritualClaims.map((c, idx) =>
+            timedClaimVerify('spiritual', idx, c, () =>
+              validateSpiritualClaim(c),
+            ),
+          ),
+        ),
+      ),
+      runValidatorGroupTimed('logical', payload.logicalPairs.length, () =>
+        Promise.all(
+          payload.logicalPairs.map(([a, b], idx) =>
+            timedClaimVerify('logical', idx, `${a}|${b}`, () =>
+              validateLogicalPair(a, b, deps.judgeContradiction),
+            ),
           ),
         ),
       ),
@@ -304,24 +465,30 @@ export async function runHallucinationChecks(
       result = await validateFn(payload, deps);
     } catch (err) {
       const elapsed_ms = Date.now() - t_val_start;
-      const error_message = err instanceof Error ? err.message : String(err);
+      const errObj = err as Error;
       // どの validator が落ちたか不明のため、全体としてエラーを記録する
-      console.error('[hallucination.validator.end]', {
-        name: 'all',
-        ok: false,
-        error_message,
-        elapsed_ms,
-      });
+      logger.error(
+        'ai',
+        'hallucination.validator_group.failed',
+        {
+          validator: 'all',
+          elapsed_ms,
+          error_message: errObj?.message,
+          stack: errObj?.stack?.slice(0, 500),
+        },
+        err,
+      );
       throw err;
     }
     const elapsed_ms = Date.now() - t_val_start;
     for (const name of ['factual', 'attribution', 'spiritual', 'logical'] as const) {
       const findings_count = result.results.filter((r) => r.type === name).length;
-      console.log('[hallucination.validator.end]', {
-        name,
-        ok: true,
+      logger.info('ai', 'hallucination.validator_group.end', {
+        validator: name,
         findings_count,
         elapsed_ms,
+        status: 'ok',
+        via: 'di',
       });
     }
   }
@@ -329,12 +496,21 @@ export async function runHallucinationChecks(
   // step4: 集計結果を整形して返却
   const total_elapsed_ms = Date.now() - t_run_start;
   const warning_count = result.summary.weak + result.summary.unsupported + result.summary.flagged;
-  console.log('[hallucination.run-checks.end]', {
+  if (total_elapsed_ms >= RUN_TOTAL_SLOW_MS) {
+    logger.warn('ai', 'hallucination.run_slow', {
+      elapsed_ms: total_elapsed_ms,
+      threshold_ms: RUN_TOTAL_SLOW_MS,
+      claims_count: claims.length,
+      by_type: byType,
+    });
+  }
+  logger.info('ai', 'hallucination.run_checks.end', {
     hallucination_score: result.hallucination_score,
     claims_count: claims.length,
     critical_count: result.summary.critical_hits,
     warning_count,
-    total_elapsed_ms,
+    elapsed_ms: total_elapsed_ms,
+    status: 'ok',
   });
 
   return {

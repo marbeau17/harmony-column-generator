@@ -13,6 +13,7 @@
 // ============================================================================
 
 import type { VisionCheckResult } from '@/types/vision';
+import { logger } from '@/lib/logger';
 
 // ─── 環境変数 & 定数 ─────────────────────────────────────────────────────────
 
@@ -264,9 +265,31 @@ export async function checkImageHallucination(
   const imagePart = buildImagePart(imageDataOrUrl);
 
   // ── プライバシー: 画像本体は決してログに出さない ──
+  // 画像 URL / base64 / data URL は ログ payload に絶対に含めないこと。
+  // 代わりに kind / mime / size_bytes (snake_case) のみを出力する。
   const imageMeta = 'inline_data' in imagePart
-    ? { kind: 'inline', mime: imagePart.inline_data.mime_type, sizeBytes: imagePart.inline_data.data.length }
-    : { kind: 'file_uri', mime: imagePart.file_data.mime_type };
+    ? {
+        kind: 'inline' as const,
+        mime: imagePart.inline_data.mime_type,
+        size_bytes: imagePart.inline_data.data.length,
+      }
+    : {
+        kind: 'file_uri' as const,
+        mime: imagePart.file_data.mime_type,
+      };
+
+  // ── 入口ログ: vision.check_image_hallucination.start ──
+  const overallStart = Date.now();
+  logger.info('ai', 'vision.check_image_hallucination.start', {
+    model,
+    image_count: 1,
+    image_sizes: [imageMeta],
+    theme_provided: Boolean(theme),
+    persona_provided: Boolean(persona),
+    visual_mood_provided: Boolean(visualMood),
+    timeout_ms: timeoutMs,
+    max_retries: maxRetries,
+  });
 
   const requestBody: Record<string, unknown> = {
     contents: [
@@ -287,12 +310,40 @@ export async function checkImageHallucination(
     },
   };
 
+  // 全体タイムアウト (5 分) — per-image timeoutMs (60s) とは別にハードリミット
+  const OVERALL_HARD_TIMEOUT_MS = 5 * 60_000;
+
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // 全体タイムアウト超過チェック (リトライループ越え時)
+    if (Date.now() - overallStart > OVERALL_HARD_TIMEOUT_MS) {
+      const overallErr = new Error(
+        `Vision API overall timeout after ${OVERALL_HARD_TIMEOUT_MS}ms`,
+      );
+      logger.error(
+        'ai',
+        'vision.check_image_hallucination.failed',
+        {
+          attempt,
+          model,
+          reason: 'overall_timeout',
+          elapsed_ms: Date.now() - overallStart,
+          overall_hard_timeout_ms: OVERALL_HARD_TIMEOUT_MS,
+        },
+        overallErr,
+      );
+      throw overallErr;
+    }
+
     if (attempt > 0) {
       const delay = DEFAULTS.retryBaseDelayMs * Math.pow(2, attempt - 1);
-      console.warn('[vision-check.retry]', { attempt, delayMs: delay, model });
+      logger.warn('ai', 'vision.check_image_hallucination.retry', {
+        attempt,
+        delay_ms: delay,
+        model,
+        reason: lastError?.message?.slice(0, 200) ?? 'unknown',
+      });
       await sleep(delay);
     }
 
@@ -313,19 +364,35 @@ export async function checkImageHallucination(
       if (!response.ok) {
         const errorBody = await response.text().catch(() => 'unknown');
         if (isRetryableError(response.status) && attempt < maxRetries) {
-          console.warn('[vision-check.retryable_error]', {
+          logger.warn('ai', 'vision.check_image_hallucination.retryable_error', {
             status: response.status,
             attempt,
-            errorBody: errorBody.substring(0, 300),
+            model,
+            reason: response.status >= 500 ? 'server_5xx' : 'rate_limited',
+            error_body_head: errorBody.substring(0, 300),
           });
           lastError = new Error(
             `Vision API error ${response.status}: ${errorBody.substring(0, 200)}`,
           );
           continue;
         }
-        throw new Error(
+        const httpErr = new Error(
           `Vision API error ${response.status}: ${errorBody.substring(0, 500)}`,
         );
+        logger.error(
+          'ai',
+          'vision.check_image_hallucination.failed',
+          {
+            attempt,
+            model,
+            reason: 'http_error',
+            status: response.status,
+            error_body_head: errorBody.substring(0, 300),
+            stack: httpErr.stack?.slice(0, 500),
+          },
+          httpErr,
+        );
+        throw httpErr;
       }
 
       const data = await response.json();
@@ -333,9 +400,22 @@ export async function checkImageHallucination(
 
       const candidate = data.candidates?.[0];
       if (!candidate) {
-        throw new Error(
+        const noCandErr = new Error(
           `Vision API returned no candidates: ${JSON.stringify(data).substring(0, 300)}`,
         );
+        logger.error(
+          'ai',
+          'vision.check_image_hallucination.failed',
+          {
+            attempt,
+            model,
+            reason: 'no_candidates',
+            duration_ms: durationMs,
+            stack: noCandErr.stack?.slice(0, 500),
+          },
+          noCandErr,
+        );
+        throw noCandErr;
       }
 
       const text =
@@ -347,27 +427,41 @@ export async function checkImageHallucination(
       try {
         raw = parseVisionJson(text);
       } catch (parseErr) {
-        console.error('[vision-check.parse_failed]', {
-          model,
-          // 画像は出さない・レスポンス先頭のみ
-          responseHead: text.substring(0, 200),
-          parseErr: parseErr instanceof Error ? parseErr.message : String(parseErr),
-        });
+        logger.error(
+          'ai',
+          'vision.check_image_hallucination.parse_failed',
+          {
+            attempt,
+            model,
+            reason: 'parse_error',
+            // 画像は出さない・レスポンス先頭のみ
+            response_head: text.substring(0, 200),
+            parse_err_message:
+              parseErr instanceof Error ? parseErr.message : String(parseErr),
+            stack:
+              parseErr instanceof Error
+                ? parseErr.stack?.slice(0, 500)
+                : undefined,
+          },
+          parseErr,
+        );
         throw new Error('Vision API returned non-JSON output');
       }
 
       const result = calcScore(raw);
 
-      console.info('[vision-check.success]', {
+      // 出口ログ: vision.check_image_hallucination.end
+      logger.info('ai', 'vision.check_image_hallucination.end', {
         model,
-        durationMs,
+        elapsed_ms: Date.now() - overallStart,
+        request_duration_ms: durationMs,
         // 画像メタのみ・本体は出さない
         image: imageMeta,
-        themeProvided: Boolean(theme),
-        personaProvided: Boolean(persona),
+        theme_provided: Boolean(theme),
+        persona_provided: Boolean(persona),
         score: result.score,
         flagged: result.flagged,
-        attempt,
+        attempts: attempt + 1,
       });
 
       return result;
@@ -376,23 +470,63 @@ export async function checkImageHallucination(
         lastError = new Error(
           `Vision API timeout after ${timeoutMs}ms (attempt ${attempt + 1})`,
         );
-        console.error('[vision-check.timeout]', { timeoutMs, attempt, model });
+        logger.warn('ai', 'vision.check_image_hallucination.timeout', {
+          attempt,
+          model,
+          reason: 'timeout',
+          timeout_ms: timeoutMs,
+        });
         if (attempt < maxRetries) continue;
+        logger.error(
+          'ai',
+          'vision.check_image_hallucination.failed',
+          {
+            attempt,
+            model,
+            reason: 'timeout_final',
+            timeout_ms: timeoutMs,
+            elapsed_ms: Date.now() - overallStart,
+            stack: lastError.stack?.slice(0, 500),
+          },
+          lastError,
+        );
         throw lastError;
       }
       if (attempt >= maxRetries) {
-        console.error('[vision-check.final_failure]', {
-          attempt,
-          model,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        const finalErr = error instanceof Error ? error : new Error(String(error));
+        logger.error(
+          'ai',
+          'vision.check_image_hallucination.failed',
+          {
+            attempt,
+            model,
+            reason: 'final_failure',
+            elapsed_ms: Date.now() - overallStart,
+            error_message: finalErr.message,
+            stack: finalErr.stack?.slice(0, 500),
+          },
+          finalErr,
+        );
         throw error;
       }
       lastError = error instanceof Error ? error : new Error(String(error));
     }
   }
 
-  throw lastError || new Error('Vision API call failed after retries');
+  const exhausted = lastError || new Error('Vision API call failed after retries');
+  logger.error(
+    'ai',
+    'vision.check_image_hallucination.failed',
+    {
+      model,
+      reason: 'retries_exhausted',
+      elapsed_ms: Date.now() - overallStart,
+      max_retries: maxRetries,
+      stack: exhausted.stack?.slice(0, 500),
+    },
+    exhausted,
+  );
+  throw exhausted;
 }
 
 // ─── テスト用 export ────────────────────────────────────────────────────────

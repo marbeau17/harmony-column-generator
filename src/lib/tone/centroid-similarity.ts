@@ -12,6 +12,7 @@
 //   * 失敗時は明示的に Error を throw（fallback 0 にしない＝品質ゲート用途）
 // ============================================================================
 
+import { logger } from '@/lib/logger';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 /** is_active=true の centroid row（必要列のみ） */
@@ -70,34 +71,86 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 export async function centroidSimilarity(
   textEmbedding: number[],
 ): Promise<number> {
+  const startedAt = Date.now();
+  const input_dim = Array.isArray(textEmbedding) ? textEmbedding.length : 0;
+  logger.info('ai', 'tone.centroid_similarity.start', {
+    input_dim,
+  });
+
   if (!Array.isArray(textEmbedding) || textEmbedding.length === 0) {
+    logger.error('ai', 'tone.centroid_similarity.failed', {
+      reason: 'input_empty',
+      input_dim,
+    });
     throw new Error('centroidSimilarity: textEmbedding must be non-empty');
   }
 
-  const supabase = await createServiceRoleClient();
+  try {
+    const supabase = await createServiceRoleClient();
 
-  const { data, error } = await supabase
-    .from('yukiko_style_centroid')
-    .select('id, embedding, ngram_hash, sample_size, version, computed_at')
-    .eq('is_active', true)
-    .order('computed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    const { data, error } = await supabase
+      .from('yukiko_style_centroid')
+      .select('id, embedding, ngram_hash, sample_size, version, computed_at')
+      .eq('is_active', true)
+      .order('computed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (error) {
-    throw new Error(`centroidSimilarity: fetch active centroid failed: ${error.message}`);
-  }
-  if (!data) {
-    throw new Error(
-      'centroidSimilarity: no active centroid in yukiko_style_centroid (run scripts/recompute-yukiko-centroid.ts first)',
+    if (error) {
+      logger.error('ai', 'tone.centroid_similarity.failed', {
+        reason: 'fetch_active_centroid_failed',
+        error: error.message,
+        elapsed_ms: Date.now() - startedAt,
+      });
+      throw new Error(`centroidSimilarity: fetch active centroid failed: ${error.message}`);
+    }
+    if (!data) {
+      logger.error('ai', 'tone.centroid_similarity.failed', {
+        reason: 'no_active_centroid',
+        elapsed_ms: Date.now() - startedAt,
+      });
+      throw new Error(
+        'centroidSimilarity: no active centroid in yukiko_style_centroid (run scripts/recompute-yukiko-centroid.ts first)',
+      );
+    }
+
+    const row = data as ActiveCentroidRow;
+    const centroidVec = parseEmbedding(row.embedding);
+    if (centroidVec.length === 0) {
+      logger.error('ai', 'tone.centroid_similarity.failed', {
+        reason: 'centroid_empty_embedding',
+        centroid_id: row.id,
+        version: row.version,
+      });
+      throw new Error('centroidSimilarity: active centroid has empty embedding');
+    }
+
+    const score = cosineSimilarity(textEmbedding, centroidVec);
+    logger.info('ai', 'tone.centroid_similarity.end', {
+      elapsed_ms: Date.now() - startedAt,
+      score,
+      centroid_id: row.id,
+      centroid_version: row.version,
+      sample_size: row.sample_size,
+      centroid_dim: centroidVec.length,
+      input_dim,
+    });
+    return score;
+  } catch (err) {
+    const e = err as Error;
+    // すでに上で個別ログ済みのケースもあるが、createServiceRoleClient や
+    // cosineSimilarity (dim mismatch) からの予期せぬ throw を拾うため再ログ。
+    logger.error(
+      'ai',
+      'tone.centroid_similarity.failed',
+      {
+        reason: 'unexpected',
+        error: e?.message ?? String(err),
+        stack: e?.stack?.slice(0, 500),
+        elapsed_ms: Date.now() - startedAt,
+      },
+      err,
     );
+    throw err;
   }
-
-  const row = data as ActiveCentroidRow;
-  const centroidVec = parseEmbedding(row.embedding);
-  if (centroidVec.length === 0) {
-    throw new Error('centroidSimilarity: active centroid has empty embedding');
-  }
-
-  return cosineSimilarity(textEmbedding, centroidVec);
 }

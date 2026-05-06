@@ -11,7 +11,30 @@
 // ============================================================================
 
 import { generateJson } from '@/lib/ai/gemini-client';
+import { logger } from '@/lib/logger';
 import type { Claim, ClaimType } from '@/types/hallucination';
+
+// ─── タイムアウト保護 ─────────────────────────────────────────────────────
+// extractClaims（Gemini 呼び出し）の最大実行時間。Stage 3 stuck 対策。
+const EXTRACT_CLAIMS_TIMEOUT_MS = 120_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
 
 // ─── 定数 ──────────────────────────────────────────────────────────────────
 
@@ -197,41 +220,61 @@ function normalizeRows(
  * 注意: この関数は記事本文を一切書き換えない（read-only）。
  */
 export async function extractClaims(htmlBody: string): Promise<Claim[]> {
+  const startedAt = Date.now();
   const plain = stripHtml(htmlBody);
   const sentences = splitSentences(plain);
-  if (sentences.length === 0) return [];
+
+  logger.info('ai', 'hallucination.extract_claims.start', {
+    body_chars: htmlBody.length,
+    plain_chars: plain.length,
+    sentence_count: sentences.length,
+  });
+
+  if (sentences.length === 0) {
+    logger.info('ai', 'hallucination.extract_claims.end', {
+      elapsed_ms: Date.now() - startedAt,
+      claims_count: 0,
+      status: 'empty_input',
+    });
+    return [];
+  }
 
   // 診断ログ: 入力サイズと割当トークン
   const systemPrompt = SYSTEM_PROMPT;
   const userPrompt = buildUserPrompt(sentences);
-  const startedAt = Date.now();
-  console.log('[claim-extractor.begin]', {
+  logger.info('ai', 'hallucination.extract_claims.gemini_call', {
     body_chars: plain.length,
     prompt_chars_estimated: systemPrompt.length + userPrompt.length,
     max_output_tokens: 24000,
+    timeout_ms: EXTRACT_CLAIMS_TIMEOUT_MS,
   });
 
   let parsed: unknown;
   let response: Awaited<ReturnType<typeof generateJson<unknown>>> | undefined;
   try {
-    response = await generateJson<unknown>(
-      systemPrompt,
-      userPrompt,
-      {
+    response = await withTimeout(
+      generateJson<unknown>(systemPrompt, userPrompt, {
         temperature: 0.1,
         maxOutputTokens: 24000,
-      },
+      }),
+      EXTRACT_CLAIMS_TIMEOUT_MS,
+      'hallucination.extract_claims',
     );
     parsed = response.data;
   } catch (err) {
     const elapsed_ms = Date.now() - startedAt;
-    console.error('[claim-extractor.gemini_failed]', { err });
-    console.error('[claim-extractor.end]', {
-      ok: false,
-      error_message: (err as Error)?.message,
-      body_chars: plain.length,
-      elapsed_ms,
-    });
+    const errObj = err as Error;
+    logger.error(
+      'ai',
+      'hallucination.extract_claims.failed',
+      {
+        elapsed_ms,
+        body_chars: plain.length,
+        error_message: errObj?.message,
+        stack: errObj?.stack?.slice(0, 500),
+      },
+      err,
+    );
     return [];
   }
 
@@ -243,14 +286,10 @@ export async function extractClaims(htmlBody: string): Promise<Claim[]> {
     rows = (parsed as { claims: RawClaimRow[] }).claims;
   } else {
     const elapsed_ms = Date.now() - startedAt;
-    console.warn('[claim-extractor.unexpected_shape]', {
-      type: typeof parsed,
-    });
-    console.error('[claim-extractor.end]', {
-      ok: false,
-      error_message: 'unexpected_shape',
-      body_chars: plain.length,
+    logger.warn('ai', 'hallucination.extract_claims.unexpected_shape', {
+      parsed_type: typeof parsed,
       elapsed_ms,
+      body_chars: plain.length,
     });
     return [];
   }
@@ -259,18 +298,18 @@ export async function extractClaims(htmlBody: string): Promise<Claim[]> {
   const elapsed_ms = Date.now() - startedAt;
   const tokenUsage = response?.response?.tokenUsage;
   const finishReason = response?.response?.finishReason;
-  console.log('[claim-extractor.end]', {
-    ok: true,
+  logger.info('ai', 'hallucination.extract_claims.end', {
+    elapsed_ms,
     claims_count: claims.length,
-    promptTokens: tokenUsage?.promptTokens,
-    completionTokens: tokenUsage?.completionTokens,
-    totalTokens: tokenUsage?.totalTokens,
+    status: 'ok',
+    prompt_tokens: tokenUsage?.promptTokens,
+    completion_tokens: tokenUsage?.completionTokens,
+    total_tokens: tokenUsage?.totalTokens,
     thinking_tokens:
       (tokenUsage?.totalTokens ?? 0) -
       (tokenUsage?.promptTokens ?? 0) -
       (tokenUsage?.completionTokens ?? 0),
-    finishReason,
-    elapsed_ms,
+    finish_reason: finishReason,
   });
 
   return claims;

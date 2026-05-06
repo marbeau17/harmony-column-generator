@@ -14,11 +14,12 @@
 import type { Claim, ClaimType, RiskLevel } from '@/types/hallucination';
 
 /**
- * UI 表示用に拡張したリスクレベル。
- * 仕様書では `critical` 表記が登場するため、表示側のみ critical を許容する。
- * 型定義 (src/types/hallucination.ts) の RiskLevel には影響しない。
+ * UI 表示用リスクレベル。
+ * spec v2.1 で共通 RiskLevel が `critical` を含む 4 値に統一されたため、
+ * `DisplayRiskLevel` は RiskLevel そのものとなる。
+ * 旧コードとの後方互換のため type alias を残置している。
  */
-export type DisplayRiskLevel = RiskLevel | 'critical';
+export type DisplayRiskLevel = RiskLevel;
 
 /**
  * ClaimResult: Claim に紐づくリスク評価結果。

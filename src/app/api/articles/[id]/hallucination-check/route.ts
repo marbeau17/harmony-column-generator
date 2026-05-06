@@ -118,8 +118,11 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
     const retrieveChunks = await makeRetrieveChunksFn();
     const result = await runHallucinationChecks(htmlBody, retrieveChunks);
 
-    // ─── 3. article_claims を置換（DELETE+INSERT） ────────────────────────
-    await persistClaims(articleId, result.claims);
+    // ─── 3. article_claims を置換（atomic DELETE+INSERT, evidence/similarity_score 込み）
+    // spec v2.1 §D17/§D18/§D24: persist_claims_atomic RPC + ClaimResult[] 持ち回し
+    await persistClaims(articleId, result.claims, {
+      results: result.results,
+    });
 
     // ─── 4. articles.hallucination_score のみ UPDATE（本文は触らない） ───
     const { error: updateErr } = await service

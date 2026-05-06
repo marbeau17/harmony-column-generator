@@ -14,8 +14,12 @@
 //   先行の insertZeroArticle が scalar を入れていたため気づかれなかった）。
 //   scalar `tone.total` のみ書き込む方針に統一。詳細 breakdown / blockers /
 //   centroid は ai_generation_log に既に蓄積されており、本列の役割は scalar 値。
+//
+// 可観測化 (G2):
+//   * logger.info(start/end), logger.error(failed) を配置。console.log を logger に統一。
 // ============================================================================
 
+import { logger } from '@/lib/logger';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import type { RunToneChecksResult } from '@/lib/tone/run-tone-checks';
 
@@ -34,26 +38,53 @@ export async function persistToneScore(
   }
 
   const startedAt = Date.now();
-  const total = toneResult.tone?.total ?? null;
-  console.log('[persist.tone.begin]', { articleId, total });
-
-  const supabase = await createServiceRoleClient();
-
-  const { error } = await supabase
-    .from('articles')
-    .update({ yukiko_tone_score: total })
-    .eq('id', articleId);
-
-  if (error) {
-    throw new Error(
-      `persistToneScore: update failed for article ${articleId}: ${error.message}`,
-    );
-  }
-
-  console.log('[persist.tone.end]', {
-    articleId,
-    ok: true,
+  const total = toneResult?.tone?.total ?? null;
+  logger.info('ai', 'tone.persist.start', {
+    article_id: articleId,
     total,
-    elapsed_ms: Date.now() - startedAt,
+    flagged: toneResult?.tone?.blockers?.length ?? 0,
   });
+
+  try {
+    const supabase = await createServiceRoleClient();
+
+    const { error } = await supabase
+      .from('articles')
+      .update({ yukiko_tone_score: total })
+      .eq('id', articleId);
+
+    if (error) {
+      logger.error('ai', 'tone.persist.failed', {
+        article_id: articleId,
+        error: error.message,
+        elapsed_ms: Date.now() - startedAt,
+      });
+      throw new Error(
+        `persistToneScore: update failed for article ${articleId}: ${error.message}`,
+      );
+    }
+
+    logger.info('ai', 'tone.persist.end', {
+      article_id: articleId,
+      ok: true,
+      score: total,
+      elapsed_ms: Date.now() - startedAt,
+    });
+  } catch (err) {
+    const e = err as Error;
+    // 上の error 分岐ですでにログ済みのケースは duplicate を避けたいが、
+    // 例外が createServiceRoleClient 等の予期せぬ場所から飛んだケースを拾うため再ログ。
+    logger.error(
+      'ai',
+      'tone.persist.failed',
+      {
+        article_id: articleId,
+        error: e?.message ?? String(err),
+        stack: e?.stack?.slice(0, 500),
+        elapsed_ms: Date.now() - startedAt,
+      },
+      err,
+    );
+    throw err;
+  }
 }
