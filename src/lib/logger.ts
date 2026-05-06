@@ -4,7 +4,8 @@
 // ============================================================================
 
 type LogLevel = 'ERROR' | 'WARN' | 'INFO' | 'DEBUG';
-type LogCategory = 'api' | 'ai' | 'auth' | 'db' | 'system' | 'generator' | 'deploy' | 'related-articles' | 'export' | 'utility';
+// G4: 'ftp' を追加し FTP デプロイ全経路 (button → API → service) の構造化ログを集約。
+type LogCategory = 'api' | 'ai' | 'auth' | 'db' | 'system' | 'generator' | 'deploy' | 'ftp' | 'related-articles' | 'export' | 'utility';
 
 interface LogEntry {
   level: LogLevel;
