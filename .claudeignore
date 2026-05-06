@@ -1,0 +1,48 @@
+# Claude Code が探索・読込しないファイル
+# 目的: 不要ファイルの読込でトークンを浪費しない／コンテキストにノイズを混ぜない
+# 注意: Claude Code は .gitignore も自動尊重する。本ファイルは .gitignore に書きたくないが
+#       Claude には読ませたくないもの（git 追跡したい大量出力・スナップショット等）を対象とする。
+
+# --- 依存・ビルド成果物（保険として明示） ---
+node_modules/
+.next/
+dist/
+build/
+out/
+.vercel/
+*.tsbuildinfo
+
+# --- ログ・テスト出力 ---
+*.log
+coverage/
+playwright-report/
+test-results/
+.playwright-mcp/
+
+# --- 一時ファイル ---
+tmp/
+.tmp/
+
+# --- 巨大スナップショット・固定データ ---
+# 公開静的記事 HTML（数百件規模になる）
+public/articles/
+# DB ダンプ・CSV インポート元
+scripts/data/
+*.csv
+*.dump
+*.sql.gz
+
+# --- ロックファイル（探索対象外で十分） ---
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# --- 大容量バイナリ ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp4
+*.zip
+*.pdf

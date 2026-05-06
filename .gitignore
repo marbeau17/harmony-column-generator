@@ -1,10 +1,35 @@
+# --- 依存・ビルド成果物 ---
 node_modules/
+.next/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# --- 環境変数 ---
 .env
 .env.local
 .env*.local
-.next/
-dist/
+
+# --- デプロイ ---
 .vercel/
-*.log
-.DS_Store
 .vercel
+
+# --- ログ・テスト出力 ---
+*.log
+coverage/
+playwright-report/
+test-results/
+.playwright-mcp/
+
+# --- 一時ファイル・実験スクリプト ---
+tmp/
+.tmp/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Claude Code ローカル設定（個人用、共有不要） ---
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
