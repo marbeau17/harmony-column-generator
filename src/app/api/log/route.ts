@@ -17,6 +17,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { logger } from '@/lib/logger';
+import {
+  checkRateLimit,
+  RATE_LIMIT_MAX_PER_MINUTE,
+} from '@/lib/log/rate-limit';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -56,41 +60,8 @@ const logBodySchema = z.object({
   details: z.record(z.unknown()).optional(),
 });
 
-// ─── Rate Limit (in-memory) ───────────────────────────────────────────────
-// NOTE: 単一プロセス前提の簡易実装。Vercel の各 instance 単位で動作する。
-// 完全な multi-region 防御を行うには Redis 等を導入すること（今回は対象外）。
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX_EVENTS = 100;
-
-interface RateBucket {
-  count: number;
-  resetAt: number;
-}
-const rateBuckets = new Map<string, RateBucket>();
-
-/**
- * IP ベースの rate limit。同一 client から 100 events / 分を超えたら deny。
- * 戻り値: true = 許可 / false = 拒否
- */
-export function checkRateLimit(clientKey: string, now: number = Date.now()): boolean {
-  const bucket = rateBuckets.get(clientKey);
-  if (!bucket || bucket.resetAt <= now) {
-    rateBuckets.set(clientKey, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-  if (bucket.count >= RATE_LIMIT_MAX_EVENTS) {
-    return false;
-  }
-  bucket.count += 1;
-  return true;
-}
-
-/**
- * テスト用に内部状態をクリアするヘルパ。本番では呼ばれない。
- */
-export function _resetRateLimitForTests(): void {
-  rateBuckets.clear();
-}
+// Rate limit ロジックは src/lib/log/rate-limit.ts に分離（Next.js App Router の
+// route.ts は HTTP method 等の限定された field しか export 不可のため）。
 
 function getClientKey(req: NextRequest): string {
   // Vercel/Edge では x-forwarded-for, x-real-ip が付与される。
@@ -142,7 +113,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const clientKey = getClientKey(req);
   if (!checkRateLimit(clientKey)) {
     return NextResponse.json(
-      { error: 'rate_limit_exceeded', max_per_minute: RATE_LIMIT_MAX_EVENTS },
+      { error: 'rate_limit_exceeded', max_per_minute: RATE_LIMIT_MAX_PER_MINUTE },
       { status: 429 },
     );
   }
