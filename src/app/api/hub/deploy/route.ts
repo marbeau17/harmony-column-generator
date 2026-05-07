@@ -74,23 +74,41 @@ export async function POST(request: Request) {
 
     // ── 1. HTML生成 ──────────────────────────────────────────────────────
 
+    logger.info('ftp', 'deploy.generate.articles.start', {
+      request_id: requestId,
+    });
+    const articlesStart = Date.now();
     const articles = await buildArticleCards();
     logger.info('ftp', 'deploy.generate.articles_loaded', {
       request_id: requestId,
       article_count: articles.length,
+      elapsed_ms: Date.now() - articlesStart,
     });
 
     // 0件でもハブを再生成する（spec §6.3.2）— 古いハブが残るのを防ぐ。
+    logger.info('ftp', 'deploy.generate.pages.start', {
+      request_id: requestId,
+      article_count: articles.length,
+    });
+    const genStart = Date.now();
     const categories = buildCategories(articles);
     const pages = generateAllHubPages(articles, categories);
+    const totalHtmlChars = pages.reduce((sum, p) => sum + (p.html?.length ?? 0), 0);
     logger.info('ftp', 'deploy.generate.pages_built', {
       request_id: requestId,
       page_count: pages.length,
       category_count: categories.length,
+      total_html_chars: totalHtmlChars,
+      elapsed_ms: Date.now() - genStart,
     });
 
     // ── 2. アップロードファイル準備 ──────────────────────────────────────
 
+    logger.info('ftp', 'deploy.prepare_files.start', {
+      request_id: requestId,
+      page_count: pages.length,
+    });
+    const prepStart = Date.now();
     const files: UploadFile[] = [];
 
     // ハブページHTML
@@ -100,9 +118,16 @@ export async function POST(request: Request) {
         content: page.html,
       });
     }
+    logger.info('ftp', 'deploy.prepare_files.end', {
+      request_id: requestId,
+      file_count: files.length,
+      elapsed_ms: Date.now() - prepStart,
+    });
 
     // ── 3. FTPアップロード ───────────────────────────────────────────────
 
+    logger.info('ftp', 'deploy.config.start', { request_id: requestId });
+    const cfgStart = Date.now();
     let ftpConfig;
     try {
       ftpConfig = await getFtpConfig();
@@ -111,17 +136,24 @@ export async function POST(request: Request) {
         host: ftpConfig.host,
         port: ftpConfig.port,
         remote_base_path: ftpConfig.remoteBasePath,
+        elapsed_ms: Date.now() - cfgStart,
         // 認証情報は出力しない (host/port/path のみ)
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
       // G4: 設定不足が「最も多い silent failure 原因」のため詳細を残す
-      logger.error('ftp', 'deploy.config.failed', {
-        request_id: requestId,
-        error: message,
-        stack,
-      });
+      logger.error(
+        'ftp',
+        'deploy.config.failed',
+        {
+          request_id: requestId,
+          error_message: message,
+          stack,
+          elapsed_ms: Date.now() - cfgStart,
+        },
+        err,
+      );
       return fail('ftp', 'FTP設定エラー', message, startedAt);
     }
 
@@ -134,16 +166,31 @@ export async function POST(request: Request) {
       dry_run: process.env.FTP_DRY_RUN === 'true',
     });
 
+    const uploadStart = Date.now();
     const result = await uploadToFtp(ftpConfig, files);
+    const uploadElapsed = Date.now() - uploadStart;
 
     if (!result.success) {
-      logger.error('ftp', 'deploy.upload.partial_failed', {
+      logger.error(
+        'ftp',
+        'deploy.upload.partial_failed',
+        {
+          request_id: requestId,
+          uploaded: result.uploaded,
+          total: files.length,
+          error_count: result.errors.length,
+          // 個別エラーは最初の 10 件のみ (ログ肥大化防止)
+          errors_head: result.errors.slice(0, 10),
+          elapsed_ms: uploadElapsed,
+        },
+      );
+      logger.info('api', 'hub_deploy.end', {
         request_id: requestId,
+        success: false,
+        stage: 'ftp',
         uploaded: result.uploaded,
         total: files.length,
-        error_count: result.errors.length,
-        // 個別エラーは最初の 10 件のみ (ログ肥大化防止)
-        errors_head: result.errors.slice(0, 10),
+        elapsed_ms: Date.now() - startedAt,
       });
       return fail(
         'ftp',
@@ -159,6 +206,17 @@ export async function POST(request: Request) {
       uploaded: result.uploaded,
       total: files.length,
       duration_ms: durationMs,
+      elapsed_ms: uploadElapsed,
+    });
+
+    logger.info('api', 'hub_deploy.end', {
+      request_id: requestId,
+      success: true,
+      pages: pages.length,
+      articles: articles.length,
+      uploaded: result.uploaded,
+      total: files.length,
+      elapsed_ms: durationMs,
     });
 
     return NextResponse.json<HubDeploySuccess>({
@@ -171,11 +229,17 @@ export async function POST(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
-    logger.error('ftp', 'deploy.api.unexpected_failed', {
-      request_id: requestId,
-      error: message,
-      stack,
-    });
+    logger.error(
+      'ftp',
+      'deploy.api.unexpected_failed',
+      {
+        request_id: requestId,
+        error_message: message,
+        stack,
+        elapsed_ms: Date.now() - startedAt,
+      },
+      err,
+    );
     return fail('unknown', 'デプロイに失敗しました', message, startedAt);
   }
 }

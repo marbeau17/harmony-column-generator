@@ -8,6 +8,7 @@
 
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { applyPubliclyVisibleFilter } from '@/lib/publish-control/state-readers-sql';
+import { logger } from '@/lib/logger';
 // P5-44: 公開 URL は env 駆動の単一ソースから取得 (ハードコード + /columns/ 複数形バグ修正)
 import {
   getSiteUrl,
@@ -313,6 +314,14 @@ ${recentItems}
  * ハブページHTMLを生成する。
  */
 export function generateHubPage(data: HubPageData): string {
+  const start = Date.now();
+  logger.info('generator', 'hub_generator.build.start', {
+    article_count: data.articles.length,
+    current_page: data.currentPage,
+    total_pages: data.totalPages,
+    categories: data.categories.length,
+    recent_articles: data.recentArticles.length,
+  });
   const year = new Date().getFullYear();
 
   // 記事カード
@@ -401,6 +410,15 @@ ${sidebarHtml}
 </body>
 </html>`;
 
+  const elapsed_ms = Date.now() - start;
+  logger.info('generator', 'hub_generator.build.end', {
+    article_count: data.articles.length,
+    current_page: data.currentPage,
+    total_pages: data.totalPages,
+    output_chars: html.length,
+    elapsed_ms,
+  });
+
   return html;
 }
 
@@ -415,7 +433,14 @@ export function generateAllHubPages(
   articles: HubArticleCard[],
   categories: { slug: string; name: string; count: number }[],
 ): { path: string; html: string }[] {
+  const startedAt = Date.now();
   const totalPages = Math.max(1, Math.ceil(articles.length / ARTICLES_PER_PAGE));
+  logger.info('generator', 'hub_generator.generate_all.start', {
+    article_count: articles.length,
+    categories: categories.length,
+    total_pages: totalPages,
+    per_page: ARTICLES_PER_PAGE,
+  });
   const recentArticles = articles.slice(0, 5);
   const results: { path: string; html: string }[] = [];
 
@@ -436,6 +461,14 @@ export function generateAllHubPages(
     results.push({ path, html });
   }
 
+  const total_chars = results.reduce((acc, r) => acc + r.html.length, 0);
+  logger.info('generator', 'hub_generator.generate_all.end', {
+    article_count: articles.length,
+    total_pages: totalPages,
+    pages_generated: results.length,
+    total_chars,
+    elapsed_ms: Date.now() - startedAt,
+  });
   return results;
 }
 
@@ -445,6 +478,11 @@ export function generateAllHubPages(
  * Supabaseからpublished記事を取得し、HubArticleCard配列に変換する。
  */
 export async function buildArticleCards(): Promise<HubArticleCard[]> {
+  const start = Date.now();
+  const includeRewrites = process.env.NEXT_PUBLIC_HUB_INCLUDE_REWRITES === 'on';
+  logger.info('generator', 'hub_generator.build_cards.start', {
+    include_rewrites: includeRewrites,
+  });
   const supabase = await createServiceRoleClient();
 
   // P5-43 Step 2 (設計 §4.2): reviewed_at ベースから visibility_state ベースへ移行
@@ -457,21 +495,42 @@ export async function buildArticleCards(): Promise<HubArticleCard[]> {
 
   // P5-55: 新規作成記事 (generation_mode='zero') のみハブに掲載。
   //        NEXT_PUBLIC_HUB_INCLUDE_REWRITES=on の場合のみ書き換え記事 (source/null) も含める。
-  if (process.env.NEXT_PUBLIC_HUB_INCLUDE_REWRITES !== 'on') {
+  if (!includeRewrites) {
     visibleQuery = visibleQuery.eq('generation_mode', 'zero');
   }
 
   const { data, error } = await visibleQuery.order('published_at', { ascending: false });
 
+  const elapsed_ms = Date.now() - start;
   if (error) {
+    logger.error(
+      'generator',
+      'hub_generator.build_cards.query_failed',
+      {
+        elapsed_ms,
+        error_message: error.message,
+        stack: (error as Error)?.stack?.slice(0, 500),
+      },
+      error,
+    );
     throw new Error(`buildArticleCards failed: ${error.message}`);
   }
 
   if (!data || data.length === 0) {
+    logger.warn('generator', 'hub_generator.build_cards.empty', {
+      elapsed_ms,
+      include_rewrites: includeRewrites,
+    });
     return [];
   }
 
-  return data.map((row) => {
+  logger.info('generator', 'hub_generator.build_cards.fetched', {
+    elapsed_ms,
+    visible_articles: data.length,
+    include_rewrites: includeRewrites,
+  });
+
+  const cards = data.map((row) => {
     // P5-49: 抜粋は stage2 (本文のみ) を優先。stage3 は head/script を含むフル HTML。
     //        stage2 が無い場合のみ stage3 を使い、stripHtml が script/style を除去する。
     const bodyHtml = (row.stage2_body_html || row.stage3_final_html || '') as string;
@@ -507,6 +566,12 @@ export async function buildArticleCards(): Promise<HubArticleCard[]> {
       articleUrl: getArticleRelativePath(slug),
     };
   });
+
+  logger.info('generator', 'hub_generator.build_cards.end', {
+    elapsed_ms: Date.now() - start,
+    count: cards.length,
+  });
+  return cards;
 }
 
 /**
@@ -515,6 +580,9 @@ export async function buildArticleCards(): Promise<HubArticleCard[]> {
 export function buildCategories(
   articles: HubArticleCard[],
 ): { slug: string; name: string; count: number }[] {
+  logger.info('generator', 'hub_generator.build_categories.start', {
+    article_count: articles.length,
+  });
   const map = new Map<string, { slug: string; name: string; count: number }>();
 
   for (const article of articles) {
@@ -530,5 +598,10 @@ export function buildCategories(
     }
   }
 
-  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  const sorted = Array.from(map.values()).sort((a, b) => b.count - a.count);
+  logger.info('generator', 'hub_generator.build_categories.end', {
+    article_count: articles.length,
+    category_count: sorted.length,
+  });
+  return sorted;
 }

@@ -1,6 +1,15 @@
+import { logger } from '@/lib/logger';
+
 export function renderSoftWithdrawalHtml(opts: { title?: string; hubUrl?: string } = {}): string {
   const title = opts.title ?? '記事は現在公開されていません';
   const hubUrl = opts.hubUrl ?? '/column/';
+  // 同期 renderer: start/end ペアではなく単発の決定ログ
+  logger.info('deploy', 'soft_withdrawal.render_html', {
+    title_provided: typeof opts.title === 'string',
+    hub_url_provided: typeof opts.hubUrl === 'string',
+    title_length: title.length,
+    hub_url: hubUrl,
+  });
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>

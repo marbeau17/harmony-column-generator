@@ -30,26 +30,42 @@ interface VisibilityBody {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
+  const startedAt = Date.now();
+  const { id: articleId } = params;
+  logger.info('api', 'visibility.start', { article_id: articleId });
+
   if (!isPublishControlEnabled()) {
+    logger.warn('api', 'visibility.feature_flag_off', { article_id: articleId });
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
 
-  const { id: articleId } = params;
-
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!user) {
+    logger.warn('api', 'visibility.auth_failed', { article_id: articleId, status: 401 });
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+  logger.info('api', 'visibility.auth_ok', { article_id: articleId, user_id: user.id });
 
   let body: VisibilityBody;
   try {
     body = (await req.json()) as VisibilityBody;
-  } catch {
+  } catch (e) {
+    logger.warn('api', 'visibility.invalid_json', { article_id: articleId, error_message: e instanceof Error ? e.message : String(e) });
     return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
+  logger.info('api', 'visibility.body_parsed', {
+    article_id: articleId,
+    visible: body.visible,
+    requestId: body.requestId,
+    has_reason: Boolean(body.reason),
+  });
   if (typeof body.visible !== 'boolean') {
+    logger.warn('api', 'visibility.body_invalid', { article_id: articleId, reason: 'visible_not_boolean' });
     return NextResponse.json({ error: '`visible` must be boolean' }, { status: 400 });
   }
   if (!isValidRequestId(body.requestId)) {
+    logger.warn('api', 'visibility.body_invalid', { article_id: articleId, reason: 'invalid_request_id' });
     return NextResponse.json({ error: '`requestId` must be a 26-char ULID' }, { status: 400 });
   }
 
@@ -63,6 +79,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     .eq('request_id', body.requestId)
     .maybeSingle();
   if (prior) {
+    logger.info('api', 'visibility.duplicate', { article_id: articleId, eventId: prior.id, elapsed_ms: Date.now() - startedAt });
     return NextResponse.json({ status: 'duplicate', eventId: prior.id }, { status: 200 });
   }
 
@@ -73,8 +90,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     .eq('id', articleId)
     .maybeSingle();
   if (fetchErr || !article) {
+    logger.warn('api', 'visibility.article_not_found', { article_id: articleId, error_message: fetchErr?.message });
     return NextResponse.json({ error: 'article not found' }, { status: 404 });
   }
+  logger.info('api', 'visibility.article_found', {
+    article_id: articleId,
+    slug: article.slug,
+    status: article.status,
+    visibility_state: article.visibility_state,
+    is_hub_visible: article.is_hub_visible,
+  });
 
   const guard = checkVisibilityGuard({
     status: article.status,
@@ -84,10 +109,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   });
   if (!guard.ok) {
     if (guard.code === 'NOOP') {
+      logger.info('api', 'visibility.guard_noop', { article_id: articleId, message: guard.message });
       return NextResponse.json({ status: 'noop', message: guard.message }, { status: 200 });
     }
+    logger.warn('api', 'visibility.guard_failed', { article_id: articleId, code: guard.code, message: guard.message });
     return NextResponse.json({ error: guard.message, code: guard.code }, { status: 422 });
   }
+  logger.info('api', 'visibility.guard_ok', { article_id: articleId, visible_target: body.visible });
 
   // 第4ゲート: hallucination critical = 0（公開試行時のみ）
   if (body.visible) {
@@ -97,21 +125,35 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       .eq('article_id', articleId)
       .eq('risk', 'critical');
     if (criticalCount && criticalCount > 0) {
+      logger.warn('api', 'visibility.hallucination_critical_blocked', {
+        article_id: articleId,
+        criticalCount,
+      });
       return NextResponse.json({
         error: 'hallucination critical not zero',
         code: 'HALLUCINATION_CRITICAL',
         criticalCount,
       }, { status: 422 });
     }
+    logger.info('api', 'visibility.hallucination_check_ok', { article_id: articleId });
   }
 
   // Dangling-deploying recovery.
   let currentState = (article.visibility_state ?? 'idle') as VisibilityState;
+  logger.info('api', 'visibility.current_state', { article_id: articleId, from_state: currentState });
   if (currentState === 'deploying') {
     const ts = article.visibility_updated_at ? new Date(article.visibility_updated_at) : new Date(0);
     if (!isDanglingDeploying('deploying', ts)) {
+      logger.warn('api', 'visibility.deploy_in_progress', {
+        article_id: articleId,
+        visibility_updated_at: article.visibility_updated_at,
+      });
       return NextResponse.json({ error: 'another deploy is in progress' }, { status: 423 });
     }
+    logger.warn('api', 'visibility.dangling_deploying_recovered', {
+      article_id: articleId,
+      visibility_updated_at: article.visibility_updated_at,
+    });
   }
 
   // P5-64 (2026-05-03): visible=true で visibility_state='pending_review' の場合、
@@ -124,6 +166,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   //   旧実装は assertTransition('pending_review','deploying') で throw → 500 になって
   //   いた (P5-47 が status='editing' の自動遷移しか考慮していなかった補完)。
   if (body.visible && currentState === 'pending_review') {
+    logger.info('api', 'visibility.auto_approve.start', {
+      article_id: articleId,
+      user_id: user.id,
+      from_state: 'pending_review',
+    });
     const approveResult = await performReviewAction({
       service,
       articleId,
@@ -136,24 +183,51 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       reason: 'auto-approve via publish action',
     });
     if (!approveResult.ok) {
+      logger.error('api', 'visibility.auto_approve.failed', {
+        article_id: articleId,
+        code: approveResult.code,
+        error_message: approveResult.message,
+      });
       return NextResponse.json(
         { error: 'auto-approve failed', detail: approveResult.message, code: approveResult.code },
         { status: approveResult.code === 'CONCURRENT_UPDATE' ? 409 : 502 },
       );
     }
     logger.info('api', 'visibility.auto_approved', {
-      articleId,
-      userId: user.id,
-      from: 'pending_review',
-      to: 'idle',
+      article_id: articleId,
+      user_id: user.id,
+      from_state: 'pending_review',
+      to_state: 'idle',
     });
     currentState = 'idle';
   }
 
-  assertTransition(currentState === 'deploying' ? 'failed' : currentState, 'deploying');
+  try {
+    assertTransition(currentState === 'deploying' ? 'failed' : currentState, 'deploying');
+    logger.info('api', 'visibility.assert_transition_ok', {
+      article_id: articleId,
+      from_state: currentState,
+      to_state: 'deploying',
+    });
+  } catch (e) {
+    logger.error('api', 'visibility.assert_transition_failed', {
+      article_id: articleId,
+      from_state: currentState,
+      to_state: 'deploying',
+      error_message: e instanceof Error ? e.message : String(e),
+      stack: (e as Error)?.stack?.slice(0, 500),
+    }, e);
+    throw e;
+  }
 
   // Flip visibility_state → 'deploying' with optimistic concurrency on visibility_updated_at.
   const deployStartedAt = new Date().toISOString();
+  const lockStartMs = Date.now();
+  logger.info('api', 'visibility.lock.start', {
+    article_id: articleId,
+    from_state: currentState,
+    to_state: 'deploying',
+  });
   const { error: lockErr } = await service
     .from('articles')
     // guard-approved: visibility_state write
@@ -161,8 +235,17 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     .eq('id', articleId)
     .eq('visibility_state', currentState);
   if (lockErr) {
+    logger.error('api', 'visibility.lock.failed', {
+      article_id: articleId,
+      from_state: currentState,
+      error_message: lockErr.message,
+    });
     return NextResponse.json({ error: 'lock failed', detail: lockErr.message }, { status: 409 });
   }
+  logger.info('api', 'visibility.lock.ok', {
+    article_id: articleId,
+    elapsed_ms: Date.now() - lockStartMs,
+  });
 
   const slug = (article.slug ?? article.seo_filename ?? article.id) as string;
   let hubDeployStatus: 'success' | 'failed' | 'skipped' = 'skipped';
@@ -174,15 +257,29 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       // is still owned by POST /api/articles/[id]/deploy (existing endpoint) and is
       // invoked by the UI after this call succeeds. The hub rebuild is fire-and-await
       // below.
+      logger.info('api', 'visibility.branch.publish_path', { article_id: articleId, slug });
     } else {
       // Soft withdrawal: overwrite slug/index.html with noindex notice.
       // Controlled by FTP_DRY_RUN in tests / when deploy is disabled.
+      logger.info('api', 'visibility.branch.unpublish_path', {
+        article_id: articleId,
+        slug,
+        ftp_enabled: process.env.PUBLISH_CONTROL_FTP === 'on',
+      });
       if (process.env.PUBLISH_CONTROL_FTP === 'on') {
+        const ftpStartMs = Date.now();
         const cfg = await getFtpConfig();
         const html = renderSoftWithdrawalHtml({ title: article.title ?? undefined });
         const result = await softWithdrawFile(cfg, `${slug}/index.html`, html);
         hubDeployStatus = result.success ? 'success' : 'failed';
         hubDeployError = result.errors.join('; ') || null;
+        logger.info('api', 'visibility.soft_withdraw.done', {
+          article_id: articleId,
+          slug,
+          success: result.success,
+          elapsed_ms: Date.now() - ftpStartMs,
+          error_message: hubDeployError,
+        });
       }
     }
 
@@ -201,6 +298,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     //        これで一覧ページの PublishButton から end-to-end で公開できる
     //        (従来は editor の handlePublish フローを通る必要があった)。
     if (body.visible && article.status === 'editing') {
+      logger.info('api', 'visibility.auto_promote_editing', {
+        article_id: articleId,
+        from_status: 'editing',
+        to_status: 'published',
+        had_slug: Boolean(article.slug),
+        had_published_at: Boolean(article.published_at),
+      });
       patch.status = 'published';
       if (!article.published_at) {
         patch.published_at = new Date().toISOString();
@@ -232,17 +336,37 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           }
         }
         patch.slug = candidate;
+        logger.info('api', 'visibility.slug_generated', { article_id: articleId, slug: candidate });
       }
     }
 
+    const updateStartMs = Date.now();
+    logger.info('api', 'visibility.update.start', {
+      article_id: articleId,
+      patch_keys: Object.keys(patch),
+      to_state: patch.visibility_state,
+    });
     const { error: updErr } = await service
       .from('articles')
       // guard-approved: publish-control-v2 visibility flip
       .update(patch)
       .eq('id', articleId);
     if (updErr) throw updErr;
+    logger.info('api', 'visibility.update.end', {
+      article_id: articleId,
+      elapsed_ms: Date.now() - updateStartMs,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    logger.error('api', 'visibility.transition.failed', {
+      article_id: articleId,
+      visible: body.visible,
+      from_state: currentState,
+      to_state: 'failed',
+      error_message: msg,
+      stack: (err as Error)?.stack?.slice(0, 500),
+      elapsed_ms: Date.now() - startedAt,
+    }, err);
     await service
       .from('articles')
       // guard-approved: rollback of visibility_state on failure
@@ -258,9 +382,15 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       hub_deploy_error: msg,
       reason: body.reason,
     });
-    logger.error('api', 'visibility.failed', { articleId, visible: body.visible, err: msg });
+    logger.error('api', 'visibility.failed', { article_id: articleId, visible: body.visible, error_message: msg });
     return NextResponse.json({ error: 'visibility flip failed', detail: msg }, { status: 502 });
   }
+
+  logger.info('api', 'visibility.publish_event.insert', {
+    article_id: articleId,
+    action: body.visible ? 'publish' : 'unpublish',
+    hub_deploy_status: hubDeployStatus,
+  });
 
   await service.from('publish_events').insert({
     article_id: articleId,
@@ -278,6 +408,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   // publish-control FTP bus is enabled.
   let hubWarning: string | null = null;
   if (process.env.PUBLISH_CONTROL_FTP === 'on') {
+    const hubFireMs = Date.now();
+    logger.info('api', 'visibility.hub_rebuild.fire', { article_id: articleId });
     try {
       const origin = new URL(req.url).origin;
       const res = await fetch(`${origin}/api/hub/deploy`, {
@@ -288,14 +420,30 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       });
       if (!res.ok) {
         hubWarning = `hub rebuild returned ${res.status}`;
+        logger.warn('api', 'visibility.hub_rebuild.fail', {
+          article_id: articleId,
+          status: res.status,
+          elapsed_ms: Date.now() - hubFireMs,
+        });
         await service
           .from('articles')
           // guard-approved: mark hub-stale after partial success
           .update({ visibility_state: 'live_hub_stale' })
           .eq('id', articleId);
+      } else {
+        logger.info('api', 'visibility.hub_rebuild.ok', {
+          article_id: articleId,
+          elapsed_ms: Date.now() - hubFireMs,
+        });
       }
     } catch (err) {
       hubWarning = err instanceof Error ? err.message : String(err);
+      logger.error('api', 'visibility.hub_rebuild.error', {
+        article_id: articleId,
+        error_message: hubWarning,
+        stack: (err as Error)?.stack?.slice(0, 500),
+        elapsed_ms: Date.now() - hubFireMs,
+      }, err);
       await service
         .from('articles')
         // guard-approved: mark hub-stale after partial success
@@ -306,6 +454,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   const status = hubWarning ? 207 : 200;
+  const finalState = hubWarning ? 'live_hub_stale' : (body.visible ? 'live' : 'unpublished');
+  logger.info('api', 'visibility.end', {
+    article_id: articleId,
+    elapsed_ms: Date.now() - startedAt,
+    final_state: finalState,
+    visible: body.visible,
+    hubDeployStatus,
+    hubWarning,
+    http_status: status,
+  });
   return NextResponse.json(
     {
       status: hubWarning ? 'partial' : 'ok',

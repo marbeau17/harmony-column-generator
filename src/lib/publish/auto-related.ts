@@ -11,6 +11,7 @@ import {
   type ArticleCard,
 } from '@/lib/generators/related-articles';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { logger } from '@/lib/logger';
 // P5-59: 生成モード厳密型は共通 types から import（ローカル alias 廃止）
 import type { GenerationMode } from '@/types/article';
 
@@ -37,6 +38,8 @@ interface RelatedArticleEntry {
 export async function fetchPublishedArticleCards(): Promise<
   PublishedArticleRow[]
 > {
+  const start = Date.now();
+  logger.info('related-articles', 'auto_related.fetch_published.start', {});
   const supabase = await createServiceRoleClient();
 
   // P5-59: generation_mode も取得して呼び出し元でモード一致フィルタを行う
@@ -45,11 +48,27 @@ export async function fetchPublishedArticleCards(): Promise<
     .select('id, slug, title, keyword, generation_mode')
     .eq('status', 'published');
 
+  const elapsed_ms = Date.now() - start;
   if (error) {
+    logger.error(
+      'related-articles',
+      'auto_related.fetch_published.failed',
+      {
+        elapsed_ms,
+        error_message: error.message,
+        stack: (error as Error)?.stack?.slice(0, 500),
+      },
+      error,
+    );
     throw new Error(`公開済み記事の取得に失敗しました: ${error.message}`);
   }
 
-  return (data ?? []) as PublishedArticleRow[];
+  const rows = (data ?? []) as PublishedArticleRow[];
+  logger.info('related-articles', 'auto_related.fetch_published.end', {
+    elapsed_ms,
+    count: rows.length,
+  });
+  return rows;
 }
 
 // ─── 単一記事の関連記事計算・保存 ──────────────────────────────────────────
@@ -60,6 +79,10 @@ export async function fetchPublishedArticleCards(): Promise<
 export async function computeAndSaveRelatedArticles(
   articleId: string,
 ): Promise<void> {
+  const start = Date.now();
+  logger.info('related-articles', 'auto_related.compute.start', {
+    article_id: articleId,
+  });
   const supabase = await createServiceRoleClient();
 
   // 対象記事を取得
@@ -71,8 +94,20 @@ export async function computeAndSaveRelatedArticles(
     .single();
 
   if (fetchError || !article) {
+    const error_message = fetchError?.message ?? '記事が見つかりません';
+    logger.error(
+      'related-articles',
+      'auto_related.compute.fetch_failed',
+      {
+        article_id: articleId,
+        elapsed_ms: Date.now() - start,
+        error_message,
+        stack: (fetchError as Error | undefined)?.stack?.slice(0, 500),
+      },
+      fetchError,
+    );
     throw new Error(
-      `記事 ${articleId} の取得に失敗しました: ${fetchError?.message ?? '記事が見つかりません'}`,
+      `記事 ${articleId} の取得に失敗しました: ${error_message}`,
     );
   }
 
@@ -85,6 +120,14 @@ export async function computeAndSaveRelatedArticles(
   const sameModeCards = allCards.filter(
     (a) => a.generation_mode === targetMode,
   );
+
+  logger.info('related-articles', 'auto_related.compute.candidates', {
+    article_id: articleId,
+    slug: article.slug,
+    target_mode: targetMode,
+    pool_total: allCards.length,
+    same_mode_count: sameModeCards.length,
+  });
 
   // ArticleCard[] 形式に変換（href を env 駆動の相対パスにマッピング）
   const candidates: ArticleCard[] = sameModeCards.map((a) => ({
@@ -101,6 +144,13 @@ export async function computeAndSaveRelatedArticles(
   let relatedEntries: RelatedArticleEntry[];
   if (candidatesExcludingSelf.length < 3) {
     relatedEntries = [];
+    logger.warn('related-articles', 'auto_related.compute.insufficient_pool', {
+      article_id: articleId,
+      slug: article.slug,
+      target_mode: targetMode,
+      candidates_excluding_self: candidatesExcludingSelf.length,
+      threshold: 3,
+    });
   } else {
     const related = selectRelatedArticles(
       article.keyword,
@@ -122,11 +172,31 @@ export async function computeAndSaveRelatedArticles(
     .update({ related_articles: relatedEntries })
     .eq('id', articleId);
 
+  const elapsed_ms = Date.now() - start;
   if (updateError) {
+    logger.error(
+      'related-articles',
+      'auto_related.compute.save_failed',
+      {
+        article_id: articleId,
+        slug: article.slug,
+        elapsed_ms,
+        error_message: updateError.message,
+        stack: (updateError as Error)?.stack?.slice(0, 500),
+      },
+      updateError,
+    );
     throw new Error(
       `記事 ${articleId} の関連記事保存に失敗しました: ${updateError.message}`,
     );
   }
+
+  logger.info('related-articles', 'auto_related.compute.end', {
+    article_id: articleId,
+    slug: article.slug,
+    elapsed_ms,
+    write_count: relatedEntries.length,
+  });
 }
 
 // ─── 全記事の関連記事一括再計算 ────────────────────────────────────────────
@@ -139,17 +209,30 @@ export async function updateAllRelatedArticles(): Promise<{
   updated: number;
   errors: string[];
 }> {
+  const start = Date.now();
+  logger.info('related-articles', 'auto_related.update_all.start', {});
   const supabase = await createServiceRoleClient();
 
   // 全公開済み記事を取得
   const allCards = await fetchPublishedArticleCards();
 
   if (allCards.length === 0) {
+    logger.info('related-articles', 'auto_related.update_all.end', {
+      elapsed_ms: Date.now() - start,
+      total_iterations: 0,
+      updated: 0,
+      errors: 0,
+      reason: 'no_published_articles',
+    });
     return { updated: 0, errors: [] };
   }
 
   let updated = 0;
   const errors: string[] = [];
+
+  logger.info('related-articles', 'auto_related.update_all.iterating', {
+    total_iterations: allCards.length,
+  });
 
   // 各記事について関連記事を計算・保存
   for (const article of allCards) {
@@ -191,6 +274,17 @@ export async function updateAllRelatedArticles(): Promise<{
         .eq('id', article.id);
 
       if (updateError) {
+        logger.error(
+          'related-articles',
+          'auto_related.update_all.item_failed',
+          {
+            article_id: article.id,
+            slug: article.slug,
+            error_message: updateError.message,
+            stack: (updateError as Error)?.stack?.slice(0, 500),
+          },
+          updateError,
+        );
         errors.push(
           `記事 "${article.title}" (${article.id}): ${updateError.message}`,
         );
@@ -199,9 +293,27 @@ export async function updateAllRelatedArticles(): Promise<{
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      logger.error(
+        'related-articles',
+        'auto_related.update_all.item_exception',
+        {
+          article_id: article.id,
+          slug: article.slug,
+          error_message: message,
+          stack: (err as Error)?.stack?.slice(0, 500),
+        },
+        err,
+      );
       errors.push(`記事 "${article.title}" (${article.id}): ${message}`);
     }
   }
 
+  const elapsed_ms = Date.now() - start;
+  logger.info('related-articles', 'auto_related.update_all.end', {
+    elapsed_ms,
+    total_iterations: allCards.length,
+    updated,
+    errors: errors.length,
+  });
   return { updated, errors };
 }

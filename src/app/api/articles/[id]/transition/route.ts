@@ -30,6 +30,10 @@ type RouteParams = { params: { id: string } };
 // ─── POST /api/articles/[id]/transition ────────────────────────────────────
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  const startedAt = Date.now();
+  const { id } = params;
+  logger.info('api', 'transition.start', { article_id: id });
+
   try {
     // 認証チェック
     const supabase = await createServerSupabaseClient();
@@ -38,17 +42,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     } = await supabase.auth.getUser();
 
     if (!user) {
+      logger.warn('api', 'transition.auth_failed', { article_id: id, status: 401 });
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
     }
-
-    const { id } = params;
+    logger.info('api', 'transition.auth_ok', { article_id: id, user_id: user.id });
 
     // リクエストボディ取得
     const body = await request.json();
     const { status } = body;
+    logger.info('api', 'transition.body_parsed', { article_id: id, to_status: status });
 
     // ステータス値の検証
     if (!status || typeof status !== 'string') {
+      logger.warn('api', 'transition.body_invalid', { article_id: id, reason: 'status_required' });
       return NextResponse.json(
         { error: 'status は必須です' },
         { status: 400 },
@@ -56,6 +62,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!VALID_STATUSES.includes(status as ArticleStatus)) {
+      logger.warn('api', 'transition.body_invalid', {
+        article_id: id,
+        reason: 'invalid_status',
+        received: status,
+      });
       return NextResponse.json(
         {
           error: `無効なステータスです: ${status}`,
@@ -68,11 +79,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // 記事の存在確認
     const existing = await getArticleById(id);
     if (!existing) {
+      logger.warn('api', 'transition.article_not_found', { article_id: id });
       return NextResponse.json(
         { error: '記事が見つかりません' },
         { status: 404 },
       );
     }
+    logger.info('api', 'transition.article_found', {
+      article_id: id,
+      slug: existing.slug,
+      from_state: existing.status,
+      generation_mode: existing.generation_mode,
+      visibility_state: existing.visibility_state,
+    });
 
     // P5-35: ?force=true で品質チェック完全 bypass (緊急公開専用)
     // これは frontend の override 適用 (P5-31) と二重ゲートになる安全装置
@@ -88,8 +107,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // published への遷移時は品質チェックリストを実行 (force=true なら skip)
     if (status === 'published' && !forceBypass) {
+      logger.info('api', 'transition.quality_check.start', { article_id: id });
       const { runQualityChecklist } = await import('@/lib/content/quality-checklist');
       const html = existing.published_html || existing.stage2_body_html || '';
+      if (!html) {
+        logger.warn('api', 'transition.quality_check.skipped_no_html', { article_id: id });
+      }
       if (html) {
         // P5-34: quality_overrides を取得 (escape hatch / ignore-warn 連携)
         // フロント (P5-31) で bulk override 後、backend transition でも pass 扱いに
@@ -139,11 +162,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             .map(i => `${i.label}${i.detail ? ` (${i.detail})` : ''}`)
             .join('; ');
 
+          logger.warn('api', 'transition.quality_check.failed', {
+            article_id: id,
+            error_count: checkResult.errorCount,
+            failed_items: failedItems,
+          });
           return NextResponse.json({
             error: `品質チェック不合格: ${failedItems}`,
             qualityCheck: checkResult,
           }, { status: 422 });
         }
+        logger.info('api', 'transition.quality_check.ok', {
+          article_id: id,
+          error_count: checkResult.errorCount,
+          item_count: checkResult.items.length,
+        });
       }
     }
 
@@ -162,6 +195,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       existing.visibility_state !== 'pending_review';
 
     let updated;
+    const updateStartMs = Date.now();
+    logger.info('api', 'transition.update.start', {
+      article_id: id,
+      from_state: existing.status,
+      to_state: status,
+      branch: isZeroFastPromoteCandidate ? 'zero_fast_promote' : 'normal',
+    });
     if (isZeroFastPromoteCandidate) {
       logger.info('api', 'transition.zero_fast_promote', {
         articleId: id,
@@ -173,8 +213,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       updated = await fastPromoteZeroToPublished(id);
     } else {
       // ステータス遷移実行（transitionArticleStatus 内で VALID_TRANSITIONS を検証）
+      logger.info('api', 'transition.normal_transition.start', {
+        article_id: id,
+        from_state: existing.status,
+        to_state: status,
+      });
       updated = await transitionArticleStatus(id, status as ArticleStatus);
     }
+
+    logger.info('api', 'transition.update.end', {
+      article_id: id,
+      from_state: existing.status,
+      to_state: status,
+      branch: isZeroFastPromoteCandidate ? 'zero_fast_promote' : 'normal',
+      elapsed_ms: Date.now() - updateStartMs,
+    });
 
     logger.info('api', 'transitionArticleStatus', {
       articleId: id,
@@ -186,6 +239,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // published に遷移した場合、バックグラウンドでハブページ再生成を実行
     if (status === 'published') {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      logger.info('api', 'transition.hub_rebuild.fire', { article_id: id, appUrl });
       fetch(`${appUrl}/api/hub/rebuild`, { method: 'POST' })
         .then((res) => {
           if (res.ok) {
@@ -202,6 +256,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         });
 
       // 関連記事を自動計算・保存（新記事 + 既存記事すべて更新）
+      logger.info('api', 'transition.related_articles.fire', { article_id: id });
       computeAndSaveRelatedArticles(id)
         .then(() => updateAllRelatedArticles())
         .then((result) => {
@@ -213,6 +268,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       // out/ ディレクトリへ静的エクスポート（ローカル環境のみ）
       if (!process.env.VERCEL) {
+        logger.info('api', 'transition.static_export.fire', { article_id: id });
         exportArticleToOut(id)
           .then(() => exportHubPageToOut())
           .then((hubResult) => {
@@ -221,9 +277,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           .catch((err) => {
             logger.error('api', 'static-export-error', { articleId: id }, err);
           });
+      } else {
+        logger.info('api', 'transition.static_export.skipped_vercel', { article_id: id });
       }
     }
 
+    logger.info('api', 'transition.end', {
+      article_id: id,
+      from_state: existing.status,
+      final_state: status,
+      fast_promote: isZeroFastPromoteCandidate,
+      force_bypass: forceBypass,
+      elapsed_ms: Date.now() - startedAt,
+    });
     return NextResponse.json({ data: updated });
   } catch (error) {
     const message =
@@ -231,6 +297,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // VALID_TRANSITIONS 違反の場合は 400 で返す
     if (message.includes('Invalid status transition')) {
+      logger.warn('api', 'transition.invalid_transition', {
+        article_id: params.id,
+        error_message: message,
+        elapsed_ms: Date.now() - startedAt,
+      });
       logger.warn('api', 'transitionArticleStatus', {
         articleId: params.id,
         error: message,
@@ -238,6 +309,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
+    logger.error('api', 'transition.failed', {
+      article_id: params.id,
+      error_message: message,
+      stack: (error as Error)?.stack?.slice(0, 500),
+      elapsed_ms: Date.now() - startedAt,
+    }, error);
     logger.error('api', 'transitionArticleStatus', { articleId: params.id }, error);
     return NextResponse.json(
       { error: 'ステータス遷移に失敗しました' },

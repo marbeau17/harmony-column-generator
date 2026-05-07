@@ -23,6 +23,7 @@ import {
 } from '@/lib/seo/seo-settings';
 // P5-44: 公開 URL は env 駆動の単一ソースから取得 (ハードコード排除)
 import { getSiteUrl, getHubUrl, getHubPath, getArticleUrl, getOgImageUrl } from '@/lib/config/public-urls';
+import { logger } from '@/lib/logger';
 import type { Article } from '@/types/article';
 
 // ─── 定数 ──────────────────────────────────────────────────────────────────
@@ -252,7 +253,21 @@ export function generateArticleHtml(
   article: Article,
   options: ArticleHtmlOptions = {},
 ): string {
+  const start = Date.now();
   const slug = article.slug ?? article.id;
+  logger.info('generator', 'article_html.generate.start', {
+    article_id: article.id,
+    slug,
+    theme: article.theme,
+    has_stage2_body_html: !!article.stage2_body_html,
+    has_stage3_final_html: !!article.stage3_final_html,
+    has_content: !!article.content,
+    title_chars: (article.title ?? '').length,
+    has_image_files: !!article.image_files,
+    related_articles_count: article.related_articles?.length ?? 0,
+    recent_articles_count: options.recentArticles?.length ?? 0,
+    categories_count: options.categories?.length ?? 0,
+  });
   const hubUrl = options.hubUrl ?? HUB_URL;
   // P5-44: canonical / OG URL は env 駆動 helper で常に絶対 URL を生成
   const canonicalUrl = getArticleUrl(slug);
@@ -293,7 +308,7 @@ export function generateArticleHtml(
 
   // ── テンプレート組み立て ──────────────────────────────────────────────
 
-  return `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -745,6 +760,18 @@ export function generateArticleHtml(
   ${getStickyCtaBarHtml()}
 </body>
 </html>`;
+
+  logger.info('generator', 'article_html.generate.end', {
+    article_id: article.id,
+    slug,
+    theme: article.theme,
+    output_chars: html.length,
+    body_html_chars: bodyHtml.length,
+    faq_count: faqs.length,
+    related_articles_count: article.related_articles?.length ?? 0,
+    elapsed_ms: Date.now() - start,
+  });
+  return html;
 }
 
 // ─── 内部ヘルパー: 本文にCTAを自動挿入 ────────────────────────────────────
@@ -754,6 +781,7 @@ export function generateArticleHtml(
  * cta-generator の insertCtasIntoHtml / selectCtaTexts を使用。
  */
 function buildBodyWithCtas(article: Article, slug: string): string {
+  const start = Date.now();
   // P5-53 (2026-05-03): stage2_body_html を優先する。
   //   stage3_final_html はフル HTML ドキュメント (DOCTYPE + head + main + footer)
   //   なので、これを template の <main> 内に挿入すると HTML が二重出力されてしまう
@@ -761,14 +789,46 @@ function buildBodyWithCtas(article: Article, slug: string): string {
   //   stage2_body_html は本文のみのフラグメントなので template の中身に入れて安全。
   //   fallback として stage3 と content を残す (画像 placeholder 置換が
   //   完了していない古い記事でも生成できるよう)。
+  // P5-53 観測ログ: どの body source が採用されたか必ず記録する (CRITICAL)
+  let bodySource: 'stage2_body_html' | 'stage3_final_html' | 'content' | 'empty';
+  if (article.stage2_body_html) {
+    bodySource = 'stage2_body_html';
+  } else if (article.stage3_final_html) {
+    bodySource = 'stage3_final_html';
+  } else if (article.content) {
+    bodySource = 'content';
+  } else {
+    bodySource = 'empty';
+  }
   let bodyHtml = article.stage2_body_html ?? article.stage3_final_html ?? article.content ?? '';
+  logger.info('generator', 'article_html.body_source.selected', {
+    article_id: article.id,
+    slug,
+    body_source: bodySource,
+    input_chars: bodyHtml.length,
+  });
+  if (bodySource !== 'stage2_body_html') {
+    logger.warn('generator', 'article_html.body_source.fallback', {
+      article_id: article.id,
+      slug,
+      body_source: bodySource,
+      reason: 'stage2_body_html not available; using fallback',
+    });
+  }
 
   // Remove hero image from body (template already shows hero)
   bodyHtml = bodyHtml.replace(/<!--IMAGE:hero:[^>]*-->\s*/g, '');
   // Remove img tags that reference hero images (Supabase or local)
   bodyHtml = bodyHtml.replace(/<img[^>]*(?:hero\.jpg|hero\.webp|hero\.svg)[^>]*>\s*/g, '');
 
-  if (!bodyHtml.trim()) return '';
+  if (!bodyHtml.trim()) {
+    logger.warn('generator', 'article_html.body.empty', {
+      article_id: article.id,
+      slug,
+      body_source: bodySource,
+    });
+    return '';
+  }
 
   // ── AI生成HTMLの修復 ──
   // 1. バックスラッシュエスケープされた属性値を修復
@@ -801,8 +861,20 @@ function buildBodyWithCtas(article: Article, slug: string): string {
   const ctaTexts = selectCtaTexts(ctaTheme, article.id);
 
   // CTA自動挿入
+  const beforeCtaChars = bodyHtml.length;
   bodyHtml = insertCtasIntoHtml(bodyHtml, ctaTexts, slug);
 
+  logger.info('generator', 'article_html.body_with_ctas.end', {
+    article_id: article.id,
+    slug,
+    body_source: bodySource,
+    cta_theme: ctaTheme,
+    cta_keys: Object.keys(ctaTexts),
+    before_cta_chars: beforeCtaChars,
+    output_chars: bodyHtml.length,
+    cta_added_chars: bodyHtml.length - beforeCtaChars,
+    elapsed_ms: Date.now() - start,
+  });
   return bodyHtml;
 }
 
@@ -819,15 +891,56 @@ function resolveHeroImage(article: Article): string {
 
       if (Array.isArray(files) && files.length > 0) {
         const first = files[0] as Record<string, string>;
-        if (first.url) return first.url;
-        if (first.src) return first.src;
-        if (first.filename) return `placeholders/${first.filename}`;
+        if (first.url) {
+          logger.info('generator', 'article_html.hero.resolved', {
+            article_id: article.id,
+            slug: article.slug,
+            via: 'url',
+            count: files.length,
+          });
+          return first.url;
+        }
+        if (first.src) {
+          logger.info('generator', 'article_html.hero.resolved', {
+            article_id: article.id,
+            slug: article.slug,
+            via: 'src',
+            count: files.length,
+          });
+          return first.src;
+        }
+        if (first.filename) {
+          logger.info('generator', 'article_html.hero.resolved', {
+            article_id: article.id,
+            slug: article.slug,
+            via: 'filename',
+            count: files.length,
+          });
+          return `placeholders/${first.filename}`;
+        }
       }
-    } catch {
+    } catch (err) {
+      logger.warn(
+        'generator',
+        'article_html.hero.parse_failed',
+        {
+          article_id: article.id,
+          slug: article.slug,
+          error_message: err instanceof Error ? err.message : String(err),
+          stack: (err as Error)?.stack?.slice(0, 500),
+        },
+        err,
+      );
       // ignore parse errors
     }
   }
 
   // フォールバック
+  logger.warn('generator', 'article_html.hero.fallback', {
+    article_id: article.id,
+    slug: article.slug,
+    has_image_files: !!article.image_files,
+    reason: 'no resolvable image_files entry; using og-default.jpg',
+  });
   return `${SITE_URL}/og-default.jpg`;
 }

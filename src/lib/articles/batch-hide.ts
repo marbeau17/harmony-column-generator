@@ -90,10 +90,20 @@ export async function batchHideSourceArticles(
   opts: BatchHideOptions,
   deps: BatchHideDeps,
 ): Promise<BatchHideResult> {
+  const start_ms = Date.now();
   const supabase = deps.supabase;
   const now = deps.now ?? (() => new Date());
   const loadFtpConfig = deps.loadFtpConfig ?? getFtpConfig;
   const softWithdraw = deps.softWithdraw ?? softWithdrawFile;
+
+  logger.info('deploy', 'batch_hide.start', {
+    dry_run: opts.dryRun,
+    ftp_enabled: opts.ftpEnabled,
+    run_hub_rebuild: opts.runHubRebuild,
+    actor_email: opts.actorEmail ?? null,
+    actor_id: opts.actorId ?? null,
+    reason: opts.reason ?? 'batch-hide-source',
+  });
 
   // --- 対象抽出 -------------------------------------------------------------
   // generation_mode='source' か NULL を or() で抽出。
@@ -105,6 +115,10 @@ export async function batchHideSourceArticles(
     .or('generation_mode.eq.source,generation_mode.is.null');
 
   if (selectErr) {
+    logger.error('deploy', 'batch_hide.select_failed', {
+      error_message: selectErr.message,
+      elapsed_ms: Date.now() - start_ms,
+    });
     throw new Error(`select failed: ${selectErr.message}`);
   }
 
@@ -116,8 +130,22 @@ export async function batchHideSourceArticles(
 
   const ids = targets.map((t) => t.id);
 
+  logger.info('deploy', 'batch_hide.candidates_loaded', {
+    candidates: targets.length,
+    dry_run: opts.dryRun,
+  });
+
   // --- dry-run は ID リストだけ返す ----------------------------------------
   if (opts.dryRun) {
+    logger.info('deploy', 'batch_hide.end', {
+      dry_run: true,
+      candidates: targets.length,
+      hidden: 0,
+      failures: 0,
+      hub_rebuild_status: 'skipped',
+      elapsed_ms: Date.now() - start_ms,
+      branch: 'dry_run',
+    });
     return {
       dryRun: true,
       candidates: targets.length,
@@ -135,12 +163,27 @@ export async function batchHideSourceArticles(
   if (opts.ftpEnabled && targets.length > 0) {
     try {
       ftpConfig = await loadFtpConfig();
+      logger.info('deploy', 'batch_hide.ftp_config_loaded', {
+        host_set: Boolean(ftpConfig?.host),
+        candidates: targets.length,
+      });
     } catch (err) {
       // FTP 設定取得自体が失敗した場合、全件を soft-withdraw 段階で失敗扱いにする
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error('api', 'batch-hide.ftp-config-failed', { message: msg });
+      const error_message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      logger.error('deploy', 'batch_hide.ftp_config_failed', {
+        error_message,
+        stack,
+        candidates: targets.length,
+      });
       ftpConfig = null;
     }
+  } else {
+    logger.info('deploy', 'batch_hide.ftp_config_skipped', {
+      ftp_enabled: opts.ftpEnabled,
+      candidates: targets.length,
+      branch: opts.ftpEnabled ? 'no_targets' : 'ftp_disabled',
+    });
   }
 
   const failures: BatchHideFailure[] = [];
@@ -148,7 +191,13 @@ export async function batchHideSourceArticles(
 
   // --- 各記事を逐次処理（部分成功） ----------------------------------------
   for (const target of targets) {
+    const item_start_ms = Date.now();
     const tStart = now().toISOString();
+
+    logger.info('deploy', 'batch_hide.item.start', {
+      article_id: target.id,
+      slug: target.slug,
+    });
 
     // 1) DB UPDATE: visibility 列のみ
     // P5-43 Step 3: reviewed_at は audit のみ、batch-hide では touch しない
@@ -165,32 +214,78 @@ export async function batchHideSourceArticles(
 
     if (updErr) {
       failures.push({ id: target.id, stage: 'db-update', message: updErr.message });
-      logger.error('api', 'batch-hide.db-update-failed', { id: target.id, message: updErr.message });
+      logger.error('deploy', 'batch_hide.db_update_failed', {
+        article_id: target.id,
+        slug: target.slug,
+        from_state: 'live',
+        to_state: 'unpublished',
+        error_message: updErr.message,
+        elapsed_ms: Date.now() - item_start_ms,
+      });
       continue;
     }
+
+    logger.info('deploy', 'batch_hide.db_update_ok', {
+      article_id: target.id,
+      slug: target.slug,
+      to_state: 'unpublished',
+    });
 
     // 2) FTP ソフト撤回（noindex 上書き）
     let ftpStatus: 'success' | 'failed' | 'skipped' = 'skipped';
     let ftpError: string | null = null;
     if (opts.ftpEnabled && ftpConfig) {
+      const remote_path = `${target.slug}/index.html`;
       try {
         const html = renderSoftWithdrawalHtml({ title: target.title ?? undefined });
-        const result = await softWithdraw(ftpConfig, `${target.slug}/index.html`, html);
+        logger.info('deploy', 'batch_hide.soft_withdraw.start', {
+          article_id: target.id,
+          remote_path,
+          mode: 'soft_withdrawal',
+          html_length: html.length,
+        });
+        const result = await softWithdraw(ftpConfig, remote_path, html);
         ftpStatus = result.success ? 'success' : 'failed';
         ftpError = result.errors.length ? result.errors.join('; ') : null;
         if (!result.success) {
           failures.push({ id: target.id, stage: 'ftp-soft-withdraw', message: ftpError ?? 'unknown' });
+          logger.warn('deploy', 'batch_hide.soft_withdraw.failed', {
+            article_id: target.id,
+            remote_path,
+            error_message: ftpError ?? 'unknown',
+          });
+        } else {
+          logger.info('deploy', 'batch_hide.soft_withdraw.ok', {
+            article_id: target.id,
+            remote_path,
+          });
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const error_message = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack : undefined;
         ftpStatus = 'failed';
-        ftpError = msg;
-        failures.push({ id: target.id, stage: 'ftp-soft-withdraw', message: msg });
+        ftpError = error_message;
+        failures.push({ id: target.id, stage: 'ftp-soft-withdraw', message: error_message });
+        logger.error('deploy', 'batch_hide.soft_withdraw.exception', {
+          article_id: target.id,
+          remote_path,
+          error_message,
+          stack,
+        });
       }
     } else if (opts.ftpEnabled && !ftpConfig) {
       ftpStatus = 'failed';
       ftpError = 'ftp config unavailable';
       failures.push({ id: target.id, stage: 'ftp-soft-withdraw', message: ftpError });
+      logger.warn('deploy', 'batch_hide.soft_withdraw.config_missing', {
+        article_id: target.id,
+        slug: target.slug,
+      });
+    } else {
+      logger.info('deploy', 'batch_hide.soft_withdraw.skipped', {
+        article_id: target.id,
+        ftp_enabled: opts.ftpEnabled,
+      });
     }
 
     // 3) publish_events INSERT（DB 更新成功時は必ず記録、FTP 失敗は hub_deploy_error に乗せる）
@@ -206,31 +301,70 @@ export async function batchHideSourceArticles(
     });
     if (evtErr) {
       failures.push({ id: target.id, stage: 'event-insert', message: evtErr.message });
-      logger.error('api', 'batch-hide.event-insert-failed', { id: target.id, message: evtErr.message });
+      logger.error('deploy', 'batch_hide.event_insert_failed', {
+        article_id: target.id,
+        error_message: evtErr.message,
+        elapsed_ms: Date.now() - item_start_ms,
+      });
       // event 記録に失敗しても DB の非公開化は完了済みなので「成功扱い」とはしない
       continue;
     }
 
     succeededIds.push(target.id);
+    logger.info('deploy', 'batch_hide.item.end', {
+      article_id: target.id,
+      slug: target.slug,
+      ftp_status: ftpStatus,
+      elapsed_ms: Date.now() - item_start_ms,
+      ok: true,
+    });
   }
 
   // --- ハブ再生成 -----------------------------------------------------------
   let hubRebuildStatus: 'ok' | 'failed' | 'skipped' = 'skipped';
   let hubRebuildError: string | null = null;
   if (opts.runHubRebuild && deps.rebuildHub) {
+    logger.info('deploy', 'batch_hide.hub_rebuild.start', {
+      candidates: targets.length,
+      succeeded: succeededIds.length,
+    });
     try {
       const r = await deps.rebuildHub();
       if (r.ok) {
         hubRebuildStatus = 'ok';
+        logger.info('deploy', 'batch_hide.hub_rebuild.ok', {});
       } else {
         hubRebuildStatus = 'failed';
         hubRebuildError = r.error ?? 'unknown';
+        logger.warn('deploy', 'batch_hide.hub_rebuild.failed', {
+          error_message: hubRebuildError,
+        });
       }
     } catch (err) {
+      const error_message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
       hubRebuildStatus = 'failed';
-      hubRebuildError = err instanceof Error ? err.message : String(err);
+      hubRebuildError = error_message;
+      logger.error('deploy', 'batch_hide.hub_rebuild.exception', {
+        error_message,
+        stack,
+      });
     }
+  } else {
+    logger.info('deploy', 'batch_hide.hub_rebuild.skipped', {
+      run_hub_rebuild: opts.runHubRebuild,
+      has_rebuild_fn: Boolean(deps.rebuildHub),
+    });
   }
+
+  logger.info('deploy', 'batch_hide.end', {
+    dry_run: false,
+    candidates: targets.length,
+    hidden: succeededIds.length,
+    failures: failures.length,
+    hub_rebuild_status: hubRebuildStatus,
+    elapsed_ms: Date.now() - start_ms,
+  });
 
   return {
     dryRun: false,
