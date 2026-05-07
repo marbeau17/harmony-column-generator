@@ -46,23 +46,40 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // キュー件数を取得（処理待ち）
+  // 可視タブのみで polling し、背景タブやオフライン時は走らせない。
+  // Why: 背景化/オフライン状態の fetch は ERR_CONNECTION_CLOSED 系を量産しコンソールを汚染する (CLAUDE.md: fetch エラー握り潰し禁止)。
   useEffect(() => {
     let cancelled = false;
     async function fetchQueueCount() {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       try {
-        const res = await fetch('/api/queue?step=pending&limit=1');
-        if (res.ok) {
-          const json = await res.json();
-          if (!cancelled) setQueueCount(json.meta?.total ?? 0);
+        const res = await fetch('/api/queue?step=pending&limit=1', {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) {
+          if (!cancelled) console.warn('[Sidebar] queue badge fetch non-ok:', res.status);
+          return;
         }
-      } catch {
-        // サイレント: サイドバーのバッジ取得失敗は無視
+        const json = await res.json();
+        if (!cancelled) setQueueCount(json.meta?.total ?? 0);
+      } catch (err) {
+        // 接続切断 / abort / オフラインは観測のみ。バッジは前回値を維持する。
+        if (!cancelled) console.warn('[Sidebar] queue badge fetch failed:', (err as Error)?.name ?? err);
       }
     }
     fetchQueueCount();
-    // 60秒ごとにポーリング
     const interval = setInterval(fetchQueueCount, 60_000);
-    return () => { cancelled = true; clearInterval(interval); };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchQueueCount();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // ページ遷移時にモバイルサイドバーを閉じる
