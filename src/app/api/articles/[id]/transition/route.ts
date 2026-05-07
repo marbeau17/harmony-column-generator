@@ -8,6 +8,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import {
   getArticleById,
   transitionArticleStatus,
+  fastPromoteZeroToPublished,
   type ArticleStatus,
 } from '@/lib/db/articles';
 import { logger } from '@/lib/logger';
@@ -146,13 +147,40 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // ステータス遷移実行（transitionArticleStatus 内で VALID_TRANSITIONS を検証）
-    const updated = await transitionArticleStatus(id, status as ArticleStatus);
+    // P5-71: zero-generation 記事の draft→published / outline_pending→published を
+    //   1 transaction で許可する fast-promote 分岐。
+    //   通常の VALID_TRANSITIONS は draft → outline_pending → ... → editing → published の
+    //   長い経路を要求するが、run-completion が status を直接書く設計のため
+    //   validation 通過しなかった zero-gen 記事が draft/outline_pending に居残り、
+    //   UI「公開」ボタンが Invalid status transition で 400 を返していた。
+    //   品質チェック (上の lines 88-147) は通過済みなので state machine だけ bypass する。
+    const isZeroFastPromoteCandidate =
+      status === 'published' &&
+      existing.generation_mode === 'zero' &&
+      existing.status !== 'editing' &&
+      existing.status !== 'published' &&
+      existing.visibility_state !== 'pending_review';
+
+    let updated;
+    if (isZeroFastPromoteCandidate) {
+      logger.info('api', 'transition.zero_fast_promote', {
+        articleId: id,
+        from: existing.status,
+        to: status,
+        visibility_state: existing.visibility_state,
+        force_bypass: forceBypass,
+      });
+      updated = await fastPromoteZeroToPublished(id);
+    } else {
+      // ステータス遷移実行（transitionArticleStatus 内で VALID_TRANSITIONS を検証）
+      updated = await transitionArticleStatus(id, status as ArticleStatus);
+    }
 
     logger.info('api', 'transitionArticleStatus', {
       articleId: id,
       from: existing.status,
       to: status,
+      fast_promote: isZeroFastPromoteCandidate,
     });
 
     // published に遷移した場合、バックグラウンドでハブページ再生成を実行

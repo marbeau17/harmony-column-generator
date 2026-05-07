@@ -418,6 +418,80 @@ export async function transitionArticleStatus(
 }
 
 /**
+ * P5-71: zero-generation 記事を `status='published'` まで一気に進める fast-promote。
+ *
+ * VALID_TRANSITIONS は draft → outline_pending → ... → editing → published の
+ * 長い state machine を強制するが、generation_mode='zero' は run-completion が
+ * 内部で直接 UPDATE する設計（articles.ts:21-29 の state machine をバイパス）。
+ * 結果として、validation を通り抜けなかった zero-gen 記事は status='draft' or
+ * 'outline_pending' のまま残り、UI「公開」ボタンの transitionArticleStatus が
+ * `Invalid status transition` で 400 を返していた。
+ *
+ * 本 helper は run-completion と同じく **直接 UPDATE** で
+ *   status='published'
+ *   visibility_state='live'
+ *   is_hub_visible=true
+ *   published_at=now
+ *   visibility_updated_at=now
+ * を一括で書き込み、UI からの公開 fast-path を確立する。
+ *
+ * 安全制約:
+ *   - generation_mode='zero' のみ許可（source 記事は通常の VALID_TRANSITIONS を通す）
+ *   - visibility_state='pending_review' は拒否（由起子さん確認ゲート未通過）
+ *
+ * 品質ゲート（runDeployChecklist 等）は呼び出し側 (transition route) で
+ * 既に通過済みの前提。本 helper は state machine だけを bypass する。
+ */
+export async function fastPromoteZeroToPublished(
+  id: string,
+  extraFields?: Partial<Omit<ArticleRow, 'id' | 'created_at' | 'status'>>,
+): Promise<ArticleRow> {
+  assertArticleWriteAllowed(id, ['status', ...Object.keys(extraFields ?? {})]);
+
+  const current = await getArticleById(id);
+  if (!current) {
+    throw new Error(`Article not found: ${id}`);
+  }
+  if (current.generation_mode !== 'zero') {
+    throw new Error(
+      `fastPromoteZeroToPublished: generation_mode must be 'zero' (got '${current.generation_mode ?? 'null'}')`,
+    );
+  }
+  if (current.visibility_state === 'pending_review') {
+    throw new Error(
+      `fastPromoteZeroToPublished: visibility_state='pending_review' は由起子さん確認待ち。先に /review で承認してください`,
+    );
+  }
+  if (current.status === 'published') {
+    return current;
+  }
+
+  const supabase = await createServiceRoleClient();
+  const nowIso = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from('articles')
+    .update({
+      ...(extraFields ?? {}),
+      status: 'published',
+      published_at: nowIso,
+      is_hub_visible: true,
+      visibility_state: 'live',
+      visibility_updated_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) {
+    throw new Error(`fastPromoteZeroToPublished failed: ${error.message}`);
+  }
+
+  return data as ArticleRow;
+}
+
+/**
  * 記事を削除する。
  */
 export async function deleteArticle(id: string): Promise<void> {

@@ -35,7 +35,7 @@ vi.mock('@/lib/supabase/server', () => {
 });
 
 // 動的 import で実物を取得（モック適用後）
-import { transitionArticleStatus } from '@/lib/db/articles';
+import { transitionArticleStatus, fastPromoteZeroToPublished } from '@/lib/db/articles';
 // fromMock を取得するため
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 import * as supabaseServerMock from '@/lib/supabase/server';
@@ -193,5 +193,117 @@ describe('transitionArticleStatus — step7 新公開列書込', () => {
     expect('visibility_state' in payload).toBe(false);
     expect('visibility_updated_at' in payload).toBe(false);
     expect('published_at' in payload).toBe(false);
+  });
+});
+
+// ─── P5-71: fastPromoteZeroToPublished ────────────────────────────────────
+describe('fastPromoteZeroToPublished — P5-71 zero-gen fast promote', () => {
+  const ARTICLE_ID = '00000000-0000-0000-0000-0000000000bb';
+
+  beforeEach(() => {
+    updateCapture.payload = null;
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('P5-71-1: zero-gen draft → published で status/visibility_state/published_at を一括書込む', async () => {
+    setupSupabaseMock({
+      current: {
+        id: ARTICLE_ID,
+        status: 'draft',
+        is_hub_visible: false,
+        visibility_state: 'idle',
+        visibility_updated_at: null,
+        published_at: null,
+        // @ts-expect-error fake row 拡張
+        generation_mode: 'zero',
+      },
+    });
+
+    const result = await fastPromoteZeroToPublished(ARTICLE_ID);
+
+    const payload = updateCapture.payload!;
+    expect(payload).toBeTruthy();
+    expect(payload.status).toBe('published');
+    expect(payload.is_hub_visible).toBe(true);
+    expect(payload.visibility_state).toBe('live');
+    expect(typeof payload.published_at).toBe('string');
+    expect(typeof payload.visibility_updated_at).toBe('string');
+
+    expect(result.status).toBe('published');
+    expect(result.visibility_state).toBe('live');
+  });
+
+  it('P5-71-2: outline_pending からの fast-promote も許可', async () => {
+    setupSupabaseMock({
+      current: {
+        id: ARTICLE_ID,
+        status: 'outline_pending',
+        is_hub_visible: false,
+        visibility_state: 'idle',
+        visibility_updated_at: null,
+        published_at: null,
+        // @ts-expect-error fake row 拡張
+        generation_mode: 'zero',
+      },
+    });
+
+    const result = await fastPromoteZeroToPublished(ARTICLE_ID);
+
+    expect(updateCapture.payload!.status).toBe('published');
+    expect(result.status).toBe('published');
+  });
+
+  it('P5-71-3: generation_mode!=="zero" は拒否（source 記事は通常 transition を通すべき）', async () => {
+    setupSupabaseMock({
+      current: {
+        id: ARTICLE_ID,
+        status: 'draft',
+        visibility_state: 'idle',
+        // @ts-expect-error fake row 拡張
+        generation_mode: 'source',
+      },
+    });
+
+    await expect(fastPromoteZeroToPublished(ARTICLE_ID)).rejects.toThrow(
+      /generation_mode must be 'zero'/,
+    );
+    expect(updateCapture.payload).toBeNull();
+  });
+
+  it('P5-71-4: visibility_state="pending_review" は拒否（由起子さん確認ゲート未通過）', async () => {
+    setupSupabaseMock({
+      current: {
+        id: ARTICLE_ID,
+        status: 'draft',
+        visibility_state: 'pending_review',
+        // @ts-expect-error fake row 拡張
+        generation_mode: 'zero',
+      },
+    });
+
+    await expect(fastPromoteZeroToPublished(ARTICLE_ID)).rejects.toThrow(
+      /pending_review/,
+    );
+    expect(updateCapture.payload).toBeNull();
+  });
+
+  it('P5-71-5: 既に published の場合は no-op で current を返す', async () => {
+    setupSupabaseMock({
+      current: {
+        id: ARTICLE_ID,
+        status: 'published',
+        visibility_state: 'live',
+        // @ts-expect-error fake row 拡張
+        generation_mode: 'zero',
+      },
+    });
+
+    const result = await fastPromoteZeroToPublished(ARTICLE_ID);
+    expect(result.status).toBe('published');
+    // update が呼ばれていないこと
+    expect(updateCapture.payload).toBeNull();
   });
 });
