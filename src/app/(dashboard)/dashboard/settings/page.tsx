@@ -203,7 +203,7 @@ export default function SettingsPage() {
   };
 
   // デプロイタブ用 state
-  const [deploying, setDeploying] = useState<'idle' | 'rebuild' | 'ftp'>('idle');
+  const [deploying, setDeploying] = useState<'idle' | 'rebuild' | 'ftp' | 'bulk-ftp'>('idle');
   const [deployMessage, setDeployMessage] = useState<string | null>(null);
   const [deployProgress, setDeployProgress] = useState(0); // 0-100
 
@@ -320,6 +320,55 @@ export default function SettingsPage() {
       logClientError('settings:ftp-deploy:catch', err);
       setDeployMessage(`エラー: ${msg}`);
       showToast(`FTPデプロイ失敗: ${msg}`, 'error');
+    } finally {
+      setTimeout(() => { setDeploying('idle'); setDeployProgress(0); }, 1500);
+    }
+  };
+
+  // 全記事一括 FTP デプロイ — visibility_state IN ('live','live_hub_stale') の全件を再アップロード
+  const handleBulkFtpDeploy = async () => {
+    if (!confirm('全 live 記事を FTP に再アップロードします。記事数によっては数分かかる可能性があります。続行しますか？')) {
+      return;
+    }
+    setDeploying('bulk-ftp');
+    setDeployMessage(null);
+    setDeployProgress(0);
+    // fake progress bar (実 API は単発 POST で同期完了するため疑似進捗のみ)
+    const progressInterval = setInterval(() => {
+      setDeployProgress((p) => Math.min(p + 2, 90));
+    }, 800);
+    try {
+      const res = await fetch('/api/articles/bulk-deploy', {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+      const data = await res.json().catch(() => null);
+      clearInterval(progressInterval);
+      setDeployProgress(100);
+      if (!res.ok) {
+        const apiErr = data?.error ?? '一括 FTP デプロイに失敗しました';
+        // C7: Vercel logs に必ず残す (HTTP ステータス含む)
+        logClientError(
+          'settings:bulk-ftp-deploy:http',
+          new Error(`HTTP ${res.status} ${apiErr}`),
+          { status: res.status, body: data },
+        );
+        throw new Error(`[HTTP ${res.status}] ${apiErr}`);
+      }
+      const success = data?.success ?? 0;
+      const failed = data?.failed ?? 0;
+      const uploaded = data?.uploaded_files ?? 0;
+      const summary = `${success}件成功 / ${failed}件失敗 (${uploaded} ファイル)`;
+      setDeployMessage(`一括 FTP デプロイ完了: ${summary}`);
+      showToast(summary, failed > 0 ? 'error' : 'success');
+    } catch (err: unknown) {
+      clearInterval(progressInterval);
+      setDeployProgress(0);
+      const msg = err instanceof Error ? err.message : '予期せぬエラー';
+      console.error('[bulk-ftp-deploy] Error:', err);
+      logClientError('settings:bulk-ftp-deploy:catch', err);
+      setDeployMessage(`エラー: ${msg}`);
+      showToast(`一括 FTP デプロイ失敗: ${msg}`, 'error');
     } finally {
       setTimeout(() => { setDeploying('idle'); setDeployProgress(0); }, 1500);
     }
@@ -1496,6 +1545,48 @@ export default function SettingsPage() {
 
             <hr className="border-gray-100" />
 
+            {/* 全記事一括 FTP デプロイ — visibility_state IN ('live','live_hub_stale') の全件再アップロード */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">
+                全記事一括 FTP デプロイ
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                公開中の全記事 (live / live_hub_stale) を FTP に再アップロードします。
+                各記事の HTML と画像 3 枚 (hero/body/summary) を上書き、最後にハブページも再生成します。
+                記事数によっては数分かかる可能性があります。
+              </p>
+              <button
+                onClick={handleBulkFtpDeploy}
+                disabled={deploying !== 'idle'}
+                className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50"
+              >
+                {deploying === 'bulk-ftp' && (
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                )}
+                全記事を FTP にアップロード
+              </button>
+            </div>
+
+            <hr className="border-gray-100" />
+
             {/* ハイライト一括適用 */}
             <div>
               <h3 className="text-sm font-semibold text-gray-800 mb-1">
@@ -1572,12 +1663,24 @@ export default function SettingsPage() {
             {deploying !== 'idle' && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>{deploying === 'rebuild' ? 'ハブページ再生成中...' : 'FTPアップロード中...'}</span>
+                  <span>
+                    {deploying === 'rebuild'
+                      ? 'ハブページ再生成中...'
+                      : deploying === 'bulk-ftp'
+                        ? '全記事 FTP アップロード中...'
+                        : 'FTPアップロード中...'}
+                  </span>
                   <span>{deployProgress}%</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
                   <div
-                    className={`h-full rounded-full transition-all duration-300 ${deploying === 'rebuild' ? 'bg-brand-500' : 'bg-emerald-500'}`}
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      deploying === 'rebuild'
+                        ? 'bg-brand-500'
+                        : deploying === 'bulk-ftp'
+                          ? 'bg-orange-500'
+                          : 'bg-emerald-500'
+                    }`}
                     style={{ width: `${deployProgress}%` }}
                   />
                 </div>

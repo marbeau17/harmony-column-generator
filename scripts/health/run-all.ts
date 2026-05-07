@@ -416,6 +416,45 @@ async function main(): Promise<void> {
     failedSamples: h13Failed.slice(0, 5),
   });
 
+  // ── H-14: visibility=live なのに deployed_hash=null の記事 ───────────────
+  // DB 上 live (or live_hub_stale) だが deployed_hash が null = FTP 未到達の可能性。
+  // 注意: 現状 deploy/route.ts は articles.deployed_hash を書き込んでいないため、
+  //       deploy route が hash 書き込みを実装するまでは恒常的に fail となる。
+  //       follow-up として deploy/route.ts での hash 更新が必要。
+  const { data: driftRows, error: driftErr } = await sb
+    .from('articles')
+    .select('id, slug, visibility_state, deployed_hash')
+    .in('visibility_state', ['live', 'live_hub_stale'])
+    .is('deployed_hash', null);
+
+  const h14Failed: HealthResult['failedSamples'] = [];
+  if (driftErr) {
+    h14Failed.push({
+      id: 'query-error',
+      slug: null,
+      note: `SELECT error: ${driftErr.message}`,
+    });
+  } else {
+    for (const r of driftRows ?? []) {
+      h14Failed.push({
+        id: r.id as string,
+        slug: (r.slug as string) ?? null,
+        note: `visibility=${r.visibility_state} deployed_hash=null`,
+      });
+    }
+  }
+  const driftCount = (driftRows ?? []).length;
+  results.push({
+    id: 'H-14', label: 'visibility=live なのに deployed_hash=null の記事 0 件', severity: 'high',
+    ok: !driftErr && driftCount === 0,
+    detail: driftErr
+      ? `query failed: ${driftErr.message}`
+      : driftCount === 0
+        ? '全 live 記事に deployed_hash あり'
+        : `${driftCount} 件が DB live なのに deployed_hash=null (FTP 未到達の可能性) / note: deploy/route.ts が成功時に articles.deployed_hash を更新するよう follow-up が必要`,
+    failedSamples: h14Failed.slice(0, 10),
+  });
+
   // ── サマリ出力 ────────────────────────────────────────────────────────────
   const summary = {
     timestamp: new Date().toISOString(),
