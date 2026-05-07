@@ -16,7 +16,14 @@
 //   - 既存 cta-generator.ts / publish-control コアには手を加えない
 //   - 記事本文への write を行わない (純粋関数のみ)
 //   - DB アクセスは行わない (永続化は persist-cta-variants.ts に分離)
+//
+// 可観測化:
+//   - 入力検証失敗 / 内部例外を logger.error('ai', 'cta_variants.failed', ...) で記録。
+//     旧実装は console.log のみで Vercel ログに構造化されず、ゼロ生成中の
+//     CTA 生成失敗が silent に流れる原因になっていた。
 // ============================================================================
+
+import { logger } from '@/lib/logger';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -197,46 +204,69 @@ function buildUtmContent(position: CtaPosition, personaSlug: string, variantLabe
  * persona × intent から copy_text を生成、固定リストから micro_copy を選択する。
  */
 export function generateCtaVariants(input: GenerateCtaVariantsInput): CtaVariant[] {
-  if (!input.articleSlug || input.articleSlug.trim() === '') {
-    throw new Error('generateCtaVariants: articleSlug is required');
-  }
-  if (!input.persona || !input.persona.id) {
-    throw new Error('generateCtaVariants: persona.id is required');
-  }
-  if (!INTENT_FLAVORS[input.intent]) {
-    throw new Error(`generateCtaVariants: unknown intent "${input.intent}"`);
-  }
-
-  console.log('[cta-generator.begin]', {
-    articleSlug: input.articleSlug,
-    intent: input.intent,
-    persona_id: input.persona.id,
+  const startedAt = Date.now();
+  logger.info('ai', 'cta_variants.start', {
+    article_slug: input?.articleSlug,
+    intent: input?.intent,
+    persona_id: input?.persona?.id,
   });
 
-  const toneKey = resolvePersonaToneKey(input.persona);
-  const personaSlug = personaSlugForUtm(input.persona);
+  try {
+    if (!input.articleSlug || input.articleSlug.trim() === '') {
+      throw new Error('generateCtaVariants: articleSlug is required');
+    }
+    if (!input.persona || !input.persona.id) {
+      throw new Error('generateCtaVariants: persona.id is required');
+    }
+    if (!INTENT_FLAVORS[input.intent]) {
+      throw new Error(`generateCtaVariants: unknown intent "${input.intent}"`);
+    }
 
-  const positions: CtaPosition[] = [1, 2, 3];
+    const toneKey = resolvePersonaToneKey(input.persona);
+    const personaSlug = personaSlugForUtm(input.persona);
 
-  const variants = positions.map((position) => {
-    const stage = stageFor(position);
-    const variantLabel = variantLabelFor(position);
-    const copyText = buildCopyText(input.intent, toneKey, stage);
-    const microCopy = pickMicroCopy(input.articleSlug, input.persona.id, position);
-    const utmContent = buildUtmContent(position, personaSlug, variantLabel);
+    const positions: CtaPosition[] = [1, 2, 3];
 
-    return {
-      position,
-      persona_id: input.persona.id,
-      stage,
-      copy_text: copyText,
-      micro_copy: microCopy,
-      variant_label: variantLabel,
-      utm_content: utmContent,
-    };
-  });
+    const variants = positions.map((position) => {
+      const stage = stageFor(position);
+      const variantLabel = variantLabelFor(position);
+      const copyText = buildCopyText(input.intent, toneKey, stage);
+      const microCopy = pickMicroCopy(input.articleSlug, input.persona.id, position);
+      const utmContent = buildUtmContent(position, personaSlug, variantLabel);
 
-  console.log('[cta-generator.end]', { variants_count: variants.length });
+      return {
+        position,
+        persona_id: input.persona.id,
+        stage,
+        copy_text: copyText,
+        micro_copy: microCopy,
+        variant_label: variantLabel,
+        utm_content: utmContent,
+      };
+    });
 
-  return variants;
+    logger.info('ai', 'cta_variants.end', {
+      article_slug: input.articleSlug,
+      variants_count: variants.length,
+      elapsed_ms: Date.now() - startedAt,
+    });
+
+    return variants;
+  } catch (err) {
+    const e = err as Error;
+    logger.error(
+      'ai',
+      'cta_variants.failed',
+      {
+        article_slug: input?.articleSlug,
+        intent: input?.intent,
+        persona_id: input?.persona?.id,
+        error_message: e?.message ?? String(err),
+        stack: e?.stack?.slice(0, 500),
+        elapsed_ms: Date.now() - startedAt,
+      },
+      err,
+    );
+    throw err;
+  }
 }

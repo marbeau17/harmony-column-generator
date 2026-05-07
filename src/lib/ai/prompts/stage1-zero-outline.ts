@@ -432,17 +432,61 @@ export async function generateZeroOutlineWithValidation(
     topP: 0.9,
   };
 
+  const startedAt = Date.now();
+  logger.info('ai', 'stage1_zero_outline.start', {
+    request_id: opts.requestId,
+    theme_id: input?.theme?.id,
+    persona_id: input?.persona?.id,
+    keywords_count: input?.keywords?.length ?? 0,
+    intent: input?.intent,
+    target_length: input?.target_length,
+    retry_enabled: retry,
+  });
+
   const { system, user } = buildZeroOutlinePrompt(input);
 
   // 1 回目
-  const first = await generate<unknown>(system, user, generateOptions);
+  const t0 = Date.now();
+  let first;
+  try {
+    first = await generate<unknown>(system, user, generateOptions);
+  } catch (err) {
+    const e = err as Error;
+    logger.error(
+      'ai',
+      'stage1_zero_outline.generate_json_failed',
+      {
+        request_id: opts.requestId,
+        attempt: 1,
+        elapsed_ms: Date.now() - t0,
+        error_message: e?.message ?? String(err),
+        stack: e?.stack?.slice(0, 500),
+      },
+      err,
+    );
+    throw err;
+  }
   const parsed1 = parseZeroOutlineOutput(first.data, {
     requestId: opts.requestId,
     attempt: 1,
   });
-  if (parsed1) return parsed1;
+  if (parsed1) {
+    logger.info('ai', 'stage1_zero_outline.end', {
+      request_id: opts.requestId,
+      attempt: 1,
+      elapsed_ms: Date.now() - startedAt,
+      h2_count: parsed1.h2_chapters?.length ?? 0,
+    });
+    return parsed1;
+  }
 
   if (!retry) {
+    logger.error('ai', 'stage1_zero_outline.failed', {
+      request_id: opts.requestId,
+      attempt: 1,
+      elapsed_ms: Date.now() - startedAt,
+      error_message: 'schema validation failed (retry disabled)',
+    });
     throw new Error(
       'Stage1 outline schema validation failed (retry disabled)',
     );
@@ -455,14 +499,48 @@ export async function generateZeroOutlineWithValidation(
     'lead_summary / narrative_arc / emotion_curve / h2_chapters / citation_highlights / faq_items / image_prompts を' +
     '**全て**埋め、image_prompts は必ず配列形式で返してください。';
 
-  const second = await generate<unknown>(system, retryUser, generateOptions);
+  const t1 = Date.now();
+  let second;
+  try {
+    second = await generate<unknown>(system, retryUser, generateOptions);
+  } catch (err) {
+    const e = err as Error;
+    logger.error(
+      'ai',
+      'stage1_zero_outline.generate_json_failed',
+      {
+        request_id: opts.requestId,
+        attempt: 2,
+        elapsed_ms: Date.now() - t1,
+        total_elapsed_ms: Date.now() - startedAt,
+        error_message: e?.message ?? String(err),
+        stack: e?.stack?.slice(0, 500),
+      },
+      err,
+    );
+    throw err;
+  }
   const parsed2 = parseZeroOutlineOutput(second.data, {
     requestId: opts.requestId,
     attempt: 2,
   });
-  if (parsed2) return parsed2;
+  if (parsed2) {
+    logger.info('ai', 'stage1_zero_outline.end', {
+      request_id: opts.requestId,
+      attempt: 2,
+      elapsed_ms: Date.now() - startedAt,
+      h2_count: parsed2.h2_chapters?.length ?? 0,
+    });
+    return parsed2;
+  }
 
   // 2 度連続失敗 → 致命扱い（呼び出し側で 502/500 を返す）
+  logger.error('ai', 'stage1_zero_outline.failed', {
+    request_id: opts.requestId,
+    attempt: 2,
+    elapsed_ms: Date.now() - startedAt,
+    error_message: 'schema validation failed after retry',
+  });
   throw new Error(
     'Stage1 outline schema validation failed after retry',
   );

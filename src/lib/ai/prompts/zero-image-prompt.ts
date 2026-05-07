@@ -8,6 +8,7 @@
 // （image-prompt.ts は LLM 経由生成、本ファイルは ZeroOutline からの直接合成）
 // ============================================================================
 
+import { logger } from '@/lib/logger';
 import type { ZeroOutlineOutput } from './stage1-zero-outline';
 
 // ─── 共通スタイル / ネガティブ ────────────────────────────────────────────────
@@ -209,56 +210,79 @@ function composePrompt(params: {
 export function buildZeroImagePrompts(
   input: ZeroImagePromptInput,
 ): ZeroImagePromptResult {
-  const { outline } = input;
+  const startedAt = Date.now();
+  const outline = input?.outline;
 
-  console.log('[image-prompt.begin]', {
-    theme_name: input.theme?.name,
-    has_visual_mood: !!input.theme?.visual_mood,
-    has_image_style: !!input.persona?.image_style,
-    outline_h2_count: outline.h2_chapters?.length ?? 0,
+  logger.info('ai', 'zero_image_prompt.start', {
+    theme_name: input?.theme?.name,
+    has_visual_mood: !!input?.theme?.visual_mood,
+    has_image_style: !!input?.persona?.image_style,
+    outline_h2_count: outline?.h2_chapters?.length ?? 0,
   });
 
-  const personaStyle = buildPersonaStyle(input.persona?.image_style);
-  const themeMood = buildThemeMood(input.theme?.visual_mood);
-  const motif = resolveThemeMotif(input.theme?.name);
+  try {
+    if (!outline) {
+      throw new Error('buildZeroImagePrompts: outline is required');
+    }
 
-  // outline からの fallback context（lead_summary を簡易翻案に使う）
-  const fallbackBase =
-    outline.lead_summary?.slice(0, 80) ?? 'gentle spiritual scene';
+    const personaStyle = buildPersonaStyle(input.persona?.image_style);
+    const themeMood = buildThemeMood(input.theme?.visual_mood);
+    const motif = resolveThemeMotif(input.theme?.name);
 
-  const slots: Array<'hero' | 'body' | 'summary'> = ['hero', 'body', 'summary'];
-  const result: Record<'hero' | 'body' | 'summary', string> = {
-    hero: '',
-    body: '',
-    summary: '',
-  };
+    // outline からの fallback context（lead_summary を簡易翻案に使う）
+    const fallbackBase =
+      outline.lead_summary?.slice(0, 80) ?? 'gentle spiritual scene';
 
-  for (const slot of slots) {
-    const seed = pickOutlineSeed(outline, slot);
-    const fallbackContext =
-      slot === 'hero'
-        ? `${fallbackBase} — opening atmosphere of the article`
-        : slot === 'body'
-          ? `${fallbackBase} — symbolic moment from the middle chapter`
-          : `${fallbackBase} — quiet hopeful closing scene`;
+    const slots: Array<'hero' | 'body' | 'summary'> = ['hero', 'body', 'summary'];
+    const result: Record<'hero' | 'body' | 'summary', string> = {
+      hero: '',
+      body: '',
+      summary: '',
+    };
 
-    result[slot] = composePrompt({
-      slot,
-      outlineSeed: seed,
-      personaStyle,
-      themeMood,
-      motif,
-      fallbackContext,
+    for (const slot of slots) {
+      const seed = pickOutlineSeed(outline, slot);
+      const fallbackContext =
+        slot === 'hero'
+          ? `${fallbackBase} — opening atmosphere of the article`
+          : slot === 'body'
+            ? `${fallbackBase} — symbolic moment from the middle chapter`
+            : `${fallbackBase} — quiet hopeful closing scene`;
+
+      result[slot] = composePrompt({
+        slot,
+        outlineSeed: seed,
+        personaStyle,
+        themeMood,
+        motif,
+        fallbackContext,
+      });
+    }
+
+    logger.info('ai', 'zero_image_prompt.end', {
+      hero_chars: result.hero.length,
+      body_chars: result.body.length,
+      summary_chars: result.summary.length,
+      elapsed_ms: Date.now() - startedAt,
     });
+
+    return result;
+  } catch (err) {
+    const e = err as Error;
+    logger.error(
+      'ai',
+      'zero_image_prompt.failed',
+      {
+        theme_name: input?.theme?.name,
+        outline_h2_count: outline?.h2_chapters?.length ?? 0,
+        error_message: e?.message ?? String(err),
+        stack: e?.stack?.slice(0, 500),
+        elapsed_ms: Date.now() - startedAt,
+      },
+      err,
+    );
+    throw err;
   }
-
-  console.log('[image-prompt.end]', {
-    hero_chars: result.hero.length,
-    body_chars: result.body.length,
-    summary_chars: result.summary.length,
-  });
-
-  return result;
 }
 
 // ─── 補助 export（テスト用） ──────────────────────────────────────────────────

@@ -27,6 +27,7 @@
 // ============================================================================
 
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { logger } from '@/lib/logger';
 import type { CtaVariant } from '@/lib/content/cta-variants-generator';
 
 /**
@@ -40,58 +41,105 @@ export async function persistCtaVariants(
   articleId: string,
   variants: CtaVariant[],
 ): Promise<void> {
+  const startedAt = Date.now();
+  logger.info('db', 'cta_variants.persist.start', {
+    article_id: articleId,
+    variants_count: Array.isArray(variants) ? variants.length : null,
+  });
+
   if (!articleId || articleId.trim() === '') {
+    logger.error('db', 'cta_variants.persist.failed', {
+      elapsed_ms: Date.now() - startedAt,
+      error_message: 'articleId is required',
+      phase: 'validate_input',
+    });
     throw new Error('persistCtaVariants: articleId is required');
   }
   if (!Array.isArray(variants) || variants.length === 0) {
+    logger.error('db', 'cta_variants.persist.failed', {
+      article_id: articleId,
+      elapsed_ms: Date.now() - startedAt,
+      error_message: 'variants must be a non-empty array',
+      phase: 'validate_input',
+    });
     throw new Error('persistCtaVariants: variants must be a non-empty array');
   }
 
-  const startedAt = Date.now();
-  console.log('[persist.cta.begin]', {
-    articleId,
-    variants_count: variants.length,
-  });
+  try {
+    const supabase = await createServiceRoleClient();
 
-  const supabase = await createServiceRoleClient();
+    // ─── 既存レコードを削除 (DELETE+INSERT) ─────────────────────────────────
+    const { error: deleteError } = await supabase
+      .from('cta_variants')
+      .delete()
+      .eq('article_id', articleId);
 
-  // ─── 既存レコードを削除 (DELETE+INSERT) ─────────────────────────────────
-  const { error: deleteError } = await supabase
-    .from('cta_variants')
-    .delete()
-    .eq('article_id', articleId);
+    if (deleteError) {
+      logger.error('db', 'cta_variants.persist.failed', {
+        article_id: articleId,
+        elapsed_ms: Date.now() - startedAt,
+        error_message: deleteError.message,
+        code: (deleteError as { code?: string }).code,
+        phase: 'delete',
+      });
+      throw new Error(
+        `persistCtaVariants: delete failed for article ${articleId}: ${deleteError.message}`,
+      );
+    }
 
-  if (deleteError) {
-    throw new Error(
-      `persistCtaVariants: delete failed for article ${articleId}: ${deleteError.message}`,
-    );
+    // ─── 新規 3 行を INSERT ─────────────────────────────────────────────────
+    const rows = variants.map((v) => ({
+      article_id: articleId,
+      position: v.position,
+      persona_id: v.persona_id,
+      stage: v.stage,
+      copy_text: v.copy_text,
+      micro_copy: v.micro_copy,
+      variant_label: v.variant_label,
+      utm_content: v.utm_content,
+    }));
+
+    const { error: insertError } = await supabase
+      .from('cta_variants')
+      .insert(rows);
+
+    if (insertError) {
+      logger.error('db', 'cta_variants.persist.failed', {
+        article_id: articleId,
+        elapsed_ms: Date.now() - startedAt,
+        error_message: insertError.message,
+        code: (insertError as { code?: string }).code,
+        rows_count: rows.length,
+        phase: 'insert',
+      });
+      throw new Error(
+        `persistCtaVariants: insert failed for article ${articleId}: ${insertError.message}`,
+      );
+    }
+
+    logger.info('db', 'cta_variants.persist.end', {
+      article_id: articleId,
+      inserted: rows.length,
+      elapsed_ms: Date.now() - startedAt,
+    });
+  } catch (err) {
+    const e = err as Error;
+    // 上の error 分岐で既にログ済みのケースもあるが、createServiceRoleClient 等の
+    // 予期せぬ例外を確実に拾うため再ログ（duplicate でも silent failure よりまし）
+    if (!/persistCtaVariants:/.test(e?.message ?? '')) {
+      logger.error(
+        'db',
+        'cta_variants.persist.failed',
+        {
+          article_id: articleId,
+          elapsed_ms: Date.now() - startedAt,
+          error_message: e?.message ?? String(err),
+          stack: e?.stack?.slice(0, 500),
+          phase: 'unexpected',
+        },
+        err,
+      );
+    }
+    throw err;
   }
-
-  // ─── 新規 3 行を INSERT ─────────────────────────────────────────────────
-  const rows = variants.map((v) => ({
-    article_id: articleId,
-    position: v.position,
-    persona_id: v.persona_id,
-    stage: v.stage,
-    copy_text: v.copy_text,
-    micro_copy: v.micro_copy,
-    variant_label: v.variant_label,
-    utm_content: v.utm_content,
-  }));
-
-  const { error: insertError } = await supabase
-    .from('cta_variants')
-    .insert(rows);
-
-  if (insertError) {
-    throw new Error(
-      `persistCtaVariants: insert failed for article ${articleId}: ${insertError.message}`,
-    );
-  }
-
-  console.log('[persist.cta.end]', {
-    articleId,
-    inserted: rows.length,
-    elapsed_ms: Date.now() - startedAt,
-  });
 }

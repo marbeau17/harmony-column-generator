@@ -13,6 +13,7 @@
 // ============================================================================
 
 import { generateEmbedding } from '@/lib/ai/embedding-client';
+import { logger } from '@/lib/logger';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -194,8 +195,11 @@ async function callMatchRpc(
   });
 
   if (error) {
-    console.warn('[retrieve-chunks.rpc_failed]', {
-      message: error.message ?? String(error),
+    logger.error('ai', 'rag.retrieve_chunks.rpc_failed', {
+      error_message: error.message ?? String(error),
+      code: (error as { code?: string }).code,
+      candidate_pool_size: candidatePoolSize,
+      filter_themes: themeFilter,
     });
     return null;
   }
@@ -224,19 +228,37 @@ export async function retrieveChunks(
   const lambda = input.mmrLambda ?? 0.7;
 
   const fnStart = Date.now();
-  console.log('[rag.retrieve-chunks.begin]', {
+  logger.info('ai', 'rag.retrieve_chunks.start', {
     theme: input.theme,
     persona_pain_chars: (input.persona_pain ?? '').length,
     keywords_count: (input.keywords ?? []).length,
-    similarityThreshold: threshold,
-    topK,
-    poolSize,
+    similarity_threshold: threshold,
+    top_k: topK,
+    pool_size: poolSize,
   });
 
   const queryText = buildQueryText(input);
 
   const t0 = Date.now();
-  const queryEmbedding = await generateEmbedding(queryText, 'RETRIEVAL_QUERY');
+  let queryEmbedding: number[];
+  try {
+    queryEmbedding = await generateEmbedding(queryText, 'RETRIEVAL_QUERY');
+  } catch (err) {
+    const e = err as Error;
+    logger.error(
+      'ai',
+      'rag.retrieve_chunks.embedding_failed',
+      {
+        theme: input.theme,
+        elapsed_ms: Date.now() - fnStart,
+        embedding_elapsed_ms: Date.now() - t0,
+        error_message: e?.message ?? String(err),
+        stack: e?.stack?.slice(0, 500),
+      },
+      err,
+    );
+    throw err;
+  }
   const queryEmbeddingMs = Date.now() - t0;
 
   // theme filter は RPC 側 (themes && filter_themes) で適用してもらう
@@ -248,14 +270,13 @@ export async function retrieveChunks(
 
   if (!rows) {
     // RPC が無い／失敗した場合は空で返す（呼出元で警告ハンドリング）
-    console.log('[rag.retrieve-chunks.end]', {
+    logger.warn('ai', 'rag.retrieve_chunks.insufficient_grounding', {
       chunks_returned: 0,
       top_similarity: null,
-      warning: 'insufficient_grounding',
-      elapsed_ms: Date.now() - fnStart,
-      queryEmbeddingMs,
-      retrievalMs,
       reason: 'rpc_failed_or_missing',
+      elapsed_ms: Date.now() - fnStart,
+      query_embedding_ms: queryEmbeddingMs,
+      retrieval_ms: retrievalMs,
     });
     return {
       chunks: [],
@@ -317,16 +338,16 @@ export async function retrieveChunks(
     result.warning = 'insufficient_grounding';
   }
 
-  console.log('[rag.retrieve-chunks.end]', {
+  logger.info('ai', 'rag.retrieve_chunks.end', {
     chunks_returned: finalChunks.length,
     top_similarity: finalChunks.length > 0 ? finalChunks[0].similarity : null,
     warning: result.warning ?? null,
     elapsed_ms: Date.now() - fnStart,
-    queryEmbeddingMs,
-    retrievalMs,
-    candidateCount,
-    afterFilterCount,
-    afterThresholdCount,
+    query_embedding_ms: queryEmbeddingMs,
+    retrieval_ms: retrievalMs,
+    candidate_count: candidateCount,
+    after_filter_count: afterFilterCount,
+    after_threshold_count: afterThresholdCount,
   });
 
   return result;
