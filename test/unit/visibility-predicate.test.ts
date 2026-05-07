@@ -92,7 +92,8 @@ describe('isDeployable', () => {
     ['pending_review', false],
     ['idle', true],
     ['deploying', false],
-    ['live', false],
+    // P5-73: live は再デプロイ可能 (state machine は元から live → deploying を許可)
+    ['live', true],
     ['live_hub_stale', true],
     ['unpublished', true],
     ['failed', true],
@@ -143,8 +144,8 @@ describe('PUBLICLY_VISIBLE_STATES / DEPLOYABLE_STATES', () => {
     expect(PUBLICLY_VISIBLE_STATES).toEqual(['live', 'live_hub_stale']);
   });
 
-  it('DEPLOYABLE_STATES は idle / failed / live_hub_stale / unpublished を含む', () => {
-    expect(DEPLOYABLE_STATES).toEqual(['idle', 'failed', 'live_hub_stale', 'unpublished']);
+  it('DEPLOYABLE_STATES は idle / failed / live / live_hub_stale / unpublished を含む (P5-73)', () => {
+    expect(DEPLOYABLE_STATES).toEqual(['idle', 'failed', 'live', 'live_hub_stale', 'unpublished']);
   });
 
   it('両定数は predicate の真値集合と一致する', () => {

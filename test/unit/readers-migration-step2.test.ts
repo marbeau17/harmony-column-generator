@@ -68,8 +68,10 @@ describe('Step 2 readers migration — isDeployable (deploy gate)', () => {
     expect(isDeployable({ visibility_state: 'failed' })).toBe(true);
   });
 
-  it("visibility_state='live' は deploy 不要 (既に公開済み)", () => {
-    expect(isDeployable({ visibility_state: 'live' })).toBe(false);
+  it("visibility_state='live' は再デプロイ可能 (P5-73 緩和)", () => {
+    // P5-73: 編集後の差し替え/画像差し込み後の再 FTP 等のために 'live' を許可。
+    // state machine では元から 'live → deploying' が許可されているため整合する。
+    expect(isDeployable({ visibility_state: 'live' })).toBe(true);
   });
 
   it("visibility_state='pending_review' は deploy 不可 (review 待ち)", () => {
