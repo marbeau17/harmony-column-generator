@@ -82,19 +82,34 @@ export async function getFtpConfig(): Promise<FtpConfig> {
         });
       }
       if (ftp.host && ftp.user && ftp.password) {
+        // P5-76: 設定 UI は 'remotePath' キーで保存するが、過去のレコードは
+        //   'remoteBasePath' キーで保存されているケースがある (今回の事故元)。
+        //   両キーを許容し、見つかった方を採用。どちらも無ければデフォルト。
+        //   旧コードは ftp.remotePath のみを読んでいたため、DB に
+        //   remoteBasePath:'/spiritual/column/' の正しい値が入っていても
+        //   undefined → デフォルト /public_html/column/columns/ にフォールバックし、
+        //   全 FTP アップロードが harmony-mc.com の serve しない場所に上がっていた。
+        const dbRemotePath = ftp.remoteBasePath || ftp.remotePath;
         const config: FtpConfig = {
           host: ftp.host,
           user: ftp.user,
           password: ftp.password,
           port: ftp.port || 21,
-          secure: false,
-          remoteBasePath: ftp.remotePath || '/public_html/column/columns/',
+          secure: ftp.secure === true, // P5-76: DB の secure 値を尊重 (旧コードは false 固定)
+          remoteBasePath: dbRemotePath || '/public_html/column/columns/',
         };
         logger.info('deploy', 'ftp_uploader.get_ftp_config.end', {
           source: 'db',
           host: config.host,
           port: config.port,
+          secure: config.secure,
           remote_base_path: config.remoteBasePath,
+          // P5-76: 観測のためどちらのキーが採用されたかを記録
+          remote_path_key_used: ftp.remoteBasePath
+            ? 'remoteBasePath'
+            : ftp.remotePath
+              ? 'remotePath'
+              : 'default_fallback',
           elapsed_ms: Date.now() - startedAt,
         });
         return config;
