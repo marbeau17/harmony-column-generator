@@ -70,6 +70,12 @@ const imagePromptSchema = z.object({
 /**
  * Stage1 ゼロ生成 outline の zod schema。
  * Gemini 応答は generateJson で受け取った後、本 schema で parse される。
+ *
+ * P5-90: meta_description を必須フィールドとして導入する。
+ *   背景: article 643c3eba で meta_description='' のまま public 化が進み、
+ *   公開ダイアログでブロックされる事故が発生。Stage1 outline で構成と同時に
+ *   生成させ、Stage2 出力 / DB INSERT 段階の双方でゼロ字化を物理的に防ぐ。
+ *   100 字未満の場合は run-completion 側で Gemini フォールバック生成にフォールスルーする。
  */
 export const zeroOutlineOutputSchema = z.object({
   lead_summary: z.string().min(1),
@@ -79,6 +85,9 @@ export const zeroOutlineOutputSchema = z.object({
   citation_highlights: z.array(z.string()).min(1),
   faq_items: z.array(faqItemSchema).min(1),
   image_prompts: z.array(imagePromptSchema).min(1),
+  // P5-90: SEO meta_description は必須。空文字 / 50 字未満は schema 段で reject。
+  // 上限はやや緩く設定 (AI が 80〜140 を狙うが、誤差を許容して 200 まで)。
+  meta_description: z.string().min(50).max(200),
 });
 
 export type ZeroOutlineOutput = z.infer<typeof zeroOutlineOutputSchema>;
@@ -267,7 +276,7 @@ const YUKIKO_FB_14: readonly string[] = [
   '3. ""（ダブルクォーテーション）は使用禁止。重要語は「」（鍵括弧）で囲む',
   '4. 抽象表現の単独使用を禁止（「宇宙のエネルギー」「高い波動」等は具体例とセットで）',
   '5. 読者が「深い納得」を得られる構成にする：当たり前の結論にしない、視点の転換を必ず入れる',
-  '6. 語尾はやさしく：「〜ですね」「〜なんです」「〜ですよね」「〜かもしれません」を自然に混ぜる',
+  '6. 語尾はやさしく：「〜ですね」「〜なんです」「〜ですよね」「〜かもしれません」を自然に混ぜる。**全体の文の 15% 以上**を占めるよう配分する（quality_check 閾値整合）',
   '7. 比喩は日常から。木漏れ日・波紋などの常套句は避け、独自の比喩を最低2つ創作する',
   '8. オリジナリティ：元記事や類似記事と語順・語彙・接続を全面置換する',
   '9. 一文 25〜35 字を基本に、最長 50 字以内。短文と中文のリズムを刻む',
@@ -323,6 +332,12 @@ emotion_curve は H2 章数分の整数列で、-2（沈み込み）〜 +2（解
 - h2_chapters: 各章 title / summary / target_chars / arc_phase（awareness|wavering|acceptance|action のいずれか）
 - citation_highlights: 80〜120 字 × 3（記事内で引用されうる核心フレーズ）
 - faq_items: 2〜3 個の Q&A（Q は読者の検索クエリ風、A は 100〜150 字）
+- meta_description: **必須・100〜140 字の SEO 用説明文**（検索結果スニペットで読者を惹きつける）
+  - 主要キーワードを少なくとも 1 つ自然に含める（不自然な詰め込みは禁止）
+  - 由起子さんの優しい語り口で、記事の核心と読後の気づきを 1〜2 文で要約する
+  - 「いかがでしたでしょうか」「〜について解説します」等の AI 臭フレーズは禁止
+  - **絶対禁止例**: \`"meta_description": ""\`（空文字禁止 / 1 字でも空ならスキーマ違反として即リトライ対象）
+  - **絶対禁止例**: \`"meta_description": "（後で書く）"\` 等のプレースホルダ
 - image_prompts は必ず以下の **配列形式** で返すこと（オブジェクト形式 \`{hero, body, summary}\` は不可）:
 \`\`\`json
 "image_prompts": [
@@ -374,6 +389,7 @@ function buildUserPrompt(input: ZeroOutlineInput): string {
 4. citation_highlights は記事内に必ず登場させたい「核心フレーズ」を 3 つ。各 80〜120 字で、由起子さんの語り口で書く
 5. faq_items は読者が検索しそうな疑問。Q は短く、A は 100〜150 字
 6. image_prompts は hero / body / summary の 3 スロットすべて埋めること。**必ず配列形式 \`[{"slot": "hero", "prompt": "..."}, {"slot": "body", "prompt": "..."}, {"slot": "summary", "prompt": "..."}]\` で返すこと**。オブジェクト形式 \`{hero: "...", body: "...", summary: "..."}\` は禁止
+7. **meta_description は必ず 100〜140 字で生成すること**。空文字 / プレースホルダ / 50 字未満は即不合格。記事の核心を読者目線で 1〜2 文に圧縮し、主要キーワードを 1 つ自然に含めること
 
 ## 出力
 ZeroOutlineOutput スキーマに完全準拠した JSON のみを出力してください。`;

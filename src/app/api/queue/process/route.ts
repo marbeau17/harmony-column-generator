@@ -853,6 +853,8 @@ export async function POST(request: NextRequest) {
             keyword: article.keyword || undefined,
             metaDescription: article.meta_description || undefined,
             theme: article.theme || undefined,
+            // P5-88: CTA は post-process で挿入されるため、deploy 後 HTML で評価
+            article: article as unknown as import('@/types/article').Article,
           });
 
           console.log(`[queue] seo_check: Quality score=${checkResult.score}, passed=${checkResult.passed}, errors=${checkResult.errorCount}, warnings=${checkResult.warningCount}`);

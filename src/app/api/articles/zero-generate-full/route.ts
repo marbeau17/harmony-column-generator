@@ -469,6 +469,9 @@ async function insertZeroArticle(args: {
     narrative_arc: args.outline.narrative_arc ?? null,
     emotion_curve: args.outline.emotion_curve ?? null,
     citation_highlights: args.outline.citation_highlights ?? null,
+    // P5-90: Stage1 outline で生成された meta_description を articles 列に直接入れる。
+    // 空文字 / 100 字未満の場合は run-completion 側のランタイムゲートが Gemini フォールバックで補う。
+    meta_description: args.outline.meta_description ?? null,
     hallucination_score: args.hallucinationScore,
     yukiko_tone_score: args.yukikoToneScore,
   };

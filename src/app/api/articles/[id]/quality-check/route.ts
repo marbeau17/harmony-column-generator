@@ -17,9 +17,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const serviceClient = await createServiceRoleClient();
 
+    // P5-88: CTA 数チェックは deploy 後 HTML で評価する必要があるため
+    // article 全フィールドを取得して runQualityChecklist に渡す。
     const { data: article, error } = await serviceClient
       .from('articles')
-      .select('id, title, keyword, meta_description, theme, stage2_body_html, published_html, status, quality_overrides')
+      .select('*')
       .eq('id', articleId)
       .single();
 
@@ -38,6 +40,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       keyword: article.keyword || undefined,
       metaDescription: article.meta_description || undefined,
       theme: article.theme || undefined,
+      // CTA は post-process で挿入されるため、validator 側で deploy HTML を組み立てる
+      article: article as unknown as import('@/types/article').Article,
     });
 
     // P5-28: quality_overrides を適用 — ignore-warn された項目は pass 扱いに上書き

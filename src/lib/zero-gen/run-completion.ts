@@ -26,7 +26,7 @@
 // ============================================================================
 
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { generateImage } from '@/lib/ai/gemini-client';
+import { generateImage, generateText } from '@/lib/ai/gemini-client';
 import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 import {
   generateMetaDescription,
@@ -212,6 +212,91 @@ function validateCompletion(args: {
 export type CompletionProgress = (stage: string, info?: Record<string, unknown>) => void;
 
 /**
+ * P5-90: meta_description フォールバック生成。
+ *   Stage1 outline で meta_description が空 / 100 字未満だった場合に
+ *   本文 HTML から最終救済として Gemini に SEO 説明文を 100〜140 字で書かせる。
+ *   このパスを通すこと自体が異常 (Stage1 prompt 失効) なので、必ず logger.error を残す。
+ *   Gemini 呼び出しに失敗した場合はテンプレートベースの fallback を返す
+ *   (公開ダイアログを止めない最低限の safety net)。
+ */
+async function generateMetaDescriptionFromBody(args: {
+  articleId: string;
+  bodyHtml: string;
+  keyword: string;
+  leadSummary: string;
+  reason: string;
+}): Promise<string> {
+  const { articleId, bodyHtml, keyword, leadSummary, reason } = args;
+  // 本文を text-only に圧縮（先頭 1500 字程度に切り詰めて Gemini に渡す）
+  const plain = bodyHtml
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1500);
+
+  const systemPrompt =
+    'あなたはスピリチュアルカウンセラー小林由起子のコラムサイトの SEO 担当です。' +
+    '記事本文から検索結果のスニペットに表示される meta_description を生成してください。' +
+    '出力は description 本文のみ 1 行（前後の説明文・引用符・コードフェンス等は禁止）。';
+  const userPrompt =
+    `以下の記事本文から SEO meta_description を **必ず 100〜140 文字** で生成してください。\n` +
+    `\n## 制約\n` +
+    `- 主要キーワード「${keyword || '(未設定)'}」を自然に 1 回含める\n` +
+    `- 由起子さんの優しい語り口（「〜ですね」「〜なんです」等を自然に混ぜる）\n` +
+    `- 「いかがでしたでしょうか」「〜について解説します」等の AI 臭フレーズ禁止\n` +
+    `- 改行・引用符・コードフェンス・装飾は一切付けず、本文 1 行だけを出力する\n` +
+    `\n## リード要約\n${leadSummary || '(未設定)'}\n` +
+    `\n## 本文（先頭抜粋）\n${plain}\n`;
+
+  logger.error('ai', 'meta_description.fallback_invoked', {
+    article_id: articleId,
+    reason,
+    keyword,
+    body_chars: bodyHtml.length,
+  });
+
+  try {
+    const res = await generateText(systemPrompt, userPrompt, {
+      temperature: 0.5,
+      maxOutputTokens: 512,
+      timeoutMs: 60_000,
+    });
+    let text = (res.text ?? '').replace(/^[\s"'`]+|[\s"'`]+$/g, '').trim();
+    // 改行・コードフェンスを除去
+    text = text.replace(/```[\s\S]*?```/g, '').replace(/\s+/g, ' ').trim();
+    if (text.length > 200) text = text.slice(0, 199) + '…';
+    if (text.length < 100) {
+      logger.error('ai', 'meta_description.fallback_too_short', {
+        article_id: articleId,
+        length: text.length,
+        text_head: text.slice(0, 60),
+      });
+      // 最後の救済 — 既存ロジック (generateMetaDescription) で 100 字に padding
+      const padded = generateMetaDescription(
+        keyword || '記事',
+        leadSummary || plain.slice(0, 100),
+      );
+      if (padded.length > text.length) text = padded;
+    }
+    logger.info('ai', 'meta_description.fallback_ok', {
+      article_id: articleId,
+      length: text.length,
+    });
+    return text;
+  } catch (e) {
+    logger.error('ai', 'meta_description.fallback_failed', {
+      article_id: articleId,
+      error_message: (e as Error)?.message ?? String(e),
+    });
+    // Gemini が落ちても公開ダイアログを止めないため、テンプレートベースで補う。
+    return generateMetaDescription(
+      keyword || '記事',
+      leadSummary || plain.slice(0, 100),
+    );
+  }
+}
+
+/**
  * 既に Stage2 が完了している記事を「公開準備状態」まで進める。
  */
 export async function runZeroGenCompletion(args: {
@@ -391,12 +476,34 @@ export async function runZeroGenCompletion(args: {
     has_existing_meta: !!article.meta_description,
     has_existing_seo_filename: !!article.seo_filename,
   });
-  const metaDescription =
-    (article.meta_description as string | null) ??
+  // P5-90: meta_description ランタイムゲート。
+  //   Stage1 outline 由来 / DB 既存値 / generateMetaDescription fallback の順で確定するが、
+  //   いずれも空 / 100 字未満なら Gemini フォールバック (本文要約) を必ず通す。
+  //   100 字を最小条件とするのは公開ダイアログ側の SEO 品質ゲートと整合させるため。
+  const META_MIN_LEN = 100;
+  let metaDescription =
+    ((article.meta_description as string | null) ?? '').trim() ||
     generateMetaDescription(
       (article.keyword as string) ?? '',
       (article.lead_summary as string) ?? '',
     );
+  if (!metaDescription || metaDescription.trim().length < META_MIN_LEN) {
+    logger.error('ai', 'meta_description.runtime_gate_failed', {
+      article_id: articleId,
+      length: metaDescription?.length ?? 0,
+      head: (metaDescription ?? '').slice(0, 60),
+      source: article.meta_description ? 'db_existing' : 'template_fallback',
+    });
+    metaDescription = await generateMetaDescriptionFromBody({
+      articleId,
+      bodyHtml: updatedBodyHtml,
+      keyword: (article.keyword as string) ?? '',
+      leadSummary: (article.lead_summary as string) ?? '',
+      reason: !article.meta_description
+        ? 'meta_description_missing'
+        : 'meta_description_too_short',
+    });
+  }
   const seoFilename =
     (article.seo_filename as string | null) ??
     generateSlug((article.title as string) ?? '');
@@ -468,6 +575,29 @@ export async function runZeroGenCompletion(args: {
       throw new Error(
         `Template integrity build failed: ${(e as Error)?.message ?? String(e)}`,
       );
+    }
+    // P5-90: CTA カウント明示チェック (runTemplateCheck の cta_structure と二重ガード)。
+    //   stage2_body_html には CTA が含まれないため、deploy 用最終 HTML を組んだ後に
+    //   harmony-cta-inner ブロックが 2 つ以上あるかを直接数える。
+    //   2 未満なら publish 後に CTA 動線が機能しないため、明示的に logger.error。
+    //   実際の throw は下の runTemplateCheck (cta_structure) に任せ、本ログは
+    //   調査時の原因切り分けに使う。
+    const ctaInnerCount = (
+      previewHtml.match(/harmony-cta-inner/g) || []
+    ).length;
+    if (ctaInnerCount < 2) {
+      logger.error('ai', 'run_completion.cta_count_low', {
+        article_id: articleId,
+        slug: (article.slug as string | null) ?? null,
+        cta_inner_count: ctaInnerCount,
+        expected_min: 2,
+        deploy_html_chars: previewHtml.length,
+      });
+    } else {
+      logger.info('ai', 'run_completion.cta_count_ok', {
+        article_id: articleId,
+        cta_inner_count: ctaInnerCount,
+      });
     }
     const tplCheck = runTemplateCheck(previewHtml);
     logger.info('ai', 'template_check.end', {

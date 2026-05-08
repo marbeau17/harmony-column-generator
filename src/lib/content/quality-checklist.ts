@@ -6,6 +6,9 @@
 // これまでの運用で発生した全ての問題を反映。
 // ============================================================================
 
+import type { Article } from '@/types/article';
+import { buildDeployHtml } from '@/lib/deploy/article-html-builder';
+
 // ─── チェック結果の型定義 ────────────────────────────────────────────────────
 
 export type CheckSeverity = 'error' | 'warning';
@@ -489,6 +492,15 @@ export interface ChecklistInput {
   keyword?: string;
   metaDescription?: string;
   theme?: string;
+  /**
+   * P5-88: CTA は deploy 直前に `insertCtasIntoHtml` で挿入されるため、
+   * `stage2_body_html` には CTA が含まれない（含めると二重化する仕様）。
+   * CTA 配置数 / CTA URL チェックは「最終 deploy HTML」で評価しないと
+   * 必ず 0 箇所になり false positive を出す。
+   * `article` を渡すと validator は内部で `buildDeployHtml(article).html`
+   * を生成し、CTA 関連チェックだけそちらで実行する。
+   */
+  article?: Article;
 }
 
 /**
@@ -496,8 +508,22 @@ export interface ChecklistInput {
  * 全てのerrorレベル項目がpassの場合のみ passed=true を返す。
  */
 export function runQualityChecklist(input: ChecklistInput): ChecklistResult {
-  const { title, html, keyword, metaDescription } = input;
+  const { title, html, keyword, metaDescription, article } = input;
   const text = stripHtml(html);
+
+  // P5-88: CTA は post-process (insertCtasIntoHtml) で挿入されるため、
+  // CTA 系チェックは deploy 後 HTML を対象にする。
+  // article が渡されない呼び出し（既存テスト等）は従来通り html を流用する。
+  let ctaHtml = html;
+  if (article) {
+    try {
+      ctaHtml = buildDeployHtml(article).html;
+    } catch (e) {
+      // build に失敗した場合は従来 html にフォールバック。
+      // 握り潰すと silent done に近い false-positive 公開を招くため、最低限ログを残す。
+      console.warn('[quality-checklist] buildDeployHtml failed, falling back to body html', e);
+    }
+  }
 
   const items: CheckItem[] = [
     // 禁止表現
@@ -532,9 +558,9 @@ export function runQualityChecklist(input: ChecklistInput): ChecklistResult {
     ...checkKeywordDensity(text, keyword),
     ...checkMetaDescription(metaDescription),
 
-    // CTA
-    ...checkCtaCount(html),
-    ...checkCtaUrls(html),
+    // CTA — P5-88: deploy 後 HTML で評価（article が渡された場合のみ）
+    ...checkCtaCount(ctaHtml),
+    ...checkCtaUrls(ctaHtml),
   ];
 
   const errorCount = items.filter(i => i.status === 'fail' && i.severity === 'error').length;

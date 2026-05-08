@@ -19,6 +19,7 @@ import {
   replaceImagePlaceholders,
   type ImageFileRow,
 } from '@/lib/zero-gen/replace-placeholders';
+import { injectImagePlaceholders } from '@/lib/zero-gen/inject-placeholders';
 import toast from 'react-hot-toast';
 
 // ─── Theme labels ───────────────────────────────────────────────────────────
@@ -379,17 +380,51 @@ export default function ArticleEditPage() {
         ((latest.stage2_body_html ?? '').trim().length > 0
           ? (latest.stage2_body_html as string)
           : bodyHtml) || '';
-      const { html: newHtml, phase1, phase2 } = replaceImagePlaceholders(
-        sourceHtml,
-        imageFiles,
-      );
+      let workingHtml = sourceHtml;
+      let replaceResult = replaceImagePlaceholders(workingHtml, imageFiles);
+      let { phase1, phase2 } = replaceResult;
+      let total = phase1 + phase2;
+      let autoInjectInfo: { injected: string[]; skipped: string[] } | null = null;
 
-      const total = phase1 + phase2;
+      // P5-70: 「placeholder 0 件 + image_files >=1」 = AI が IMAGE プレースホルダを
+      // 欠落させた状態。orphan 画像を防ぐため cheerio で安全位置に placeholder を
+      // 自動注入し、replaceImagePlaceholders を再実行する。
+      // 詳細: src/lib/zero-gen/inject-placeholders.ts の冒頭ヘッダ参照。
+      if (total === 0 && imageFiles.length > 0) {
+        const inject = injectImagePlaceholders(workingHtml, imageFiles);
+        autoInjectInfo = { injected: inject.injected, skipped: inject.skipped };
+        if (inject.injected.length > 0) {
+          workingHtml = inject.html;
+          replaceResult = replaceImagePlaceholders(workingHtml, imageFiles);
+          phase1 = replaceResult.phase1;
+          phase2 = replaceResult.phase2;
+          total = phase1 + phase2;
+          console.log('[handleApplyImages] image_apply.auto_inject_placeholders', {
+            injected: inject.injected,
+            skipped: inject.skipped,
+            postReplaceTotal: total,
+            imageCount: imageFiles.length,
+          });
+        }
+      }
+
       if (total === 0) {
-        console.warn('[handleApplyImages] no replacements; image_files:', imageFiles);
-        toast.error('画像プレースホルダが見つかりませんでした');
+        // P5-70: auto-inject 後も置換 0 = 致命的エラー (h2 ゼロ等で安全位置なし)。
+        // 旧仕様 (toast + return) ではユーザーに伝わらず orphan 確定だったため、
+        // critical ログで明示する (CLAUDE.md anti-pattern「fetch エラーを catch で
+        // 握り潰すな」より fallback は持たせない)。
+        console.error(
+          '[handleApplyImages] critical: no replacements after auto-inject',
+          {
+            imageFiles,
+            autoInjectInfo,
+            sourceHtmlLength: sourceHtml.length,
+          },
+        );
+        toast.error('画像プレースホルダの自動注入に失敗しました（H2 見出しなし等）');
         return;
       }
+      const newHtml = replaceResult.html;
 
       // P5-66: DB UPDATE — stage2_body_html を即座に永続化（auto-save race 回避）
       const putRes = await fetch(`/api/articles/${articleId}`, {
@@ -413,8 +448,13 @@ export default function ArticleEditPage() {
         phase2,
         total,
         imageCount: imageFiles.length,
+        autoInjected: autoInjectInfo?.injected ?? [],
       });
-      toast.success(`画像 ${imageFiles.length} 枚を反映しました`);
+      toast.success(
+        autoInjectInfo && autoInjectInfo.injected.length > 0
+          ? `画像 ${imageFiles.length} 枚を反映しました（プレースホルダ自動注入: ${autoInjectInfo.injected.length} 件）`
+          : `画像 ${imageFiles.length} 枚を反映しました`,
+      );
     } catch (err) {
       console.error('[handleApplyImages] Error:', err);
       const msg = err instanceof Error ? err.message : '不明なエラー';
@@ -1065,23 +1105,35 @@ export default function ArticleEditPage() {
               >
                 キャンセル
               </button>
-              {/* P5-31: 緊急公開 — 品質チェック不合格でも理由を入力すれば公開可能。
-                  記事公開のループ詰まり (whack-a-mole) を防ぐ escape hatch。
-                  バックエンドは status 遷移のみで品質チェックは frontend ガードのみ。 */}
-              {qualityCheck && !(qualityCheck as Record<string, unknown>).passed && (
+              {/* P5-31: 緊急公開 — 警告のみ無視可能。
+                  ※ severity=error は frontend / backend 両方でブロックされる (公開不可)。
+                  warning だけ残っている場合に限り、理由を入力して公開できる。 */}
+              {(() => {
+                const qc = qualityCheck as
+                  | {
+                      passed?: boolean;
+                      errorCount?: number;
+                      warningCount?: number;
+                      items?: Array<{ id: string; status: string; severity: string }>;
+                    }
+                  | null;
+                const errorCount = qc?.errorCount ?? 0;
+                const warningOnly = !!qc && !qc.passed && errorCount === 0 && (qc.warningCount ?? 0) > 0;
+                return warningOnly;
+              })() && (
                 <button
                   type="button"
                   onClick={async () => {
                     const reason = window.prompt(
-                      '品質チェックを無視して公開する理由を入力してください\n（監査ログに記録されます）',
+                      '品質警告を無視して公開する理由を入力してください\n（監査ログに記録されます）',
                     );
                     if (!reason || reason.trim().length === 0) return;
-                    // 全 fail/warn item を quality_overrides に bulk add
+                    // warn item のみ quality_overrides に bulk add（error は対象外）
                     const items = (qualityCheck as Record<string, unknown>).items as
                       | Array<{ id: string; status: string; severity: string }>
                       | undefined;
                     const failingItems = (items ?? []).filter(
-                      (i) => i.status === 'fail' || i.status === 'warn',
+                      (i) => (i.status === 'fail' || i.status === 'warn') && i.severity !== 'error',
                     );
                     setPublishing(true);
                     try {
@@ -1176,23 +1228,47 @@ export default function ArticleEditPage() {
                   }}
                   disabled={publishing || qualityLoading}
                   className="px-4 py-2 text-sm rounded-lg border border-orange-400 bg-orange-50 text-orange-800 hover:bg-orange-100 disabled:opacity-50 dark:border-orange-700 dark:bg-orange-950/40 dark:text-orange-100"
-                  title="品質チェックを全て無視して公開（監査ログに記録）"
+                  title="警告のみ無視して公開（監査ログに記録）。エラーは無視できません。"
                 >
-                  ⚠️ 品質警告を無視して公開
+                  ⚠️ 警告を無視して公開
                 </button>
               )}
-              <button
-                onClick={handlePublish}
-                disabled={publishing || qualityLoading || (qualityCheck ? !(qualityCheck as Record<string, unknown>).passed : false)}
-                className={`px-4 py-2 text-sm rounded-lg transition-colors disabled:opacity-50 ${
-                  qualityCheck && !(qualityCheck as Record<string, unknown>).passed
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-brand-600 text-white hover:bg-brand-700'
-                }`}
-                title={qualityCheck && !(qualityCheck as Record<string, unknown>).passed ? '品質チェックに合格してから公開してください' : ''}
-              >
-                {publishing ? '公開中...' : qualityCheck && !(qualityCheck as Record<string, unknown>).passed ? '品質チェック不合格' : '公開する'}
-              </button>
+              {(() => {
+                const qc = qualityCheck as
+                  | { passed?: boolean; errorCount?: number; warningCount?: number }
+                  | null;
+                const errorCount = qc?.errorCount ?? 0;
+                const hasError = !!qc && errorCount > 0;
+                const failedNotError = !!qc && !qc.passed && !hasError; // warn 残りのみ
+                const disabled =
+                  publishing || qualityLoading || hasError || failedNotError;
+                const label = publishing
+                  ? '公開中...'
+                  : hasError
+                    ? `公開不可 (要修正: ${errorCount}件)`
+                    : failedNotError
+                      ? '警告残り — 上のボタンで公開'
+                      : '公開する';
+                const title = hasError
+                  ? '品質チェックでエラーが検出されました。エラーを修正してください（警告はこの方法では無視できません）'
+                  : failedNotError
+                    ? '警告のみ残っています。「警告を無視して公開」ボタンを使用してください'
+                    : '';
+                return (
+                  <button
+                    onClick={handlePublish}
+                    disabled={disabled}
+                    className={`px-4 py-2 text-sm rounded-lg transition-colors disabled:opacity-50 ${
+                      hasError || failedNotError
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-brand-600 text-white hover:bg-brand-700'
+                    }`}
+                    title={title}
+                  >
+                    {label}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>

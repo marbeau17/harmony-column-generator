@@ -93,21 +93,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       visibility_state: existing.visibility_state,
     });
 
-    // P5-35: ?force=true で品質チェック完全 bypass (緊急公開専用)
-    // これは frontend の override 適用 (P5-31) と二重ゲートになる安全装置
+    // P5-35: ?force=true は「警告」のみ bypass する（エラーは絶対 bypass 不可）。
+    // 公開後に静的サイトが壊れる原因の多くは severity=error の検査未通過なので、
+    // server 側の最終ガードとして力ずくの bypass を遮断する。
+    // - force=true: warning は素通り、error は引き続きブロック
+    // - force=false (通常): warning も error も passed=true 必須
     const forceParam = request.nextUrl.searchParams.get('force');
     const forceBypass = forceParam === 'true' || forceParam === '1';
     if (forceBypass) {
-      logger.warn('api', 'transition.force_bypass', {
+      logger.warn('api', 'transition.force_bypass_requested', {
         articleId: id,
         toStatus: status,
         userId: user.id,
+        note: 'force only suppresses warnings; errors still block',
       });
     }
 
-    // published への遷移時は品質チェックリストを実行 (force=true なら skip)
-    if (status === 'published' && !forceBypass) {
-      logger.info('api', 'transition.quality_check.start', { article_id: id });
+    // published への遷移時は必ず品質チェックリストを実行する。
+    // force=true でもエラーは block するため、unconditional に評価する。
+    if (status === 'published') {
+      logger.info('api', 'transition.quality_check.start', { article_id: id, force: forceBypass });
       const { runQualityChecklist } = await import('@/lib/content/quality-checklist');
       const html = existing.published_html || existing.stage2_body_html || '';
       if (!html) {
@@ -116,7 +121,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       if (html) {
         // P5-34: quality_overrides を取得 (escape hatch / ignore-warn 連携)
         // フロント (P5-31) で bulk override 後、backend transition でも pass 扱いに
-        // しないと公開できない。
+        // しないと公開できない。ただし severity=error の override は無効化する。
         type Override = { check_item_id: string };
         const { createServiceRoleClient } = await import('@/lib/supabase/server');
         const sb = await createServiceRoleClient();
@@ -133,48 +138,85 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           keyword: existing.keyword || undefined,
           metaDescription: existing.meta_description || undefined,
           theme: existing.theme || undefined,
+          // P5-88: CTA 数 / URL チェックは deploy 後 HTML を対象にする
+          // （CTA は post-process insertCtasIntoHtml で挿入されるため）
+          // ArticleRow ⊂ Article（カラム差は buildDeployHtml が参照しないため安全）
+          article: existing as unknown as import('@/types/article').Article,
         });
 
-        // override 適用
+        // override 適用 — severity='error' の override は無視する（不可侵な最終ガード）
         if (overrides.length > 0 && Array.isArray(checkResult.items)) {
           const overrideIds = new Set(overrides.map((o) => o.check_item_id));
-          let suppressedErrors = 0;
+          let suppressedWarnings = 0;
+          let blockedErrorOverrides = 0;
           for (const item of checkResult.items) {
             if (overrideIds.has(item.id) && item.status !== 'pass') {
-              if (item.severity === 'error') suppressedErrors++;
+              if (item.severity === 'error') {
+                blockedErrorOverrides++;
+                continue; // error の override は無効
+              }
+              suppressedWarnings++;
               item.status = 'pass';
               item.detail = `(無視済) ${item.detail ?? ''}`.trim();
             }
           }
-          checkResult.errorCount = Math.max(0, checkResult.errorCount - suppressedErrors);
+          // errorCount は元のまま（error は suppress 不可）。warning カウントだけ減らす。
+          checkResult.warningCount = Math.max(0, checkResult.warningCount - suppressedWarnings);
           checkResult.passed = checkResult.errorCount === 0;
           logger.info('api', 'transition.quality_overrides_applied', {
             articleId: id,
             overrides_count: overrides.length,
-            suppressed_errors: suppressedErrors,
+            suppressed_warnings: suppressedWarnings,
+            blocked_error_overrides: blockedErrorOverrides,
             now_passed: checkResult.passed,
           });
         }
 
-        if (!checkResult.passed) {
+        // 公開ブロック判定:
+        //   - エラー (severity=error) は force でも bypass 不可
+        //   - 警告 (severity=warning) は force=true なら素通り、それ以外は block
+        const hasBlockingErrors = checkResult.errorCount > 0;
+        const hasWarnings = !checkResult.passed === false ? false : (checkResult.warningCount ?? 0) > 0;
+        const blockReason = hasBlockingErrors
+          ? 'errors_present'
+          : !checkResult.passed && !forceBypass && hasWarnings
+            ? 'warnings_no_force'
+            : null;
+
+        if (blockReason) {
+          const failingFilter =
+            blockReason === 'errors_present'
+              ? (i: { status: string; severity: string }) => i.status === 'fail' && i.severity === 'error'
+              : (i: { status: string; severity: string }) => i.status !== 'pass';
           const failedItems = checkResult.items
-            .filter(i => i.status === 'fail' && i.severity === 'error')
+            .filter(failingFilter)
             .map(i => `${i.label}${i.detail ? ` (${i.detail})` : ''}`)
             .join('; ');
 
-          logger.warn('api', 'transition.quality_check.failed', {
+          const errorMsg =
+            blockReason === 'errors_present'
+              ? `品質チェック不合格 (エラー${checkResult.errorCount}件は公開前に必ず修正してください): ${failedItems}`
+              : `品質チェック不合格: ${failedItems}`;
+
+          logger.warn('api', 'transition.quality_check.blocked', {
             article_id: id,
+            block_reason: blockReason,
             error_count: checkResult.errorCount,
+            warning_count: checkResult.warningCount,
+            force_bypass: forceBypass,
             failed_items: failedItems,
           });
           return NextResponse.json({
-            error: `品質チェック不合格: ${failedItems}`,
+            error: errorMsg,
             qualityCheck: checkResult,
+            blockReason,
           }, { status: 422 });
         }
         logger.info('api', 'transition.quality_check.ok', {
           article_id: id,
           error_count: checkResult.errorCount,
+          warning_count: checkResult.warningCount,
+          force_bypass: forceBypass,
           item_count: checkResult.items.length,
         });
       }

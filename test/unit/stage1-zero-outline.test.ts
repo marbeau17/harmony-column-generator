@@ -183,6 +183,9 @@ const VALID_OUTLINE: ZeroOutlineOutput = {
     { slot: 'body', prompt: '木漏れ日の中の散歩道' },
     { slot: 'summary', prompt: '優しい光に包まれた夕暮れ' },
   ],
+  // P5-90: meta_description 必須化に伴い、テスト用の VALID_OUTLINE にも 100 字超の説明を追加。
+  meta_description:
+    'ペットロスの悲しみとそっと向き合うための小さなヒントを、由起子さんの優しい語り口でお届けします。あなたの心に寄り添う気づきが、ここにあります。',
 };
 
 describe('zeroOutlineOutputSchema (zod)', () => {
@@ -227,6 +230,30 @@ describe('zeroOutlineOutputSchema (zod)', () => {
       ...VALID_OUTLINE,
       h2_chapters: [{ ...VALID_OUTLINE.h2_chapters[0], target_chars: -1 }],
     });
+    expect(r.success).toBe(false);
+  });
+
+  // P5-90: meta_description 必須化
+  it('meta_description が空文字なら拒否する', () => {
+    const r = zeroOutlineOutputSchema.safeParse({
+      ...VALID_OUTLINE,
+      meta_description: '',
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('meta_description が 50 字未満なら拒否する', () => {
+    const r = zeroOutlineOutputSchema.safeParse({
+      ...VALID_OUTLINE,
+      meta_description: 'みじかすぎる',
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('meta_description が欠落していたら拒否する', () => {
+    const { meta_description: _omit, ...rest } = VALID_OUTLINE;
+    void _omit;
+    const r = zeroOutlineOutputSchema.safeParse(rest);
     expect(r.success).toBe(false);
   });
 });
