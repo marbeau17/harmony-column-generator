@@ -537,6 +537,34 @@ export async function POST(req: NextRequest) {
       elapsed_ms: Date.now() - startedAt,
     });
 
+    // ─── P5-78: 全エラーを 1 ログ + 生 stdout で必ず可読化 ─────────────────
+    // Vercel ログ検索が JSON 内部キーを取りこぼすため、平文 message を
+    // 改行区切りで ALL DUMP して console.error stdout 直書き。
+    if (errors.length > 0) {
+      const headline = `[BULK-DEPLOY-ERRORS] total=${total} failed=${failedCount} uploaded=${uploadedFiles}`;
+      console.error(headline);
+      for (const e of errors) {
+        // 1 行 = 1 記事のエラー (id, slug, full message)
+        console.error(`[BULK-DEPLOY-ERROR] id=${e.article_id} slug=${e.slug} msg=${e.message}`);
+      }
+      // 構造化ログ側にも 1 ペイロードでまとめて格納 (errors 配列を完全保持)
+      logger.error('api', 'bulk_deploy.errors_dump', {
+        total,
+        failed: failedCount,
+        success: successCount,
+        uploaded_files: uploadedFiles,
+        // 35 件全部の {article_id, slug, message} を含む
+        errors,
+      });
+      // Vercel runtime log で「最初の失敗の生メッセージ」を即特定するための
+      // 単独 error log。複数行ある中で最も読みやすい。
+      logger.error('api', 'bulk_deploy.first_error_for_diagnosis', {
+        article_id: errors[0].article_id,
+        slug: errors[0].slug,
+        message: errors[0].message,
+      });
+    }
+
     return NextResponse.json({
       total,
       success: successCount,
