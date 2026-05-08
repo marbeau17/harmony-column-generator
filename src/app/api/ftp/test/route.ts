@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { Client } from 'basic-ftp';
+import { attachFtpWireLogger } from '@/lib/deploy/ftp-wire-logger';
 import { logger } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
@@ -17,7 +18,8 @@ export async function POST(request: NextRequest) {
     }
 
     const client = new Client();
-    client.ftp.verbose = false;
+    // P5-77: FTP wire-level (PROTOCOL) transaction を logger 経由で出力
+    attachFtpWireLogger(client, { where: 'ftp_test' });
 
     try {
       await client.access({

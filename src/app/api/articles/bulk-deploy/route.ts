@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { buildDeployHtml } from '@/lib/deploy/article-html-builder';
 import { getFtpConfig } from '@/lib/deploy/ftp-uploader';
+import { attachFtpWireLogger } from '@/lib/deploy/ftp-wire-logger';
 import { logger } from '@/lib/logger';
 import type { Article } from '@/types/article';
 
@@ -47,10 +48,13 @@ async function connectFtp(
   articleId?: string,
 ) {
   const { Client } = await import('basic-ftp');
+  const { attachFtpWireLogger } = await import('@/lib/deploy/ftp-wire-logger');
   // P5-75: idle/control timeouts — long for serverless, but bounded.
   // basic-ftp の Client コンストラクタ第1引数で 60s を渡す (ftp.timeout は readonly)。
   const c = new Client(60000); // ← 60s per command (basic-ftp default は 30s)
-  c.ftp.verbose = false;
+  // P5-77: FTP wire-level (PROTOCOL) transaction を logger 経由で出力。
+  // verbose=true + log override で USER/PASS/PASV/STOR/サーバ応答コード等が見える。
+  attachFtpWireLogger(c, { where: 'bulk_deploy', article_id: articleId });
   logger.info('ftp', 'bulk_deploy.ftp.reconnect.attempt', {
     host: ftpConfig.host,
     port: ftpConfig.port || 21,
@@ -179,6 +183,8 @@ export async function POST(req: NextRequest) {
     const { Readable } = await import('stream');
     // P5-75: Client(60000) = 60s timeout (basic-ftp default は 30s)。ftp.timeout は readonly のためコンストラクタ経由。
     let client = new Client(60000);
+    // P5-77: 初回 client にも wire logger 装着 (connectFtp ヘルパーは reconnect 時のみ呼ばれるため)
+    attachFtpWireLogger(client, { where: 'bulk_deploy.initial' });
     client.ftp.verbose = false;
 
     const tFtpConnect = Date.now();

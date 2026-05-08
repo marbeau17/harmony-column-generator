@@ -457,6 +457,10 @@ export async function uploadToFtp(
   }
 
   const client = new Client();
+  // P5-77: FTP wire-level (PROTOCOL) transaction を logger 経由で出力
+  // (ESM 循環回避のため動的 import)
+  const { attachFtpWireLogger } = await import('@/lib/deploy/ftp-wire-logger');
+  attachFtpWireLogger(client, { where: 'ftp_uploader' });
   const errors: string[] = [];
   let uploaded = 0;
 
@@ -469,7 +473,6 @@ export async function uploadToFtp(
       secure: config.secure || false,
       elapsed_ms: Date.now() - startedAt,
     });
-    client.ftp.verbose = false;
     logger.info('ftp', 'ftp_uploader.access.attempt', {
       host: config.host,
       port: config.port || 21,

@@ -374,8 +374,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     // Use basic-ftp directly for binary support
     const { Client } = await import('basic-ftp');
+    const { attachFtpWireLogger } = await import('@/lib/deploy/ftp-wire-logger');
     const client = new Client();
-    client.ftp.verbose = false;
+    // P5-77: FTP wire-level (PROTOCOL) transaction を logger 経由で出力
+    attachFtpWireLogger(client, { where: 'article_deploy', article_id: articleId, slug });
 
     const uploaded: string[] = [];
     const errors: string[] = [];
