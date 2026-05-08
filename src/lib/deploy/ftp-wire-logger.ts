@@ -39,19 +39,36 @@ export interface FtpWireLoggerContext {
   request_id?: string;
 }
 
+export interface FtpWireLoggerOptions {
+  /** Errors-only mode: only emit `< 4xx`/`< 5xx` server responses. Default: false (verbose). */
+  errorsOnly?: boolean;
+}
+
 /**
  * basic-ftp Client に wire-level transaction logger を取り付ける。
  *
  * - client.ftp.verbose を true に設定
  * - client.ftp.log を override し logger.info で構造化出力
  * - パスワード行は ***** にマスクして漏洩防止 (PASS コマンドの引数を消す)
+ *
+ * P5-82: Vercel Functions Logs は 256 line/invocation の hard cap があるため、
+ *   bulk-deploy のように 1 invocation で多数の article を処理するケースでは
+ *   ftp_wire の冗長ログでログ枠が枯渇し、後続の bulk_deploy.end や errors_dump
+ *   が silently drop される。errorsOnly=true を渡すと FTP server の 4xx/5xx
+ *   応答のみ通し、command/成功応答を捨てることで枠を温存する。
  */
 export function attachFtpWireLogger(
   client: Client,
   context: FtpWireLoggerContext,
+  options: FtpWireLoggerOptions = {},
 ): void {
   client.ftp.verbose = true;
   client.ftp.log = (msg: string) => {
+    // P5-82: 256 line/invocation cap 対策。errorsOnly=true なら 4xx/5xx 応答のみ通す
+    if (options.errorsOnly) {
+      // 例: "< 530 Login incorrect.", "< 421 Service not available", "< 550 Permission denied"
+      if (!/^<\s*[45]\d{2}\b/.test(msg)) return;
+    }
     // PASS コマンドの平文パスワード漏洩を防ぐ
     const safe = /^>\s*PASS\s+/.test(msg) ? '> PASS *****' : msg;
     logger.info('ftp', 'ftp_wire', {
@@ -66,5 +83,6 @@ export function attachFtpWireLogger(
     where: context.where,
     article_id: context.article_id,
     slug: context.slug,
+    errors_only: options.errorsOnly === true,
   });
 }
