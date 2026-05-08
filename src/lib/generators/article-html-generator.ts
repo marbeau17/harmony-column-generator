@@ -7,6 +7,7 @@
 // harmony-mc.com と完全にシームレスな見た目を実現。
 // ============================================================================
 
+import * as cheerio from 'cheerio';
 import { insertCtasIntoHtml, selectCtaTexts } from '@/lib/content/cta-generator';
 import { getStickyCtaBarCss, getStickyCtaBarHtml } from '@/lib/generators/sticky-cta-bar';
 import {
@@ -839,8 +840,19 @@ function buildBodyWithCtas(article: Article, slug: string): string {
   bodyHtml = bodyHtml.replace(/<br\s*\/?>\s*(<\/?(?:nav|details|summary|ol|li|div|a|p)\b)/gi, '$1');
   bodyHtml = bodyHtml.replace(/(<\/?(?:nav|details|summary|ol|li|div|a|p)[^>]*>)\s*<br\s*\/?>/gi, '$1');
   // 3. AI が勝手に挿入したCTAを全パターン除去（正規のinsertCtasIntoHtmlで再挿入される）
-  // P5-58: nested div を誤マッチしないよう [^<]* ベースに変更（CTA は p 1 個 + a 1 個の単純構造前提）
-  bodyHtml = bodyHtml.replace(/<div class="harmony-cta">\s*<p class="harmony-cta-catch">[^<]*<a[^>]*>[^<]*<\/a>\s*<\/p>\s*<\/div>/gi, '');
+  // P5-80: harmony-cta cleanup を cheerio 化 (regex は AI variant に対応できない)
+  // 詳細: AI が <a> を <p> 兄弟に出すケースで regex が miss → 22/35 記事が template_check 422
+  // cheerio で全 variant を確実に除去する
+  const bodyHtmlBefore = bodyHtml;
+  const $ctaCleanup = cheerio.load(bodyHtml, null, false);
+  $ctaCleanup('.harmony-cta').remove();
+  bodyHtml = $ctaCleanup.html() ?? bodyHtml;
+  const removedCtaCount = (bodyHtmlBefore.match(/class="harmony-cta[\s"]/g) || []).length;
+  logger.info('generator', 'article_html.cta_cleanup.cheerio', {
+    article_id: article.id,
+    slug,
+    removed_cta_blocks: removedCtaCount,
+  });
   // 3b. AI生成の <a class="cta-button"> リンクブロック除去
   // P5-58: 段落跨ぎ防止のため [^<]* ベースに変更
   bodyHtml = bodyHtml.replace(/<p>\s*<a[^>]*class="cta-button"[^>]*>[^<]*<\/a>\s*<\/p>/gi, '');
