@@ -135,9 +135,11 @@ export function buildRelatedArticlesHtml(
         .replace(/\/index\.html$/, '')
         .replace(/\/$/, '');
       const thumbSrc = `${hubPath}/${slug}/images/hero.jpg`;
+      // P5-94: loading="lazy" 撤去。記事末尾固定 3 枚なので即時読込で UX 安定化
+      // (lazy だと viewport 直前まで src が空のまま灰色 placeholder に見える)
       return `<a href="${escAttr(a.href)}" class="article-related-card">
           <div class="article-related-card-thumb">
-            <img src="${escAttr(thumbSrc)}" alt="${escHtml(a.title)}" loading="lazy">
+            <img src="${escAttr(thumbSrc)}" alt="${escHtml(a.title)}" decoding="async">
           </div>
           <div class="article-related-card-title">${escHtml(a.title)}</div>
         </a>`;
