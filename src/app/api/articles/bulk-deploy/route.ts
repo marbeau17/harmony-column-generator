@@ -23,8 +23,11 @@ import type { Article } from '@/types/article';
 
 export const maxDuration = 300;
 
-// P5-75: 一定件数ごとに FTP セッションを張り直すことで control socket idle timeout を回避する。
-const RECONNECT_EVERY_N_ARTICLES = 5;
+// P5-79: lolipop.jp は長時間連続セッションを silent にドロップする挙動が確認された
+//   (hub-deploy=毎回 fresh connection は成功 / bulk-deploy=1 connection 維持で全 35 件失敗)。
+//   1 記事ごとに FTP を張り直すことで挙動を hub-deploy と揃え、信頼性を担保する。
+//   旧値: 5 (P5-75)
+const RECONNECT_EVERY_N_ARTICLES = 1;
 
 // P5-75: モジュールスコープでのフェイルセーフ — unhandledRejection を必ずログに残す。
 // 二重登録を防ぐため _bulkDeployHandlerRegistered フラグでガード。
