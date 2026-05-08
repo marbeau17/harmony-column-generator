@@ -307,11 +307,49 @@ async function retrieveRagChunks(input: {
 
 // ─── Stage2 writing 生成 ────────────────────────────────────────────────────
 
+// P5-88 (2026-05-08): AI 出力境界での harmony-cta 早期検出 (3rd defense layer)。
+// 防御層は 3 段構成:
+//   1) prompt 強化 (P5-87) — 「CTA 関連クラスを 1 文字も含めない」と明示
+//   2) AI 出力境界の検証 + 1 回 retry (本実装 / P5-88) ← ここ
+//   3) deploy 直前の cheerio cleanup (P5-80)
+// AI 出力に harmony-cta 系クラスが混入した場合、強化された注意文を付けて
+// 1 回だけ再試行する。再試行後も混入していれば warn ログのみ吐き、後段の
+// P5-80 cleanup に任せる（パイプライン全体は止めない / 耐障害性優先）。
+const FORBIDDEN_CTA_CLASSES = [
+  'harmony-cta-catch',
+  'harmony-cta-sub',
+  'harmony-cta-btn',
+  'harmony-cta-badge',
+  'harmony-cta-inner',
+  'harmony-cta-overlay',
+];
+
+interface ForbiddenCtaDetection {
+  found: string[];
+  hasHarmonyCtaDiv: boolean;
+  triggered: boolean;
+}
+
+function detectForbiddenCta(rawBody: string): ForbiddenCtaDetection {
+  const found = FORBIDDEN_CTA_CLASSES.filter(
+    (cls) =>
+      rawBody.includes(`class="${cls}"`) || rawBody.includes(`${cls}"`),
+  );
+  // <div class="harmony-cta"> / <div class="harmony-cta foo"> 等を捕捉
+  const hasHarmonyCtaDiv = /<div\s+class="harmony-cta[\s"]/i.test(rawBody);
+  return {
+    found,
+    hasHarmonyCtaDiv,
+    triggered: found.length > 0 || hasHarmonyCtaDiv,
+  };
+}
+
 async function generateStage2Body(args: {
   outline: ZeroOutlineOutput;
   theme: ThemeRow;
   persona: PersonaRow;
   retrievedChunks: ZeroWritingRetrievedChunk[];
+  requestId?: string;
 }): Promise<{ html: string; raw: unknown }> {
   const writingInput: ZeroWritingInput = {
     outline: args.outline,
@@ -331,7 +369,8 @@ async function generateStage2Body(args: {
 
   const { system, user: userPrompt } = buildZeroWritingPrompt(writingInput);
 
-  const { data } = await generateJson<unknown>(
+  // 1 回目
+  const { data: dataFirst } = await generateJson<unknown>(
     system,
     userPrompt,
     { temperature: ZERO_WRITING_TEMPERATURE, topP: 0.9, maxOutputTokens: 32000 },
@@ -342,7 +381,59 @@ async function generateStage2Body(args: {
   // (記事 #71 が editing 状態で stage2_body_html="" になった原因)。
   // P5-69 (2026-05-04): raw `data` を呼び出し側まで持ち帰り、空文字検査時に
   // response shape を導出できるようにした。
-  return { html: normalizeStage2Html(data), raw: data };
+  const htmlFirst = normalizeStage2Html(dataFirst);
+
+  // P5-88: AI 出力境界での harmony-cta 検証（DB 保存前 / cleanup 前）
+  const detectionFirst = detectForbiddenCta(htmlFirst);
+  if (!detectionFirst.triggered) {
+    return { html: htmlFirst, raw: dataFirst };
+  }
+
+  logger.warn('ai', 'stage2_zero_writing.forbidden_cta_detected', {
+    request_id: args.requestId,
+    attempt: 1,
+    found_classes: detectionFirst.found,
+    has_div: detectionFirst.hasHarmonyCtaDiv,
+  });
+
+  // 2 回目（強化された注意を付けて 1 回だけ retry）
+  const retryUser =
+    userPrompt +
+    '\n\n## 注意（再試行 / 重要）\n' +
+    '前回の応答に harmony-cta 系クラス（harmony-cta / harmony-cta-catch / ' +
+    'harmony-cta-sub / harmony-cta-btn / harmony-cta-badge / harmony-cta-inner / ' +
+    'harmony-cta-overlay のいずれか）が含まれていました。**Stage2 では絶対に ' +
+    'CTA を出力しないでください。** CTA は後段の post-process が自動挿入する ' +
+    '責務です。本文 HTML には harmony-cta で始まるクラス名や ' +
+    'https://harmony-booking.web.app/ への <a> リンクを **1 文字も** 含めないでください。';
+
+  const { data: dataSecond } = await generateJson<unknown>(
+    system,
+    retryUser,
+    { temperature: ZERO_WRITING_TEMPERATURE, topP: 0.9, maxOutputTokens: 32000 },
+  );
+  const htmlSecond = normalizeStage2Html(dataSecond);
+  const detectionSecond = detectForbiddenCta(htmlSecond);
+
+  if (detectionSecond.triggered) {
+    // retry 後もダメなら error ログのみ。pipeline は止めず後段 cleanup に委ねる。
+    logger.error(
+      'ai',
+      'stage2_zero_writing.forbidden_cta_persisted_after_retry',
+      {
+        request_id: args.requestId,
+        attempt: 2,
+        found_classes: detectionSecond.found,
+        has_div: detectionSecond.hasHarmonyCtaDiv,
+      },
+    );
+  } else {
+    logger.info('ai', 'stage2_zero_writing.forbidden_cta_resolved_on_retry', {
+      request_id: args.requestId,
+    });
+  }
+
+  return { html: htmlSecond, raw: dataSecond };
 }
 
 // ─── articles INSERT ──────────────────────────────────────────────────────
@@ -677,6 +768,7 @@ export async function POST(request: NextRequest) {
       theme,
       persona,
       retrievedChunks: rag.chunks,
+      requestId,
     });
     bodyHtml = stage2.html;
 

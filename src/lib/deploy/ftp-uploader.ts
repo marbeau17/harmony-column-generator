@@ -8,6 +8,7 @@
 import { Client } from 'basic-ftp';
 import { Readable } from 'stream';
 import { logger } from '@/lib/logger';
+import { normalizeFtpSettings } from '@/lib/validators/settings-ftp';
 
 // ─── 型定義 ─────────────────────────────────────────────────────────────────
 
@@ -69,54 +70,84 @@ export async function getFtpConfig(): Promise<FtpConfig> {
     });
 
     if (data?.value) {
-      const ftp = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
-      // 必須欠損項目を可視化 (DB から取得 — UI で空のまま保存されたケース等)
-      const missingDb: string[] = [];
-      if (!ftp.host) missingDb.push('host');
-      if (!ftp.user) missingDb.push('user');
-      if (!ftp.password) missingDb.push('password');
-      if (missingDb.length > 0) {
-        logger.warn('deploy', 'ftp_uploader.get_ftp_config.db_missing_fields', {
-          missing_fields: missingDb,
-          elapsed_ms: Date.now() - startedAt,
-        });
+      const rawDbValue =
+        typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+      // P5-76: DB row のキードリフトを Zod schema で構造的に弾く。
+      //   旧 UI は `remotePath`、canonical は `remoteBasePath`。
+      //   `normalizeFtpSettings` がレガシー key を吸収する。
+      //   schema parse 失敗時は silent fallback ではなく throw する
+      //   (silent path mismatch < loud failure, P5-76 の教訓)。
+      let parsed: ReturnType<typeof normalizeFtpSettings>;
+      try {
+        parsed = normalizeFtpSettings(rawDbValue);
+      } catch (parseErr) {
+        logger.error(
+          'deploy',
+          'ftp_uploader.get_ftp_config.schema_parse_failed',
+          {
+            error_message:
+              parseErr instanceof Error ? parseErr.message : String(parseErr),
+            stack:
+              parseErr instanceof Error
+                ? parseErr.stack?.slice(0, 500)
+                : undefined,
+            // どんなキーが入っていたかを観測 (値は機微情報を含むので key のみ)
+            raw_keys:
+              rawDbValue && typeof rawDbValue === 'object'
+                ? Object.keys(rawDbValue as Record<string, unknown>)
+                : [],
+            elapsed_ms: Date.now() - startedAt,
+          },
+          parseErr instanceof Error ? parseErr : undefined,
+        );
+        throw new Error(
+          `settings.ftp の値がスキーマに違反しています: ${
+            parseErr instanceof Error ? parseErr.message : String(parseErr)
+          }`,
+        );
       }
-      if (ftp.host && ftp.user && ftp.password) {
-        // P5-76: 設定 UI は 'remotePath' キーで保存するが、過去のレコードは
-        //   'remoteBasePath' キーで保存されているケースがある (今回の事故元)。
-        //   両キーを許容し、見つかった方を採用。どちらも無ければデフォルト。
-        //   旧コードは ftp.remotePath のみを読んでいたため、DB に
-        //   remoteBasePath:'/spiritual/column/' の正しい値が入っていても
-        //   undefined → デフォルト /public_html/column/columns/ にフォールバックし、
-        //   全 FTP アップロードが harmony-mc.com の serve しない場所に上がっていた。
-        const dbRemotePath = ftp.remoteBasePath || ftp.remotePath;
-        const config: FtpConfig = {
-          host: ftp.host,
-          user: ftp.user,
-          password: ftp.password,
-          port: ftp.port || 21,
-          secure: ftp.secure === true, // P5-76: DB の secure 値を尊重 (旧コードは false 固定)
-          remoteBasePath: dbRemotePath || '/public_html/column/columns/',
-        };
-        logger.info('deploy', 'ftp_uploader.get_ftp_config.end', {
-          source: 'db',
-          host: config.host,
-          port: config.port,
-          secure: config.secure,
-          remote_base_path: config.remoteBasePath,
-          // P5-76: 観測のためどちらのキーが採用されたかを記録
-          remote_path_key_used: ftp.remoteBasePath
-            ? 'remoteBasePath'
-            : ftp.remotePath
-              ? 'remotePath'
-              : 'default_fallback',
-          elapsed_ms: Date.now() - startedAt,
-        });
-        return config;
-      }
+
+      // どちらのキーが DB に入っていたかを観測ログに残す (P5-76 の継続監視用)
+      const remotePathKeyUsed =
+        rawDbValue &&
+        typeof rawDbValue === 'object' &&
+        'remoteBasePath' in (rawDbValue as Record<string, unknown>)
+          ? 'remoteBasePath'
+          : rawDbValue &&
+              typeof rawDbValue === 'object' &&
+              'remotePath' in (rawDbValue as Record<string, unknown>)
+            ? 'remotePath'
+            : 'unknown';
+
+      const config: FtpConfig = {
+        host: parsed.host,
+        user: parsed.user,
+        password: parsed.password,
+        port: parsed.port,
+        secure: parsed.secure,
+        remoteBasePath: parsed.remoteBasePath,
+      };
+      logger.info('deploy', 'ftp_uploader.get_ftp_config.end', {
+        source: 'db',
+        host: config.host,
+        port: config.port,
+        secure: config.secure,
+        remote_base_path: config.remoteBasePath,
+        remote_path_key_used: remotePathKeyUsed,
+        elapsed_ms: Date.now() - startedAt,
+      });
+      return config;
     }
   } catch (e) {
-    // DB取得失敗時は環境変数にフォールバック
+    // schema parse 失敗は上で throw 済みなのでここには来ない。
+    // ここに来るのは Supabase クエリ自体の失敗 (ネットワーク等) のみ。
+    if (
+      e instanceof Error &&
+      e.message.startsWith('settings.ftp の値がスキーマに違反しています')
+    ) {
+      // schema 違反は loud failure として再 throw (env fallback させない)
+      throw e;
+    }
     logger.warn('deploy', 'ftp_uploader.get_ftp_config.db_fetch.failed', {
       error_message: (e as Error)?.message ?? String(e),
       stack: (e as Error)?.stack?.slice(0, 500),

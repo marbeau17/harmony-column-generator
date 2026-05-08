@@ -15,6 +15,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createClient } from '@supabase/supabase-js';
+import { buildDeployHtml } from '../../src/lib/deploy/article-html-builder';
+import { runTemplateCheck } from '../../src/lib/content/html-template-validator';
+import type { Article } from '../../src/types/article';
 
 // .env.local 読み込み
 try {
@@ -453,6 +456,130 @@ async function main(): Promise<void> {
         ? '全 live 記事に deployed_hash あり'
         : `${driftCount} 件が DB live なのに deployed_hash=null (FTP 未到達の可能性) / note: deploy/route.ts が成功時に articles.deployed_hash を更新するよう follow-up が必要`,
     failedSamples: h14Failed.slice(0, 10),
+  });
+
+  // ── H-15: zero-mode drift (live なのに generation_mode != 'zero') ────────
+  // P5-85 以降、live / live_hub_stale な記事は generation_mode='zero' のみ許容。
+  // source-mode が live に紛れ込んでいる場合は drift。
+  const h15Failed: HealthResult['failedSamples'] = [];
+  for (const a of list) {
+    if ((a.generation_mode as string | null) !== 'zero') {
+      h15Failed.push({
+        id: a.id as string,
+        slug: (a.slug as string) ?? null,
+        note: `generation_mode=${a.generation_mode ?? 'null'} visibility=${a.visibility_state}`,
+      });
+    }
+  }
+  results.push({
+    id: 'H-15', label: 'live 記事は generation_mode=zero のみ', severity: 'critical',
+    ok: h15Failed.length === 0,
+    detail: h15Failed.length === 0
+      ? `clean: ${list.length}/${list.length}`
+      : `${h15Failed.length} 件の source-mode drift`,
+    failedSamples: h15Failed.slice(0, 10),
+  });
+
+  // ── H-16: FTP source-mode orphan probe ───────────────────────────────────
+  // 公開 (status='published') かつ source-mode の slug をランダム 3 件取得し、
+  // 本番 URL に GET。200 を返すなら P5-85 以前の orphan が残置している。
+  if (!SKIP_HTTP) {
+    const { data: sourceCandidates, error: srcErr } = await sb
+      .from('articles')
+      .select('id, slug')
+      .eq('status', 'published')
+      .eq('generation_mode', 'source')
+      .not('slug', 'is', null)
+      .limit(50);
+
+    const h16Failed: HealthResult['failedSamples'] = [];
+    let probeDetail = '';
+    if (srcErr) {
+      h16Failed.push({ id: 'query-error', slug: null, note: `SELECT error: ${srcErr.message}` });
+      probeDetail = `query failed: ${srcErr.message}`;
+    } else {
+      const candidates = (sourceCandidates ?? []).filter((r) => r.slug);
+      // ランダムシャッフル → 先頭 3 件
+      const shuffled = [...candidates].sort(() => Math.random() - 0.5).slice(0, 3);
+      if (shuffled.length === 0) {
+        probeDetail = 'no source-mode published candidates';
+      } else {
+        const probed: { slug: string; status: number }[] = [];
+        for (const c of shuffled) {
+          const slug = c.slug as string;
+          const r = await fetchPublicHtml(slug);
+          probed.push({ slug, status: r.status });
+          if (r.status === 200) {
+            h16Failed.push({
+              id: c.id as string,
+              slug,
+              note: `FTP orphan: ${PUBLIC_BASE}${HUB_PATH}/${slug}/index.html returns 200`,
+            });
+          }
+        }
+        probeDetail = `probed ${probed.length} source-mode slugs: ${probed
+          .map((p) => `${p.slug}=${p.status}`)
+          .join(', ')}`;
+      }
+    }
+    results.push({
+      id: 'H-16', label: 'FTP source-mode orphan 0 件 (probe)', severity: 'high',
+      ok: h16Failed.length === 0,
+      detail: probeDetail,
+      failedSamples: h16Failed.slice(0, 5),
+    });
+  } else {
+    results.push({
+      id: 'H-16', label: 'FTP source-mode orphan 0 件 (probe)', severity: 'high',
+      ok: true, detail: 'SKIPPED (--skip-http)',
+    });
+  }
+
+  // ── H-17: live 記事の template_check (buildDeployHtml + runTemplateCheck) ──
+  // visibility_state='live' な記事を全件 build → template 検証。
+  // DB に紛れ込んだ broken CTA / 構造破損を検知する。
+  // 注意: buildDeployHtml は full Article 行が必要なので追加 SELECT を実行。
+  const h17Failed: HealthResult['failedSamples'] = [];
+  let h17Checked = 0;
+  let h17DetailExtra = '';
+  const { data: liveFull, error: liveFullErr } = await sb
+    .from('articles')
+    .select('*')
+    .eq('visibility_state', 'live');
+
+  if (liveFullErr) {
+    h17Failed.push({ id: 'query-error', slug: null, note: `SELECT error: ${liveFullErr.message}` });
+    h17DetailExtra = `query failed: ${liveFullErr.message}`;
+  } else {
+    for (const row of liveFull ?? []) {
+      const article = row as unknown as Article;
+      h17Checked++;
+      try {
+        const { html } = buildDeployHtml(article);
+        const tc = runTemplateCheck(html);
+        if (!tc.passed) {
+          h17Failed.push({
+            id: article.id,
+            slug: article.slug,
+            note: `template_check 失敗: ${tc.failures.slice(0, 3).join(' / ')}`,
+          });
+        }
+      } catch (e) {
+        h17Failed.push({
+          id: article.id,
+          slug: article.slug,
+          note: `buildDeployHtml threw: ${e instanceof Error ? e.message : String(e)}`,
+        });
+      }
+    }
+  }
+  results.push({
+    id: 'H-17', label: 'live 記事 template_check 全 pass', severity: 'critical',
+    ok: !liveFullErr && h17Failed.length === 0,
+    detail: liveFullErr
+      ? h17DetailExtra
+      : `clean: ${h17Checked - h17Failed.length}/${h17Checked}`,
+    failedSamples: h17Failed.slice(0, 5),
   });
 
   // ── サマリ出力 ────────────────────────────────────────────────────────────

@@ -33,6 +33,12 @@ import {
   generateSlug,
 } from '@/lib/seo/meta-generator';
 import { logger } from '@/lib/logger';
+// P5-86: 仕上げ後の HTML を「デプロイ用最終形」と同等に組み立てて
+// テンプレート整合性チェックにかける。失敗した場合は articles UPDATE
+// の前に throw して、壊れた body_html が DB に入らないようにする。
+import { buildDeployHtml } from '@/lib/deploy/article-html-builder';
+import { runTemplateCheck } from '@/lib/content/html-template-validator';
+import type { Article } from '@/types/article';
 // P5-69 (Phase A): ローカル実装は P5-55/57/58 で見つかった危険な fallback regex
 //   (`{1,200}` 数値範囲、lazy `[\s\S]*?`、`>` を消費する `[^\\s<]*`) を残したまま
 //   replace-placeholders.ts への移行が伝播しておらず、本文消失バグや closing `-->`
@@ -428,6 +434,70 @@ export async function runZeroGenCompletion(args: {
     length: stage3Html?.length ?? 0,
     elapsed_ms: Date.now() - tStage3,
   });
+
+  // P5-86: ランタイム整合性ゲート — body_html を DB に書き込む直前に
+  //   「デプロイ用最終形」と同じ HTML を組み立てて runTemplateCheck() に通す。
+  //   失敗した場合は articles UPDATE 自体に到達させず、上位 (zero-generate-async)
+  //   で stage='failed' に倒れる既存パスに任せる。
+  //   理由: 過去 (P5-49 / P5-57 / P5-69) で 壊れた HTML がそのまま DB → デプロイへ
+  //   流出した silent failure を、最終ステージで物理的に遮断するため。
+  //   source-mode 記事はそもそも本ヘルパで仕上げ→自動デプロイされない (P5-85) ので
+  //   zero-mode に限定する。
+  const generationMode = (article.generation_mode as string | null | undefined) ?? null;
+  if (generationMode === 'zero') {
+    logger.info('ai', 'template_check.start', {
+      article_id: articleId,
+      stage3_chars: stage3Html?.length ?? 0,
+    });
+    // articleForHtml は `as never` 型で固定されているため、Record 経由で広げる。
+    const previewArticle = {
+      ...(articleForHtml as unknown as Record<string, unknown>),
+      // buildDeployHtml は Article shape を要求する。slug が無いケースで
+      // も escapeRegex に渡されないように、最低限のフィールドを保証する。
+      slug: (article.slug as string | null) ?? articleId,
+      title: (article.title as string | null) ?? '',
+    } as unknown as Article;
+    let previewHtml: string;
+    try {
+      previewHtml = buildDeployHtml(previewArticle).html;
+    } catch (e) {
+      logger.error('ai', 'template_check.build_failed', {
+        article_id: articleId,
+        error_message: (e as Error)?.message ?? String(e),
+      });
+      throw new Error(
+        `Template integrity build failed: ${(e as Error)?.message ?? String(e)}`,
+      );
+    }
+    const tplCheck = runTemplateCheck(previewHtml);
+    logger.info('ai', 'template_check.end', {
+      article_id: articleId,
+      passed: tplCheck.passed,
+      failure_count: tplCheck.failures.length,
+    });
+    if (!tplCheck.passed) {
+      // category は LogCategory union に縛られているため 'ai' を使用 (zero-gen 系
+      // の既存ログとも整合)。action 名にコンポーネント名を含めて検索容易性を確保。
+      logger.error('ai', 'run_completion.template_check.failed', {
+        article_id: articleId,
+        slug: (article.slug as string | null) ?? null,
+        failures: tplCheck.failures,
+        body_chars: updatedBodyHtml.length,
+        stage3_chars: stage3Html?.length ?? 0,
+      });
+      // 上位 (zero-generate-async route) の catch が stage='failed' に倒すパスに任せる。
+      // ここでは絶対に articles UPDATE / revision INSERT に進ませない。
+      throw new Error(
+        `Template integrity failed (${tplCheck.failures.join(', ')})`,
+      );
+    }
+  } else {
+    logger.info('ai', 'template_check.skipped', {
+      article_id: articleId,
+      reason: 'non_zero_generation_mode',
+      generation_mode: generationMode,
+    });
+  }
 
   // 6. articles UPDATE — stage2 も更新 (placeholder 解決済 body)
   onProgress?.('persist');
