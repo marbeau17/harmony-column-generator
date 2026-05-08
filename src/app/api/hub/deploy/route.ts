@@ -130,7 +130,16 @@ export async function POST(request: Request) {
     const cfgStart = Date.now();
     let ftpConfig;
     try {
+      // P5-72: Agents 1/2 と命名規約を揃えた attempt/ok ペアを追加 (cross-route の grep 容易性)
+      logger.info('ftp', 'hub_deploy.ftp.get_config.attempt', {
+        request_id: requestId,
+      });
+      const tGetConfig = Date.now();
       ftpConfig = await getFtpConfig();
+      logger.info('ftp', 'hub_deploy.ftp.get_config.ok', {
+        request_id: requestId,
+        elapsed_ms: Date.now() - tGetConfig,
+      });
       logger.info('ftp', 'deploy.config.loaded', {
         request_id: requestId,
         host: ftpConfig.host,
@@ -167,7 +176,23 @@ export async function POST(request: Request) {
     });
 
     const uploadStart = Date.now();
+    // P5-72: bulk-deploy / per-article deploy と揃えた attempt/ok ペア
+    // (uploadToFtp 内部の client.access/ensureDir/uploadFrom/close は ftp-uploader 側で計測する)
+    logger.info('ftp', 'hub_deploy.ftp.upload_to_ftp.attempt', {
+      request_id: requestId,
+      host: ftpConfig.host,
+      port: ftpConfig.port,
+      remote_base_path: ftpConfig.remoteBasePath,
+      file_count: files.length,
+    });
     const result = await uploadToFtp(ftpConfig, files);
+    logger.info('ftp', 'hub_deploy.ftp.upload_to_ftp.ok', {
+      request_id: requestId,
+      uploaded: result.uploaded,
+      success: result.success,
+      error_count: result.errors.length,
+      elapsed_ms: Date.now() - uploadStart,
+    });
     const uploadElapsed = Date.now() - uploadStart;
 
     if (!result.success) {

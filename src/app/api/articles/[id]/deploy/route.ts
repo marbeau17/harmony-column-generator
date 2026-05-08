@@ -390,12 +390,24 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         secure: ftpConfig.secure || false,
         elapsed_ms: Date.now() - startedAt,
       });
+      logger.info('ftp', 'article_deploy.ftp.access.attempt', {
+        article_id: articleId,
+        slug,
+        host: ftpConfig.host,
+        port: ftpConfig.port || 21,
+        secure: ftpConfig.secure || false,
+      });
       await client.access({
         host: ftpConfig.host,
         user: ftpConfig.user,
         password: ftpConfig.password,
         port: ftpConfig.port || 21,
         secure: ftpConfig.secure || false,
+      });
+      logger.info('ftp', 'article_deploy.ftp.access.ok', {
+        article_id: articleId,
+        slug,
+        elapsed_ms: Date.now() - tFtpConnect,
       });
       logger.info('api', 'article_deploy.ftp_connect.end', {
         article_id: articleId,
@@ -425,15 +437,51 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         dir: `${basePath}${slug}`,
         elapsed_ms: Date.now() - startedAt,
       });
+      logger.info('ftp', 'article_deploy.ftp.ensure_dir.attempt', {
+        article_id: articleId,
+        slug,
+        remote_dir: `${basePath}${slug}`,
+      });
       await client.ensureDir(`${basePath}${slug}`);
+      logger.info('ftp', 'article_deploy.ftp.ensure_dir.ok', {
+        article_id: articleId,
+        slug,
+        remote_dir: `${basePath}${slug}`,
+      });
       logger.info('api', 'article_deploy.ftp_ensure_dir.end', {
         article_id: articleId,
         slug,
         dir: `${basePath}${slug}`,
         elapsed_ms: Date.now() - startedAt,
       });
+      logger.info('ftp', 'article_deploy.ftp.cd.attempt', {
+        article_id: articleId,
+        slug,
+        target: '/',
+      });
       await client.cd('/');
+      logger.info('ftp', 'article_deploy.ftp.cd.ok', {
+        article_id: articleId,
+        slug,
+        target: '/',
+      });
+      const tHtmlUp = Date.now();
+      logger.info('ftp', 'article_deploy.ftp.upload_from.attempt', {
+        article_id: articleId,
+        slug,
+        remote_path: htmlRemotePath,
+        kind: 'html',
+        bytes: Buffer.byteLength(html, 'utf-8'),
+      });
       await client.uploadFrom(htmlStream, htmlRemotePath);
+      logger.info('ftp', 'article_deploy.ftp.upload_from.ok', {
+        article_id: articleId,
+        slug,
+        remote_path: htmlRemotePath,
+        kind: 'html',
+        bytes: Buffer.byteLength(html, 'utf-8'),
+        elapsed_ms: Date.now() - tHtmlUp,
+      });
       uploaded.push(`${slug}/index.html`);
       logger.info('api', 'article_deploy.ftp_upload_per_file.end', {
         article_id: articleId,
@@ -468,7 +516,20 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           elapsed_ms: Date.now() - startedAt,
         });
         try {
+          logger.info('ftp', 'article_deploy.image.fetch.attempt', {
+            article_id: articleId,
+            slug,
+            position: img.position,
+            url: img.url,
+          });
           const imgRes = await fetch(img.url);
+          logger.info('ftp', 'article_deploy.image.fetch.end', {
+            article_id: articleId,
+            slug,
+            position: img.position,
+            ok: imgRes.ok,
+            status: imgRes.status,
+          });
           if (!imgRes.ok) {
             logger.warn('api', 'article_deploy.ftp_upload_per_file.fetch_failed', {
               article_id: articleId,
@@ -486,9 +547,45 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           imgStream.push(buffer);
           imgStream.push(null);
 
+          logger.info('ftp', 'article_deploy.ftp.ensure_dir.attempt', {
+            article_id: articleId,
+            slug,
+            remote_dir: `${basePath}${slug}/images`,
+          });
           await client.ensureDir(`${basePath}${slug}/images`);
+          logger.info('ftp', 'article_deploy.ftp.ensure_dir.ok', {
+            article_id: articleId,
+            slug,
+            remote_dir: `${basePath}${slug}/images`,
+          });
+          logger.info('ftp', 'article_deploy.ftp.cd.attempt', {
+            article_id: articleId,
+            slug,
+            target: '/',
+          });
           await client.cd('/');
+          logger.info('ftp', 'article_deploy.ftp.cd.ok', {
+            article_id: articleId,
+            slug,
+            target: '/',
+          });
+          const tImgUp = Date.now();
+          logger.info('ftp', 'article_deploy.ftp.upload_from.attempt', {
+            article_id: articleId,
+            slug,
+            remote_path: imgRemotePath,
+            kind: 'image',
+            bytes: buffer.byteLength,
+          });
           await client.uploadFrom(imgStream, imgRemotePath);
+          logger.info('ftp', 'article_deploy.ftp.upload_from.ok', {
+            article_id: articleId,
+            slug,
+            remote_path: imgRemotePath,
+            kind: 'image',
+            bytes: buffer.byteLength,
+            elapsed_ms: Date.now() - tImgUp,
+          });
           uploaded.push(`${slug}/images/${filename}`);
           logger.info('api', 'article_deploy.ftp_upload_per_file.end', {
             article_id: articleId,
@@ -528,7 +625,15 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         slug,
         elapsed_ms: Date.now() - startedAt,
       });
+      logger.info('ftp', 'article_deploy.ftp.close.attempt', {
+        article_id: articleId,
+        slug,
+      });
       client.close();
+      logger.info('ftp', 'article_deploy.ftp.close.ok', {
+        article_id: articleId,
+        slug,
+      });
     }
 
     logger.info('deploy', 'article-deployed', { articleId, slug, uploaded: uploaded.length, errors: errors.length });

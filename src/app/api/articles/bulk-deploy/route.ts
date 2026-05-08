@@ -22,6 +22,55 @@ import type { Article } from '@/types/article';
 
 export const maxDuration = 300;
 
+// P5-75: 一定件数ごとに FTP セッションを張り直すことで control socket idle timeout を回避する。
+const RECONNECT_EVERY_N_ARTICLES = 5;
+
+// P5-75: モジュールスコープでのフェイルセーフ — unhandledRejection を必ずログに残す。
+// 二重登録を防ぐため _bulkDeployHandlerRegistered フラグでガード。
+declare global {
+  // eslint-disable-next-line no-var
+  var _bulkDeployHandlerRegistered: boolean | undefined;
+}
+if (!globalThis._bulkDeployHandlerRegistered) {
+  globalThis._bulkDeployHandlerRegistered = true;
+  process.on('unhandledRejection', (reason) => {
+    logger.error('ftp', 'bulk_deploy.unhandled_rejection', {
+      reason: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack?.slice(0, 500) : undefined,
+    });
+  });
+}
+
+// P5-75: FTP 再接続ヘルパ。loop の chunk 境界で client を張り直す際に共通利用。
+async function connectFtp(
+  ftpConfig: { host: string; user: string; password: string; port?: number; secure?: boolean },
+  articleId?: string,
+) {
+  const { Client } = await import('basic-ftp');
+  // P5-75: idle/control timeouts — long for serverless, but bounded.
+  // basic-ftp の Client コンストラクタ第1引数で 60s を渡す (ftp.timeout は readonly)。
+  const c = new Client(60000); // ← 60s per command (basic-ftp default は 30s)
+  c.ftp.verbose = false;
+  logger.info('ftp', 'bulk_deploy.ftp.reconnect.attempt', {
+    host: ftpConfig.host,
+    port: ftpConfig.port || 21,
+    article_id: articleId,
+  });
+  const tConn = Date.now();
+  await c.access({
+    host: ftpConfig.host,
+    user: ftpConfig.user,
+    password: ftpConfig.password,
+    port: ftpConfig.port || 21,
+    secure: ftpConfig.secure || false,
+  });
+  logger.info('ftp', 'bulk_deploy.ftp.reconnect.ok', {
+    elapsed_ms: Date.now() - tConn,
+    article_id: articleId,
+  });
+  return c;
+}
+
 interface BulkDeployError {
   article_id: string;
   slug: string;
@@ -124,10 +173,12 @@ export async function POST(req: NextRequest) {
       elapsed_ms: Date.now() - tFtpConfig,
     });
 
-    // ─── FTP 接続 (全記事で 1 本) ──────────────────────────────────────────
+    // ─── FTP 接続 (チャンク境界で張り直す。初回はここで作成) ───────────────
+    // P5-75: const → let. RECONNECT_EVERY_N_ARTICLES ごとに client を close → 再接続するため。
     const { Client } = await import('basic-ftp');
     const { Readable } = await import('stream');
-    const client = new Client();
+    // P5-75: Client(60000) = 60s timeout (basic-ftp default は 30s)。ftp.timeout は readonly のためコンストラクタ経由。
+    let client = new Client(60000);
     client.ftp.verbose = false;
 
     const tFtpConnect = Date.now();
@@ -152,16 +203,53 @@ export async function POST(req: NextRequest) {
     let uploadedFiles = 0;
     let successCount = 0;
     let failedCount = 0;
+    let processedArticles = 0; // finally ブロックで参照するため for ループ外に保持
     const errors: BulkDeployError[] = [];
 
     try {
       // ─── 記事ループ ─────────────────────────────────────────────────────
       for (let i = 0; i < articles.length; i++) {
+        processedArticles = i;
         const article = articles[i];
         const slug = article.slug ?? article.id;
         const articleId = article.id;
         const idx = i + 1;
         const tArticle = Date.now();
+
+        // P5-75: 一定件数ごとに FTP セッションを張り直す (control socket idle timeout 回避)。
+        if (i > 0 && i % RECONNECT_EVERY_N_ARTICLES === 0) {
+          logger.info('ftp', 'bulk_deploy.chunk_boundary', {
+            processed: i,
+            total,
+            reconnecting: true,
+            article_id: articleId,
+            slug,
+          });
+          try {
+            client.close();
+          } catch (closeErr) {
+            logger.warn('ftp', 'bulk_deploy.chunk_close.failed', {
+              error_message: closeErr instanceof Error ? closeErr.message : String(closeErr),
+              processed: i,
+            });
+          }
+          try {
+            client = await connectFtp(ftpConfig, articleId);
+          } catch (reconnErr) {
+            logger.error(
+              'ftp',
+              'bulk_deploy.chunk_reconnect.failed',
+              {
+                error_message: reconnErr instanceof Error ? reconnErr.message : String(reconnErr),
+                stack: reconnErr instanceof Error ? reconnErr.stack?.slice(0, 500) : undefined,
+                processed: i,
+                total,
+              },
+              reconnErr instanceof Error ? reconnErr : undefined,
+            );
+            throw reconnErr; // ループ try/catch ではなく外側 try で全体停止させる
+          }
+        }
 
         logger.info('api', 'bulk_deploy.article.start', {
           article_id: articleId,
@@ -188,10 +276,49 @@ export async function POST(req: NextRequest) {
           // 2. index.html upload
           const htmlRemote = `${basePath}${slug}/index.html`;
           try {
+            logger.info('ftp', 'bulk_deploy.ftp.ensure_dir.attempt', {
+              article_id: articleId,
+              slug,
+              remote_dir: `${basePath}${slug}/`,
+              index: idx,
+              total,
+            });
             await client.ensureDir(`${basePath}${slug}/`);
+            logger.info('ftp', 'bulk_deploy.ftp.ensure_dir.ok', {
+              article_id: articleId,
+              slug,
+              elapsed_ms: Date.now() - tArticle,
+            });
+
+            logger.info('ftp', 'bulk_deploy.ftp.cd.attempt', {
+              article_id: articleId,
+              slug,
+              target: '/',
+            });
             await client.cd('/');
+            logger.info('ftp', 'bulk_deploy.ftp.cd.ok', {
+              article_id: articleId,
+              slug,
+            });
+
             const htmlStream = Readable.from(Buffer.from(html, 'utf-8'));
+            logger.info('ftp', 'bulk_deploy.ftp.upload_from.attempt', {
+              article_id: articleId,
+              slug,
+              remote_path: htmlRemote,
+              kind: 'html',
+              bytes: html.length,
+            });
+            const tUpload = Date.now();
             await client.uploadFrom(htmlStream, htmlRemote);
+            logger.info('ftp', 'bulk_deploy.ftp.upload_from.ok', {
+              article_id: articleId,
+              slug,
+              remote_path: htmlRemote,
+              kind: 'html',
+              bytes: html.length,
+              elapsed_ms: Date.now() - tUpload,
+            });
             articleUploaded++;
             uploadedFiles++;
           } catch (htmlErr) {
@@ -221,7 +348,20 @@ export async function POST(req: NextRequest) {
             const filename = img.position ? `${img.position}.jpg` : 'image.jpg';
             const imgRemote = `${basePath}${slug}/images/${filename}`;
             try {
+              logger.info('ftp', 'bulk_deploy.image.fetch.attempt', {
+                article_id: articleId,
+                slug,
+                position: img.position,
+                url: img.url,
+              });
               const res = await fetch(img.url);
+              logger.info('ftp', 'bulk_deploy.image.fetch.end', {
+                article_id: articleId,
+                slug,
+                position: img.position,
+                ok: res.ok,
+                status: res.status,
+              });
               if (!res.ok) {
                 const msg = `${img.position}: HTTP ${res.status}`;
                 articleErrors.push(msg);
@@ -235,10 +375,35 @@ export async function POST(req: NextRequest) {
                 continue;
               }
               const buf = Buffer.from(await res.arrayBuffer());
+              logger.info('ftp', 'bulk_deploy.ftp.image.ensure_dir.attempt', {
+                article_id: articleId,
+                slug,
+                remote_dir: `${basePath}${slug}/images/`,
+              });
               await client.ensureDir(`${basePath}${slug}/images/`);
+              logger.info('ftp', 'bulk_deploy.ftp.image.ensure_dir.ok', {
+                article_id: articleId,
+                slug,
+              });
               await client.cd('/');
               const stream = Readable.from(buf);
+              logger.info('ftp', 'bulk_deploy.ftp.image.upload_from.attempt', {
+                article_id: articleId,
+                slug,
+                position: img.position,
+                remote_path: imgRemote,
+                bytes: buf.length,
+              });
+              const tImgUpload = Date.now();
               await client.uploadFrom(stream, imgRemote);
+              logger.info('ftp', 'bulk_deploy.ftp.image.upload_from.ok', {
+                article_id: articleId,
+                slug,
+                position: img.position,
+                remote_path: imgRemote,
+                bytes: buf.length,
+                elapsed_ms: Date.now() - tImgUpload,
+              });
               articleUploaded++;
               uploadedFiles++;
             } catch (imgErr) {
@@ -311,10 +476,15 @@ export async function POST(req: NextRequest) {
         }
       }
     } finally {
-      logger.info('api', 'bulk_deploy.ftp_close', {
+      logger.info('ftp', 'bulk_deploy.ftp_close.attempt', {
+        processed_articles: processedArticles + 1,
+        total,
         elapsed_ms: Date.now() - startedAt,
       });
       client.close();
+      logger.info('ftp', 'bulk_deploy.ftp_close.ok', {
+        elapsed_ms: Date.now() - startedAt,
+      });
     }
 
     // ─── ハブページ再生成を background trigger ────────────────────────────
@@ -343,6 +513,16 @@ export async function POST(req: NextRequest) {
       );
 
     logger.info('api', 'bulk_deploy.end', {
+      total,
+      success: successCount,
+      failed: failedCount,
+      uploaded_files: uploadedFiles,
+      error_count: errors.length,
+      elapsed_ms: Date.now() - startedAt,
+    });
+
+    // P5-75: return 直前のスタンプ。関数が確実に return まで到達したことを Vercel log で確認するため。
+    logger.info('api', 'bulk_deploy.summary_before_return', {
       total,
       success: successCount,
       failed: failedCount,

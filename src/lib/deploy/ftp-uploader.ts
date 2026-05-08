@@ -214,9 +214,28 @@ export async function uploadFile(
         full_path: fullPath,
         elapsed_ms: Date.now() - startedAt,
       });
+      logger.info('ftp', 'ftp_uploader.ensure_dir.attempt', {
+        dir,
+        full_path: fullPath,
+        target: dir,
+      });
+      const tEnsure = Date.now();
       await client.ensureDir(dir);
+      logger.info('ftp', 'ftp_uploader.ensure_dir.ok', {
+        dir,
+        elapsed_ms: Date.now() - tEnsure,
+      });
       // ensureDirでカレントディレクトリが移動するのでルートに戻る
+      logger.info('ftp', 'ftp_uploader.cd.attempt', {
+        dir,
+        target: '/',
+      });
+      const tCd = Date.now();
       await client.cd('/');
+      logger.info('ftp', 'ftp_uploader.cd.ok', {
+        target: '/',
+        elapsed_ms: Date.now() - tCd,
+      });
       logger.info('ftp', 'ftp_uploader.upload_file.ensure_dir.end', {
         dir,
         elapsed_ms: Date.now() - tDir,
@@ -231,7 +250,18 @@ export async function uploadFile(
       elapsed_ms: Date.now() - startedAt,
     });
     const stream = stringToStream(content);
+    logger.info('ftp', 'ftp_uploader.upload_from.attempt', {
+      full_path: fullPath,
+      bytes,
+      target: fullPath,
+    });
+    const tUploadCall = Date.now();
     await client.uploadFrom(stream, fullPath);
+    logger.info('ftp', 'ftp_uploader.upload_from.ok', {
+      full_path: fullPath,
+      bytes,
+      elapsed_ms: Date.now() - tUploadCall,
+    });
     logger.info('ftp', 'ftp_uploader.upload_file.upload_from.end', {
       full_path: fullPath,
       bytes,
@@ -425,12 +455,23 @@ export async function uploadToFtp(
       elapsed_ms: Date.now() - startedAt,
     });
     client.ftp.verbose = false;
+    logger.info('ftp', 'ftp_uploader.access.attempt', {
+      host: config.host,
+      port: config.port || 21,
+      secure: config.secure || false,
+      target: config.host,
+    });
+    const tAccess = Date.now();
     await client.access({
       host: config.host,
       user: config.user,
       password: config.password,
       port: config.port || 21,
       secure: config.secure || false,
+    });
+    logger.info('ftp', 'ftp_uploader.access.ok', {
+      host: config.host,
+      elapsed_ms: Date.now() - tAccess,
     });
     logger.info('ftp', 'ftp_uploader.upload_to_ftp.connect.end', {
       host: config.host,
@@ -490,7 +531,18 @@ export async function uploadToFtp(
       errors_count: errors.length,
       elapsed_ms: Date.now() - startedAt,
     });
+    logger.info('ftp', 'ftp_uploader.close.attempt', {
+      host: config.host,
+      uploaded,
+      errors_count: errors.length,
+      target: config.host,
+    });
+    const tClose = Date.now();
     client.close();
+    logger.info('ftp', 'ftp_uploader.close.ok', {
+      host: config.host,
+      elapsed_ms: Date.now() - tClose,
+    });
   }
 
   const result: UploadResult = {
