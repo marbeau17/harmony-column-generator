@@ -225,7 +225,17 @@ h2, h3, p, ul, ol, strong, em, span のみ。
 - H2: \`<h2 id="section-1">見出しテキスト</h2>\`
 - H3: \`<h3>小見出しテキスト</h3>\`
 
-### CTA 配置（2 箇所）
+### CTA 配置（Stage2 では一切出力しない・絶対禁止）
+**Stage2 は CTA を出力してはいけません。** CTA ブロック（\`<div class="harmony-cta">\` 配下のあらゆる構造）は、後段の post-process（\`insertCtasIntoHtml\` / cta-generator.ts）が記事中盤と終盤に自動挿入します。AI 側で出力すると後処理で CTA が二重化したり、不正な構造が混入して cleanup が必要になります（P5-80 で 22 記事の事後修正が発生済み）。
+
+絶対禁止形式（出力したら即不合格）:
+- \`<div class="harmony-cta">…\` を含む **すべての** ブロック
+- \`<p class="harmony-cta-catch">\` / \`<p class="harmony-cta-sub">\` / \`<a class="harmony-cta-btn">\` を含む **すべての** 要素
+- 上記クラス名を持つタグの **個別出力**（兄弟関係であってもネストしていても禁止）
+- \`href="${CTA_URL}"\` を含む **すべての** リンク
+- 「ご予約はこちら」「お問い合わせはこちら」等の予約導線テキスト
+
+【間違い例 4（CTA を本文中に直接書く・即不合格）】
 \`\`\`html
 <div class="harmony-cta">
   <p class="harmony-cta-catch">キャッチコピー</p>
@@ -233,7 +243,9 @@ h2, h3, p, ul, ol, strong, em, span のみ。
   <a class="harmony-cta-btn" href="${CTA_URL}">ご予約・お問い合わせはこちら</a>
 </div>
 \`\`\`
-- リンク先は必ず ${CTA_URL}
+→ \`<a>\` が \`<p>\` の兄弟（sibling）でも、ネストされていても、いかなる構造でも CTA は出力禁止。CTA は post-process が自動挿入する責務であり、Stage2 では本文 HTML に CTA を一切含めないこと。
+
+**重要原則**: Stage2 zero-writing の出力には \`harmony-cta\` / \`harmony-cta-catch\` / \`harmony-cta-sub\` / \`harmony-cta-btn\` を **1 文字も含めない**。CTA 配置は完全に後処理側の責務です。
 
 ### 画像プレースホルダー（厳格統一・ブレ禁止）
 // P5-56: AI 出力 placeholder 形式のブレ（<p>IMAGE:body</p> / IMAGE: hero / 位置情報なし等）
@@ -421,7 +433,7 @@ ${targetTotal}字（h2_chapters の target_chars 合計、±20% 以内）
    - action: 「〜してみてくださいね」で小さな一歩を提案する
 3. 導入文として narrative_arc.opening_hook を活かした温かい段落を最初に配置する
 4. H2 には section ID を付ける: \`<h2 id="section-1">見出し</h2>\`
-5. CTA を記事中盤と終盤の 2 箇所に配置する（\`<div class="harmony-cta">\` 形式）
+5. **CTA は出力しない**：\`<div class="harmony-cta">\` を含む CTA ブロック（および \`harmony-cta-catch\` / \`harmony-cta-sub\` / \`harmony-cta-btn\` のいかなる派生形）は本文に書いてはいけない。CTA は後処理（insertCtasIntoHtml）が自動挿入するため、Stage2 の出力には CTA 関連クラス名を 1 文字も含めないこと（P5-80 / P5-87）
 6. 画像プレースホルダーを 2 箇所に配置する（body: 中盤、summary: まとめ冒頭）
 7. FAQ は \`<div class="harmony-faq">\` 形式で記事末尾付近に配置する
 8. 結びは closing_style に従う：lingering なら余韻、direct なら明瞭な祈り。いずれも「希望」「肯定」「祈り」のトーンで温かく
@@ -451,6 +463,7 @@ ${targetTotal}字（h2_chapters の target_chars 合計、±20% 以内）
 □ retrievedChunks の事実・固有名詞をコピーしていないか？文体のみ吸収できているか？
 □ h2_chapters の各章を順次展開できているか？
 □ 画像プレースホルダーが \`<!--IMAGE:body:body.webp-->\` / \`<!--IMAGE:summary:summary.webp-->\` の 1 形式のみで body と summary の 2 箇所だけに配置されているか？（P5-56 / hero は含めない・<p> で包まない・空白入り禁止）
+□ **CTA 関連のクラス名（\`harmony-cta\` / \`harmony-cta-catch\` / \`harmony-cta-sub\` / \`harmony-cta-btn\`）や \`harmony-booking.web.app\` への \`<a>\` リンクを 1 つも出力していないか？（P5-87 / CTA は post-process が自動挿入するため Stage2 では絶対に書かない）**
 
 記事本文を HTML で出力してください。`;
 }

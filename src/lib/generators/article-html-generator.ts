@@ -113,7 +113,7 @@ function buildFaqHtml(faqs: FAQItem[]): string {
 
 // ─── 関連記事HTML生成 ──────────────────────────────────────────────────────
 
-function buildRelatedArticlesHtml(
+export function buildRelatedArticlesHtml(
   articles: { href: string; title: string }[] | null,
 ): string {
   if (!articles || articles.length === 0) return '<p class="article-related-empty">他のコラムも準備中です。お楽しみに。</p>';
@@ -124,9 +124,15 @@ function buildRelatedArticlesHtml(
       // P5-44: getHubPath() は trailing slash なしで `/spiritual/column` を返す
       const hubPath = getHubPath();
       const escapedHubPath = hubPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // P5-86: a.href は getArticleRelativePath() で `${hubPath}/${slug}/index.html`
+      //   形式で生成される (P5-46)。旧 slug 抽出は trailing `/` のみ剥がしていたため、
+      //   `index.html` が混入し thumbSrc が `${hubPath}/${slug}/index.html/images/hero.jpg`
+      //   という壊れた URL になっていた (関連記事サムネイル全件 404)。
+      //   末尾 `/index.html` または trailing `/` のいずれも安全に剥がす。
       const slug = a.href
         .replace(new RegExp(`^${escapedHubPath}/`), '')
         .replace(/^\/column\//, '') // 旧形式 fallback
+        .replace(/\/index\.html$/, '')
         .replace(/\/$/, '');
       const thumbSrc = `${hubPath}/${slug}/images/hero.jpg`;
       return `<a href="${escAttr(a.href)}" class="article-related-card">

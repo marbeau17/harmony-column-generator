@@ -270,10 +270,15 @@ export async function POST(req: NextRequest) {
     // ─── 対象記事 SELECT ──────────────────────────────────────────────────
     const serviceClient = await createServiceRoleClient();
     const tFetch = Date.now();
+    // P5-85: bulk-deploy は zero-mode (= 新規生成記事) のみを対象とする。
+    // 旧アメブロ書換 (source / null) はライブサイトに掲載しない方針 (P5-55 で
+    // hub-generator も同フィルタ済み)。両側のフィルタを揃えることで「ハブには
+    // 出ないが FTP 上に放置」という不整合を恒久的に防ぐ。
     const { data: articlesRaw, error: selectErr } = await serviceClient
       .from('articles')
       .select('*')
       .in('visibility_state', ['live', 'live_hub_stale'])
+      .eq('generation_mode', 'zero')
       .order('created_at', { ascending: true });
     if (selectErr) {
       logger.error(
