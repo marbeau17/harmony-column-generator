@@ -476,6 +476,7 @@ export default function OutlinePage() {
           }
           onUpdate={handleKishotenketsuUpdate}
           onRegenerate={handleRegenerate}
+          onProceedToStage2={handleApprove}
         />
       )}
 

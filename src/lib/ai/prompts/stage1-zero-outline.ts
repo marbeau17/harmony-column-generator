@@ -370,7 +370,9 @@ narrative_arc が感情曲線 (内的動き) を表すのに対し、kishotenket
 - lead_summary: 100〜150 字
 - narrative_arc: opening_hook / awareness / wavering / acceptance / action / closing_style
 - emotion_curve: 数値配列（h2_chapters と同じ要素数）
-- h2_chapters: 各章 title / summary / target_chars / arc_phase（awareness|wavering|acceptance|action のいずれか）
+- h2_chapters: 各章 title / summary / target_chars / arc_phase / kishotenketsu_phase
+  - arc_phase: awareness | wavering | acceptance | action のいずれか
+  - kishotenketsu_phase: ki | sho | ten | ketsu のいずれか（§4.1 の H2 マッピング規則 3/4/5+ 章別に従う。**転は必ず単一章として独立**）
 - citation_highlights: 80〜120 字 × 3（記事内で引用されうる核心フレーズ）
 - faq_items: 2〜3 個の Q&A（Q は読者の検索クエリ風、A は 100〜150 字）
 - meta_description: **必須・100〜140 字の SEO 用説明文**（検索結果スニペットで読者を惹きつける）

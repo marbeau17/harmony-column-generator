@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { runQualityChecklist } from '@/lib/content/quality-checklist';
+import { runQualityChecklistAsync } from '@/lib/content/quality-checklist';
 
 type RouteParams = { params: { id: string } };
 
@@ -34,7 +34,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: '本文がまだ生成されていません' }, { status: 400 });
     }
 
-    const result = runQualityChecklist({
+    // P5-102 fix: runQualityChecklistAsync で kishotenketsu_arc + phase_alignment を有効化
+    const result = await runQualityChecklistAsync({
       title: article.title || '',
       html,
       keyword: article.keyword || undefined,
