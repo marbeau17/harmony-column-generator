@@ -9,6 +9,12 @@ import { useParams, useRouter } from 'next/navigation';
 import type { Article } from '@/types/article';
 import type { Stage1Heading, Stage1ImagePrompt } from '@/types/ai';
 import StatusBadge from '@/components/common/StatusBadge';
+import KishotenketsuReview from '@/components/articles/KishotenketsuReview';
+import type { KishotenketsuPlan } from '@/lib/schemas/kishotenketsu';
+
+// P5-100: 起承転結 UI feature flag (env / settings 駆動、ハードコード禁止)
+const KISHOTENKETSU_ENABLED =
+  process.env.NEXT_PUBLIC_KISHOTENKETSU_ENABLED === 'true';
 
 // ─── 見出しツリーコンポーネント ─────────────────────────────────────────────
 
@@ -238,6 +244,44 @@ export default function OutlinePage() {
     }
   };
 
+  // ─── 起承転結 (P5-100) ──────────────────────────────────────────────
+  // PUT /api/articles/[id] で kishotenketsu / kishotenketsu_approved_at を保存。
+  // approve=true の場合は now() で承認時刻をセット。
+  const handleKishotenketsuUpdate = useCallback(
+    async (next: KishotenketsuPlan, approve: boolean) => {
+      const body: Record<string, unknown> = { kishotenketsu: next };
+      if (approve) {
+        body.kishotenketsu_approved_at = new Date().toISOString();
+      }
+      // P5-51: Supabase Auth cookie を同一オリジンで送信
+      const res = await fetch(`/api/articles/${articleId}`, {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`起承転結の保存に失敗しました (${res.status}) ${txt}`);
+      }
+      // 楽観的にローカル state へ反映
+      setArticle((prev) =>
+        prev
+          ? ({
+              ...prev,
+              // 既存型に未追加でも assignable: 未知プロパティとして保持
+              kishotenketsu: next,
+              kishotenketsu_approved_at: approve
+                ? (body.kishotenketsu_approved_at as string)
+                : (prev as unknown as { kishotenketsu_approved_at?: string | null })
+                    .kishotenketsu_approved_at ?? null,
+            } as Article)
+          : prev,
+      );
+    },
+    [articleId],
+  );
+
   // ─── アウトライン再生成 ───────────────────────────────────────────────
 
   const handleRegenerate = async () => {
@@ -417,6 +461,23 @@ export default function OutlinePage() {
           ))}
         </div>
       </section>
+
+      {/* ─ 起承転結ナラティブレビュー (P5-100) ─ */}
+      {KISHOTENKETSU_ENABLED && (
+        <KishotenketsuReview
+          articleId={articleId}
+          kishotenketsu={
+            ((article as unknown as { kishotenketsu?: KishotenketsuPlan | null })
+              .kishotenketsu) ?? null
+          }
+          approvedAt={
+            ((article as unknown as { kishotenketsu_approved_at?: string | null })
+              .kishotenketsu_approved_at) ?? null
+          }
+          onUpdate={handleKishotenketsuUpdate}
+          onRegenerate={handleRegenerate}
+        />
+      )}
 
       {/* ─ CTA / 画像配置 ─ */}
       <div className="grid gap-4 sm:gap-6 md:grid-cols-2">

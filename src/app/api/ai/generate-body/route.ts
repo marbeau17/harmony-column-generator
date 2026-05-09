@@ -82,6 +82,40 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ─── P5-100: 起承転結 (kishotenketsu) 承認ゲート (412 Precondition Failed) ──
+  // spec: docs/specs/kishotenketsu-flow.md §6.1 / §9 受け入れ #3
+  //
+  // 条件 (全て真のとき発動):
+  //   - generation_mode === 'zero' (source モードは本仕様の対象外)
+  //   - feature flag NEXT_PUBLIC_KISHOTENKETSU_ENABLED === 'true'
+  //   - article.kishotenketsu_approved_at が NULL / 未設定
+  //
+  // 既存記事 (kishotenketsu 列が無い旧記事) に対しては、列値が undefined のため
+  // 必然的に未承認扱いとなり 412 が返る — 仕様 §6.3 「未生成→Stage2 disabled」に
+  // 沿った動作。フラグ false の間は完全にバイパス (旧 path 互換)。
+  const flagEnabled =
+    process.env.NEXT_PUBLIC_KISHOTENKETSU_ENABLED === 'true';
+  const isZeroMode =
+    (article as { generation_mode?: string | null }).generation_mode === 'zero';
+  if (flagEnabled && isZeroMode) {
+    const approvedAt = (
+      article as { kishotenketsu_approved_at?: string | null }
+    ).kishotenketsu_approved_at;
+    if (!approvedAt) {
+      logger.warn('ai', 'stage2.kishotenketsu_not_approved', {
+        articleId,
+        generation_mode: 'zero',
+      });
+      return NextResponse.json(
+        {
+          error: '起承転結の承認が必要です',
+          code: 'KISHOTENKETSU_NOT_APPROVED',
+        },
+        { status: 412 },
+      );
+    }
+  }
+
   // 4. 構成案の存在確認 + 構造検証
   const rawOutline = article.stage1_outline as Record<string, unknown> | null;
   if (!rawOutline) {

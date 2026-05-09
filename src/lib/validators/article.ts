@@ -9,6 +9,7 @@ import {
   PERSPECTIVE_TYPES,
 } from '@/types/article';
 import type { ArticleStatus, PerspectiveType } from '@/types/article';
+import { kishotenketsuSchema } from '@/lib/schemas/kishotenketsu';
 
 // ─── 汎用バリデーション関数 ──────────────────────────────────────────────────
 
@@ -88,6 +89,13 @@ export const updateArticleSchema = z.object({
   cta_texts: z.unknown().optional(),
   reviewed_at: z.string().nullable().optional(),
   reviewed_by: z.string().nullable().optional(),
+  // P5-100: 起承転結 (kishotenketsu) プラン本体と承認時刻。
+  // - kishotenketsu     : 4 段プラン JSONB。null は承認解除と同時にプラン削除する場合のみ。
+  // - kishotenketsu_approved_at: ISO 8601 (string) または null (再生成・編集時のクリア用)。
+  // 注意: approved_at のみ送信する場合は kishotenketsu が DB に既存している必要がある。
+  //       ルートハンドラ側で「approved_at セット時にプラン無し」を 400 で拒否する。
+  kishotenketsu: kishotenketsuSchema.nullable().optional(),
+  kishotenketsu_approved_at: z.string().nullable().optional(),
 });
 
 export type UpdateArticleInput = z.infer<typeof updateArticleSchema>;

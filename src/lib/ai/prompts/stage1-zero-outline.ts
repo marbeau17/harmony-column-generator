@@ -12,6 +12,7 @@
 import { z } from 'zod';
 import { logger } from '@/lib/logger';
 import { generateJson } from '@/lib/ai/gemini-client';
+import { kishotenketsuSchema } from '@/lib/schemas/kishotenketsu';
 
 // ─── 入出力型 ─────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,9 @@ const h2ChapterSchema = z.object({
   // arc_phase はモデルによって表記揺れが起きるため z.string() に留め、
   // 値検査は別途 warn ログでカバー（過剰拒否で生成失敗にしない）。
   arc_phase: z.string().min(1),
+  // P5-99: 起承転結 phase との対応付け。Stage1 prompt 内の H2 マッピング規則
+  // (3/4/5+ 章別) に従い AI が付与する。後方互換のため optional。
+  kishotenketsu_phase: z.enum(['ki', 'sho', 'ten', 'ketsu']).optional(),
 });
 
 const faqItemSchema = z.object({
@@ -80,6 +84,10 @@ const imagePromptSchema = z.object({
 export const zeroOutlineOutputSchema = z.object({
   lead_summary: z.string().min(1),
   narrative_arc: narrativeArcSchema,
+  // P5-99: 起承転結 (kishotenketsu) を必須出力。narrative_arc は感情曲線
+  // (内的動き)、kishotenketsu は論の骨格 (視点の動き) を担い並列で生成する。
+  // 既存 narrative_arc は backward compat のため残置 (spec §3.1)。
+  kishotenketsu: kishotenketsuSchema,
   emotion_curve: z.array(z.number()).min(1),
   h2_chapters: z.array(h2ChapterSchema).min(1),
   citation_highlights: z.array(z.string()).min(1),
@@ -323,6 +331,39 @@ ${NG_DICTIONARY.join('、')}
 emotion_curve は H2 章数分の整数列で、-2（沈み込み）〜 +2（解放・希望）の範囲。
 典型的には [-1, -2, +1, +2] のように「沈んでから昇る」曲線を描く。
 
+## 起承転結 (kishotenketsu — 必須出力・narrative_arc と並列で生成)
+
+由起子さんのコラムは日本古来の「起承転結」に従って物語を描きます。
+narrative_arc が感情曲線 (内的動き) を表すのに対し、kishotenketsu は
+「論の骨格」(読者の視点がどう動くか) を表します。両方とも必ず生成してください。
+
+1. 起 (ki) 50〜150字: テーマを優しく差し出し、読者の現在地を言語化する
+   例: 「最近、〇〇と感じることはありませんか？」のような問いかけで始める
+2. 承 (sho) 50〜150字: 起をさらに深掘り、読者の感情に寄り添う
+   例: 「その感覚は、実は多くの人が抱えているものなんです」
+3. 転 (ten) 50〜150字: **視点転換 — 由起子さん署名の核**
+   - 承で示した方向と **異なる視点** を「でも実は」「けれど」で提示する
+   - 必須条件: 起・承の延長線上ではない、180度ではなくとも90度以上の角度の気づき
+   - 禁止: 承の言い換え・深掘りに留まる「平行展開」
+4. 結 (ketsu) 50〜150字: 転を受け入れた先の希望と、今日からできる小さな一歩
+   - 「〜してみてくださいね」で締める
+
+加えて ten_perspective_shift (20〜120字) に「承から転への視点の角度がどう変わったか」
+を簡潔に自己説明してください。
+
+## 起承転結 と H2 のマッピング規則
+- H2 = 3 章: H2-1 (起+承) / H2-2 (転) / H2-3 (結)
+- H2 = 4 章: H2-1 (起) / H2-2 (承) / H2-3 (転) / H2-4 (結)
+- H2 = 5 章以上: H2-1 (起) / 中間 (承複数可) / 末尾-1 (転・必須独立) / 末尾 (結)
+- **転は必ず単一の H2 として独立させること**
+- h2_chapters[i] に kishotenketsu_phase: 'ki'|'sho'|'ten'|'ketsu' を付与する
+
+## 絶対禁止 (kishotenketsu)
+- 転 (ten) を承 (sho) の言い換え・深掘り・平行展開にすること
+- 転 を結論や行動提案にすること (それは結 ketsu の役割)
+- 各 phase が 50 字未満 / 150 字超になること
+- ten_perspective_shift を空文字 / 「視点を転換」等の抽象一般論で済ませること
+
 ## 出力フォーマット
 出力は **JSON のみ**。前後の説明文・コードフェンスは一切不要。
 スキーマは ZeroOutlineOutput に厳密準拠：
@@ -390,6 +431,10 @@ function buildUserPrompt(input: ZeroOutlineInput): string {
 5. faq_items は読者が検索しそうな疑問。Q は短く、A は 100〜150 字
 6. image_prompts は hero / body / summary の 3 スロットすべて埋めること。**必ず配列形式 \`[{"slot": "hero", "prompt": "..."}, {"slot": "body", "prompt": "..."}, {"slot": "summary", "prompt": "..."}]\` で返すこと**。オブジェクト形式 \`{hero: "...", body: "...", summary: "..."}\` は禁止
 7. **meta_description は必ず 100〜140 字で生成すること**。空文字 / プレースホルダ / 50 字未満は即不合格。記事の核心を読者目線で 1〜2 文に圧縮し、主要キーワードを 1 つ自然に含めること
+8. **kishotenketsu (ki / sho / ten / ketsu) を必ず出力する**。各 50〜150 字。
+   ten は承と異なる視点角度を持つこと。ten_perspective_shift で角度差を自己説明する
+9. h2_chapters[i] に kishotenketsu_phase ('ki'|'sho'|'ten'|'ketsu') を付与し、
+   §4.1 の H2 マッピング規則 (3/4/5+ 章別) に従う。転は必ず 1 章独立させる
 
 ## 出力
 ZeroOutlineOutput スキーマに完全準拠した JSON のみを出力してください。`;

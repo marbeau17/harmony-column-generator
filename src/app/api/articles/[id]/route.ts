@@ -91,6 +91,49 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // P5-100: kishotenketsu_approved_at を立てるなら kishotenketsu 本体が必須。
+    // payload に approved_at を新規セットするのに、payload にも DB にも
+    // kishotenketsu プランが無い場合は「中身の無い承認」になり仕様違反。
+    {
+      const data = result.data as {
+        kishotenketsu?: unknown;
+        kishotenketsu_approved_at?: string | null;
+      };
+      const payloadHasApprovedAt = Object.prototype.hasOwnProperty.call(
+        data,
+        'kishotenketsu_approved_at',
+      );
+      const settingApprovedAt =
+        payloadHasApprovedAt &&
+        typeof data.kishotenketsu_approved_at === 'string' &&
+        data.kishotenketsu_approved_at.length > 0;
+      if (settingApprovedAt) {
+        const payloadHasPlan = Object.prototype.hasOwnProperty.call(
+          data,
+          'kishotenketsu',
+        );
+        const payloadPlan = data.kishotenketsu;
+        const dbPlan = (existing as { kishotenketsu?: unknown } | null)
+          ?.kishotenketsu;
+        const incomingPlanIsObject =
+          payloadHasPlan && payloadPlan != null && typeof payloadPlan === 'object';
+        const dbPlanIsObject = dbPlan != null && typeof dbPlan === 'object';
+        if (!incomingPlanIsObject && !dbPlanIsObject) {
+          logger.warn('api', 'updateArticle.kishotenketsu_approve_without_plan', {
+            articleId: id,
+          });
+          return NextResponse.json(
+            {
+              error:
+                '起承転結プランが存在しない状態で承認時刻を設定することはできません',
+              code: 'KISHOTENKETSU_PLAN_REQUIRED',
+            },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
     // P5-32: stage2/stage3 契約検証 (Layer 4)
     // template 混入 / body のみで stage3 上書き等を save 時に reject
     const contentCheck = validateArticleContentPayload(
@@ -178,6 +221,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       { status: 500 },
     );
   }
+}
+
+// ─── PATCH /api/articles/[id] ───────────────────────────────────────────────
+// P5-100 (kishotenketsu-flow §6.1): UI 起承転結レビュー画面の「保存」「承認」
+// 操作は PATCH を使う想定 (REST 慣習: 部分更新)。実装は PUT と同じ
+// updateArticleSchema を共有し、内部で PUT ハンドラに委譲する薄いエイリアス。
+// PUT 互換も維持 (既存呼出し元に影響しない)。
+
+export async function PATCH(request: NextRequest, ctx: RouteParams) {
+  return PUT(request, ctx);
 }
 
 // ─── DELETE /api/articles/[id] ──────────────────────────────────────────────
