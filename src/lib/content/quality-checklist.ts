@@ -9,6 +9,9 @@
 import type { Article } from '@/types/article';
 import { buildDeployHtml } from '@/lib/deploy/article-html-builder';
 
+import { checkKishotenketsuArc } from './checks/kishotenketsu-arc';
+import { checkKishotenketsuPhaseAlignment } from './checks/kishotenketsu-phase-alignment';
+
 // ─── チェック結果の型定義 ────────────────────────────────────────────────────
 
 export type CheckSeverity = 'error' | 'warning';
@@ -569,6 +572,96 @@ export function runQualityChecklist(input: ChecklistInput): ChecklistResult {
   const passed = errorCount === 0;
 
   // スコア: passは100点、warnは50点、failは0点として平均
+  const totalPoints = items.reduce((sum, i) => {
+    if (i.status === 'pass') return sum + 100;
+    if (i.status === 'warn') return sum + 50;
+    return sum;
+  }, 0);
+  const score = Math.round(totalPoints / items.length);
+
+  const summary = passed
+    ? `全${items.length}項目クリア（警告${warningCount}件）— 公開可能です`
+    : `${errorCount}件のエラーがあります（${passCount}/${items.length}項目パス）— エラー解消後に公開できます`;
+
+  return {
+    passed,
+    score,
+    items,
+    summary,
+    checkedAt: new Date().toISOString(),
+    errorCount,
+    warningCount,
+  };
+}
+
+// ─── 非同期チェック (AI 判定を含む super set) ─────────────────────────────────
+
+/**
+ * 既存 sync `runQualityChecklist` の super set として、AI を含む非同期チェックを
+ * 追加実行する。既存 sync 同期 API は破壊的変更しない。
+ *
+ * 追加項目:
+ *   - kishotenketsu_arc           : Gemini で 4 段の認識性を判定 (severity=warning)
+ *   - kishotenketsu_phase_alignment: cheerio で H2 と phase 語彙の対応検証 (sync)
+ *
+ * 設計方針:
+ *   - 既存 sync result の items にマージし、`passed` / `score` / `errorCount`
+ *     / `warningCount` / `summary` をすべて再計算する。
+ *   - kishotenketsu 系は severity=warning 固定 (memory: false positive 30% 前提)
+ *     なので、新規追加で sync 公開判定 (passed) が壊れることはない。
+ *   - article が undefined / kishotenketsu 未生成の場合も AI 内部で warn 判定し、
+ *     呼び出し側のエラーハンドリング不要。
+ */
+export async function runQualityChecklistAsync(
+  input: ChecklistInput,
+): Promise<ChecklistResult> {
+  const baseResult = runQualityChecklist(input);
+
+  const extras: CheckItem[] = [];
+
+  if (input.article) {
+    // sync の phase alignment は cheerio 単独 → そのまま push
+    try {
+      extras.push(...checkKishotenketsuPhaseAlignment(input.article));
+    } catch (e) {
+      console.warn(
+        '[quality-checklist] kishotenketsu_phase_alignment failed',
+        e,
+      );
+    }
+
+    // async の arc check (AI 失敗は内部で warn fallback 済)
+    try {
+      extras.push(...(await checkKishotenketsuArc(input.article)));
+    } catch (e) {
+      // 二重防御: 内部 try/catch で吸収済だが念のため warn 追加
+      console.warn('[quality-checklist] kishotenketsu_arc failed', e);
+      extras.push({
+        id: 'kishotenketsu_arc',
+        category: '構成',
+        label: '起承転結が認識できるか',
+        status: 'warn',
+        severity: 'warning',
+        detail: 'チェック実行エラー (handled)',
+      });
+    }
+  }
+
+  if (extras.length === 0) {
+    return baseResult;
+  }
+
+  const items: CheckItem[] = [...baseResult.items, ...extras];
+
+  const errorCount = items.filter(
+    (i) => i.status === 'fail' && i.severity === 'error',
+  ).length;
+  const warningCount =
+    items.filter((i) => i.status === 'fail' || i.status === 'warn').length -
+    errorCount;
+  const passCount = items.filter((i) => i.status === 'pass').length;
+  const passed = errorCount === 0;
+
   const totalPoints = items.reduce((sum, i) => {
     if (i.status === 'pass') return sum + 100;
     if (i.status === 'warn') return sum + 50;

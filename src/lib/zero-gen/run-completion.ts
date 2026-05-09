@@ -56,6 +56,33 @@ interface PromptItem {
   alt_text_ja: string;
 }
 
+/**
+ * P5-101: 指定タイトルの H2 セクション本文を切り出す。
+ *   - 起承転結 post-validate で「転 (ten)」セクションに転換語が含まれているか
+ *     を検査するためのヘルパ。
+ *   - 厳密 HTML パースは重いため、本ヘルパは軽量な文字列スキャンで十分とする
+ *     (memory: feedback_systemic_antipatterns.md ① "HTML を regex 操作禁止" は
+ *     主に「書き換え」に対する戒め。本関数は read-only スキャンのみ)。
+ *   - 該当 H2 が見つからない場合は空文字を返す (post-validate 側で warn 抑止)。
+ */
+function extractH2Section(html: string, title: string): string {
+  if (!html || !title) return '';
+  // タイトル文字列を含む <h2 ...>...title...</h2> を探す。
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle) return '';
+  const titleIdx = html.indexOf(trimmedTitle);
+  if (titleIdx < 0) return '';
+  // タイトル後ろの </h2> 以降を section 本文の開始点とする。
+  const closeH2Idx = html.indexOf('</h2>', titleIdx);
+  if (closeH2Idx < 0) return '';
+  const sectionStart = closeH2Idx + '</h2>'.length;
+  // 次の <h2 もしくは末尾までを section 範囲とする。
+  const nextH2Match = html.slice(sectionStart).search(/<h2(?:\s|>)/i);
+  const sectionEnd =
+    nextH2Match >= 0 ? sectionStart + nextH2Match : html.length;
+  return html.slice(sectionStart, sectionEnd);
+}
+
 function mimeToExt(mime: string): string {
   const m: Record<string, string> = {
     'image/png': 'png',
@@ -329,6 +356,31 @@ export async function runZeroGenCompletion(args: {
     throw new Error(`runZeroGenCompletion: article not found: ${articleId}`);
   }
 
+  // ─── P5-101: 起承転結承認ゲート (Stage2 起動前ガード / spec §10) ──────────
+  // Stage2 完了直後に呼ばれる本ヘルパに対し、approved_at NULL のまま流入する
+  // 経路 (例: フラグ ON 切替直後の race / 手動 SQL での回避) を最終的に遮断する
+  // ためのフェイルセーフ。/api/ai/generate-body 側の 412 ガードと二重化する。
+  // spec §2: source モードは対象外。NEXT_PUBLIC_KISHOTENKETSU_ENABLED=false の
+  // 間は完全にバイパスし、旧 path 互換を保つ (デグレ敏感性)。
+  const KISHOTENKETSU_ENABLED =
+    process.env.NEXT_PUBLIC_KISHOTENKETSU_ENABLED === 'true';
+  const generationModeForGate =
+    (article as { generation_mode?: string | null }).generation_mode ?? null;
+  const kishotenketsuApprovedAt =
+    (article as { kishotenketsu_approved_at?: string | null })
+      .kishotenketsu_approved_at ?? null;
+  if (
+    KISHOTENKETSU_ENABLED &&
+    generationModeForGate === 'zero' &&
+    !kishotenketsuApprovedAt
+  ) {
+    logger.error('ai', 'run_completion.kishotenketsu_not_approved', {
+      article_id: articleId,
+      slug: (article as { slug?: string | null }).slug ?? null,
+    });
+    throw new Error('起承転結が未承認のため Stage2 を起動できません');
+  }
+
   // P5-69 (Phase β): Stage2 入力検査 (silent 進行を禁止する)。
   //   article ロード後に stage2_body_html / outline / image_prompts の有無を
   //   構造化ログとして記録し、空 or 100 文字未満なら logger.error + throw する。
@@ -541,6 +593,66 @@ export async function runZeroGenCompletion(args: {
     length: stage3Html?.length ?? 0,
     elapsed_ms: Date.now() - tStage3,
   });
+
+  // ─── P5-101: 起承転結 post-validate (warn-only / spec §5.4 #3) ───────────
+  //   「転 (ten)」H2 セクションの本文に視点転換を示す転換語が含まれているか
+  //   をチェックする。不在でも fail にはせず logger.warn で観測のみ残す
+  //   (memory: feedback_silent_failure_lessons.md "stage transition は logger
+  //   .info で必ず可観測化")。template_check の前に配置することで、最終ゲート
+  //   (P5-89 template_check) との順序関係を保つ。
+  if (
+    KISHOTENKETSU_ENABLED &&
+    generationModeForGate === 'zero' &&
+    kishotenketsuApprovedAt
+  ) {
+    try {
+      const TRANSITION_WORDS = [
+        'でも',
+        'けれど',
+        '実は',
+        '一方で',
+        'ところが',
+      ] as const;
+      const h2Chapters = (outline.h2_chapters as
+        | Array<{
+            title?: string;
+            kishotenketsu_phase?: 'ki' | 'sho' | 'ten' | 'ketsu';
+          }>
+        | undefined) ?? [];
+      const tenChapter = h2Chapters.find(
+        (c) => c?.kishotenketsu_phase === 'ten',
+      );
+      if (tenChapter && tenChapter.title) {
+        const tenSection = extractH2Section(stage3Html, tenChapter.title);
+        const hasTransition = TRANSITION_WORDS.some((w) =>
+          tenSection.includes(w),
+        );
+        logger.info('ai', 'run_completion.kishotenketsu.post_validate', {
+          article_id: articleId,
+          ten_chapter_title: tenChapter.title,
+          ten_section_chars: tenSection.length,
+          has_transition: hasTransition,
+        });
+        if (!hasTransition) {
+          logger.warn(
+            'ai',
+            'run_completion.kishotenketsu.transition_word_absent',
+            {
+              article_id: articleId,
+              slug: (article as { slug?: string | null }).slug ?? null,
+              ten_chapter_title: tenChapter.title,
+            },
+          );
+        }
+      }
+    } catch (e) {
+      // post-validate の失敗で本フローを倒さない (warn-only スコープ)。
+      logger.warn('ai', 'run_completion.kishotenketsu.post_validate_failed', {
+        article_id: articleId,
+        error_message: (e as Error)?.message ?? String(e),
+      });
+    }
+  }
 
   // P5-86: ランタイム整合性ゲート — body_html を DB に書き込む直前に
   //   「デプロイ用最終形」と同じ HTML を組み立てて runTemplateCheck() に通す。

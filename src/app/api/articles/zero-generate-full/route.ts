@@ -350,6 +350,15 @@ async function generateStage2Body(args: {
   persona: PersonaRow;
   retrievedChunks: ZeroWritingRetrievedChunk[];
   requestId?: string;
+  /**
+   * P5-101: 由起子さんが UI で承認した起承転結プラン (任意)。
+   *   approvedKishotenketsu と kishotenketsuApprovedAt の両方が非 null の
+   *   ときのみ buildZeroWritingUserPrompt が §5.1 ブロックを user prompt に
+   *   注入する (spec §5.2)。本初期生成パスでは通常未承認のため呼び出し側で
+   *   省略してよく、その場合は旧 prompt と byte-identical を保つ。
+   */
+  approvedKishotenketsu?: ZeroOutlineOutput['kishotenketsu'] | null;
+  kishotenketsuApprovedAt?: string | null;
 }): Promise<{ html: string; raw: unknown }> {
   const writingInput: ZeroWritingInput = {
     outline: args.outline,
@@ -365,6 +374,12 @@ async function generateStage2Body(args: {
       category: args.theme.category ?? undefined,
     },
     retrievedChunks: args.retrievedChunks,
+    // P5-101: outline.kishotenketsu と kishotenketsu_approved_at を Stage2
+    //   prompt builder に渡す経路接続 (spec §5.2)。
+    //   両方非 null の場合のみ buildZeroWritingUserPrompt が §5.1 ブロックを
+    //   注入し、いずれか欠けた場合は旧出力と byte-identical を保つ (後方互換)。
+    approved_kishotenketsu: args.approvedKishotenketsu ?? null,
+    kishotenketsu_approved_at: args.kishotenketsuApprovedAt ?? null,
   };
 
   const { system, user: userPrompt } = buildZeroWritingPrompt(writingInput);
@@ -472,6 +487,23 @@ async function insertZeroArticle(args: {
     // P5-90: Stage1 outline で生成された meta_description を articles 列に直接入れる。
     // 空文字 / 100 字未満の場合は run-completion 側のランタイムゲートが Gemini フォールバックで補う。
     meta_description: args.outline.meta_description ?? null,
+    // ─── P5-101: 起承転結 (kishotenketsu) ───────────────────────────────────
+    // spec: docs/specs/kishotenketsu-flow.md §6.4 #1 / §11 (Feature flag fallback)
+    //
+    // all-in-one 経路 (zero-generate-full) は記事新規作成 + Stage1 + Stage2 を
+    // 一気通貫で完結させるため、generate-body のような 412 承認ゲートは
+    // **意図的に追加しない**。理由:
+    //   1. all-in-one は Stage1 完了直後に Stage2 を起動する設計のため、
+    //      "outline 承認待ち" の中断点が存在しない (UX trade-off)。
+    //   2. レビュー UI (outline page) は Stage1-only + 個別 Stage2 経路で利用する想定。
+    //   3. 仕様 §11 ロールアウト戦略の「フォールバック」path 相当 — flag が ON でも
+    //      all-in-one 経由の記事は kishotenketsu_approved_at = NULL のまま draft 化し、
+    //      事後にユーザーが outline page で review/approve できる。
+    //
+    // 承認列 (kishotenketsu_approved_at) は INSERT に含めない (DEFAULT NULL)。
+    // 後段で「本文を再生成」を押すと generate-body 経由で 412 ガードが発動するため、
+    // 一旦 approve が必須になる流れと整合する。
+    kishotenketsu: args.outline.kishotenketsu ?? null,
     hallucination_score: args.hallucinationScore,
     yukiko_tone_score: args.yukikoToneScore,
   };

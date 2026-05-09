@@ -9,6 +9,7 @@
 // ============================================================================
 
 import type { ZeroOutlineOutput } from '@/lib/ai/prompts/stage1-zero-outline';
+import type { KishotenketsuPlan } from '@/lib/schemas/kishotenketsu';
 
 // ─── CTA 先 URL ────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,16 @@ export interface ZeroWritingInput {
   persona: ZeroWritingPersona;
   theme: { id: string; name: string; category?: string };
   retrievedChunks: RetrievedChunk[];
+  /**
+   * P5-101: 由起子さんが UI で承認した起承転結プラン。
+   * - 非 null かつ kishotenketsu_approved_at が非 null の場合のみ
+   *   §5.1 「起承転結構造」ブロックを user prompt に注入する。
+   * - いずれかが null の場合は旧 prompt と byte-identical な出力を保つ
+   *   (デグレ敏感性 / spec §5.2)。
+   */
+  approved_kishotenketsu?: KishotenketsuPlan | null;
+  /** P5-101: 起承転結プランの承認時刻。null の場合は §5.1 ブロックを出力しない。 */
+  kishotenketsu_approved_at?: string | null;
 }
 
 // ─── 由起子 FB 14 項目（stage2-writing.ts / stage1-zero-outline.ts と整合） ────
@@ -385,6 +396,50 @@ export function buildZeroWritingUserPrompt(input: ZeroWritingInput): string {
     0
   );
 
+  // P5-101: 起承転結ブロック (spec §5.1)。
+  // approved_kishotenketsu と kishotenketsu_approved_at の両方が非 null の
+  // 場合のみ user prompt にブロックを注入する。いずれかが null/未指定なら
+  // 空文字列を返し、旧出力と byte-identical を保つ (デグレ敏感性 §5.2)。
+  const approvedKishotenketsu = input.approved_kishotenketsu;
+  const kishotenketsuApprovedAt = input.kishotenketsu_approved_at;
+  let kishotenketsuBlock = '';
+  if (approvedKishotenketsu && kishotenketsuApprovedAt) {
+    const chapters = outline.h2_chapters ?? [];
+    // spec §5.2: H2 章数が 4 と異なる場合は「→ 対応 H2:」マッピング行を
+    // 出力せず、4 段のテキストのみ提示する。
+    const includeMapping = chapters.length === 4;
+    const mappingLine = (idx: number, phase: 'ki' | 'sho' | 'ten' | 'ketsu'): string => {
+      if (!includeMapping) return '';
+      const ch = chapters[idx];
+      return `\n  → 対応 H2: ${ch?.title ?? ''} (kishotenketsu_phase: ${phase})`;
+    };
+    kishotenketsuBlock = `
+## 起承転結構造 (必須遵守・由起子さんが承認した物語設計)
+
+これは由起子さん本人が承認した「物語の四段構成」です。
+**4 段それぞれを 1 つの H2 章に対応付けて執筆してください。**
+順序の入れ替え・段の省略・段の融合は禁止です。
+
+- 起 (導入・読者の現実への共感): ${approvedKishotenketsu.ki}${mappingLine(0, 'ki')}
+- 承 (深掘り・読者がうすうす感じていることの言語化): ${approvedKishotenketsu.sho}${mappingLine(1, 'sho')}
+- 転 (視点の転換・由起子さんの核心的気づき): ${approvedKishotenketsu.ten}${mappingLine(2, 'ten')}
+- 結 (受容と祈り・行動への小さな招待): ${approvedKishotenketsu.ketsu}${mappingLine(3, 'ketsu')}
+
+### 転 (ten) の書き方 (最重要)
+「転」は本記事のオリジナリティを担う最重要セクションです。承までで積み上げた
+読者の理解に対して、**異なる視点を導入する**こと。「実は」「けれど」「視点を変えると」
+「もう一段奥には」といった転換語で必ず開始し、承の延長にならないようにしてください。
+
+禁止: 承で述べた内容を言い換えるだけの転
+推奨: 承の前提そのものを問い直す転
+
+### 結 (ketsu) の書き方
+結は「転で得た新しい視点」を読者の日常に降ろす段です。転の繰り返しではなく、
+転を踏まえた**行動提案と祈り**で閉じてください。
+「〜してみてくださいね」「〜しますように」を必ず含めること。
+`;
+  }
+
   return `以下のゼロ生成構成案（ZeroOutlineOutput）に基づいて、小林由起子本人の声でスピリチュアルコラムの本文を HTML 形式で執筆してください。
 **元記事は存在しません。retrievedChunks（system 側）と下記 outline のみを材料に、ゼロから創造的に書いてください。**
 
@@ -397,7 +452,7 @@ ${outline.lead_summary ?? '(lead_summary 未設定)'}
 
 ## ナラティブ・アーク（物語の骨格）
 ${arcText}
-
+${kishotenketsuBlock}
 ## 感情曲線（H2 章ごとの数値）
 [${emotionText}]
 
