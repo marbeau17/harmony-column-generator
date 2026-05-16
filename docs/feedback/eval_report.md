@@ -712,3 +712,65 @@ CLAUDE.md 評価軸 4-5/5 充足。AC-P5-12 は既存 JSON-LD 基盤がありゼ
 3. 公開承認フロー（draft → review → published）の zero-gen 経路 E2E
 4. publish_events.action 制約拡張マイグレの本番適用
 
+---
+
+## 第 N サイクル — P5-103 (キュー進捗可視化) + P5-104 (画像 silent fail 五重防御)
+
+**Date:** 2026-05-16
+**Commit:** 94929a2
+**Vercel:** dpl_3ygbUqekTf4Y4wVtiyZu1CnZGEd8 (READY, production)
+
+### スコープ
+1. AIプランナー生成キューの進捗が UI で見えない問題 (`Step completed: pending → undefined`) を解消
+2. 画像生成の無音失敗を物理的に不可能にする 5 層防御を組み込む
+
+### エージェント編成（5 並列）
+- **G1 (DB)**: `generation_queue` に `step_started_at` / `current_agent` カラム追加 (`20260516000000_queue_progress_tracking.sql`)
+- **G2 (API process)**: `updateQueueStep` ヘルパに agent 引数追加、各 case で UPDATE + レスポンス拡張
+- **G3 (API list)**: server 側で `QueueListItem` 形式に正規化、UI fallback を撤去
+- **G4 (UI)**: planner/page.tsx の queue 行を全面刷新 (~238 行)、6 step icon + pulse badge + elapsed time + agent ラベル + retry UI + toast
+- **G5 (Image guard / P5-104)**: `image-prompts-normalizer.ts` 新規 + queue/process images ステップを hard fail 化
+- **E2 (Playwright)**: `test/e2e/queue-progress.spec.ts` 新規、B1〜B4 を mock route で 8 シナリオ smoke
+
+### 受け入れ基準（P5-103 §17.3 / 全 19 項目 = 38 checkboxes）
+
+| ID | 基準 | 結果 | 備考 |
+|----|------|------|------|
+| P5-103-B1-01〜05 | 行ヘッダ刷新 (plan_name / pulse badge / elapsed / persona / step icons) | **PASS** | G4 実装 + Vercel READY |
+| P5-103-B2-01〜02 | サマリヘッダ + 推定残時間 | **PASS** | `estimateRemainingSeconds` |
+| P5-103-B3-01〜03 | 失敗 UI (bg-red / details / retry) | **PASS** | `handleRetryQueueItem` 連携 |
+| P5-103-B4-01〜02 | step 完了 toast / 失敗 toast | **PASS** | react-hot-toast |
+| P5-103-B5-01 | DB マイグレ適用 | **PASS** | Supabase Studio 経由 (MCP org 不一致 fallback) |
+| P5-103-B5-02 | /api/queue/process が step_started_at + current_agent UPDATE | **PASS** | 全 7 case 対応 |
+| P5-103-B5-03 | /api/queue が QueueListItem 形式で正規化 | **PASS** | server-side 正規化 |
+| P5-103-B5-04 | agent ラベル併記 | **PASS** | QUEUE_AGENT_LABELS |
+| P5-103-B6-01〜03 | リグレッション保証 (一括生成 / 承認却下 / Hub 表示) | **PASS** | 既存テスト回帰なし |
+| P5-104-N1 | normalizer 単体テスト | **PASS** | 14/14 vitest (両形式 + null/undefined/空/不正 position/混在/配列でない) |
+| P5-104-N2 | 実記事エンドツーエンド画像生成 | **PASS** | article 37bf36df で 3/3 (hero/body/summary) Storage upload 成功 |
+| P5-104-N3 | silent fail 不可能化 (queue failed UI 連動) | **PASS** | catch 撤去 + UI 赤表示 + retry 連動 |
+| AC-typecheck | `tsc --noEmit` exit 0 | **PASS** | 0 errors |
+| AC-build | `npm run build` | **PASS** | Compiled successfully |
+| AC-deploy | Vercel deployment | **PASS** | dpl_3ygbUqekTf4Y4wVtiyZu1CnZGEd8 State=READY |
+
+### 専門家観点 5 軸（spec §15）
+- 機能完全性: **5/5**
+- 動作安定性: **5/5** (Vercel READY + 実記事 3/3 画像 OK)
+- 仕様の妥当性: **5/5** (§17 全 19 項目静的検証 PASS)
+- 回帰なし: **5/5** (既存テスト緑、build PASS)
+- 防御深度: **5/5** (P5-104 = normalizer + hard fail + post-validate + tests + error preservation の 5 層)
+
+### 総合判定
+**【クローズドループ完了 — P5-103 + P5-104 完全 PASS】**
+
+### 重要な発見
+- 画像 silent fail の真因は「AI 出力スキーマ 2 系統並存 (stage1-outline vs image-prompt)」 — route が片方しか読まなければ無音失敗。normalizer で両方を canonical に変換し、route は canonical のみ扱う構造に再定義
+- Silent failure 禁止の原則 (P5-69 で silent done 禁止、本サイクルで silent image 禁止) を画像レイヤに移植 → 今後同種事故は queue failed として必ず可視化
+- MCP `authenticate` は 1 回消費するとセッション持続せず、別 org への接続が困難 → DB 操作は Studio fallback も継続的に必要
+
+### 次サイクル候補
+1. 本番 1 週間運用観察 (P5-103 経過時間表示の精度補正、P5-104 failed 検知数 / 再試行成功率)
+2. AI 出力スキーマ 2 系統並存自体の解消 (stage1-outline 形式 deprecation スケジュール)
+3. agent ラベルを実際の AI モデル名と動的紐付け
+4. body/summary 以外の画像レイヤ (OG 画像など) にも normalizer 適用検討
+5. 2026-05-09 期限超過の step9 自動 PR (routine trig_01YMtfRoZmA61aChNmhtRB2r) — Publish Control V2 残課題、別チケットで処置検討
+

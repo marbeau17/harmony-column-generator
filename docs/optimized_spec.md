@@ -832,6 +832,7 @@ UI-01〜05: UI/UX（5 項目）
 | 2026-05-06 | v2.0 | 5 ドメイン横断統合、CTA 矛盾明記、placeholder Phase 1/2/3 追補、visibility_state 8 値整理、要 Change Request 10 件特定 |
 | 2026-05-06 | **v2.1** | **本版**: ユーザー判断 ❶〜❻ 確定（CTA=2回、claim_type=6値、risk に critical 追加、narrative_arc=JSONB、progress=0-100、Step2/3 を本サイクル実装）。データモデル整合性 27 矛盾点を §2.4 に統合。Generator 実装スコープを §13.3 で明示。 |
 | 2026-05-16 | **v2.2** | **P5-103 追加**: AIプランナー生成キュー進捗可視化（§17）。クイックフィックス 3 件（API/Client/Fetch normalize）を別途完了済み（commit 候補）。本仕様 §17 は B1〜B5 の UI 刷新 + DB 拡張 + Toast を 5 エージェントループで実装する。 |
+| 2026-05-16 | **v2.3** | **P5-103 完了 + P5-104 追記**: commit 94929a2 で出荷、Vercel `dpl_3ygbUqekTf4Y4wVtiyZu1CnZGEd8` State=READY。§17 全 19 項目 (38 boxes) `[x] Implemented` + `[x] Tested` 確定。P5-104 (画像 silent fail 5 層防御 — `image-prompts-normalizer.ts` 新規 + queue/process hard fail + 14/14 ユニットテスト + 実記事 37bf36df で 3/3 画像生成成功) を `progress.md` に併記。 |
 
 ---
 
@@ -939,77 +940,77 @@ CLAUDE.md §1 規約: `[ ] Implemented` は Generator が、`[ ] Tested` は Eva
 #### B1: 行ヘッダ刷新（タイトル/メタ/現在ステップ/経過時間）
 
 - **P5-103-B1-01**: キュー行に `plan_name` がプレースホルダ無しで表示される
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B1-02**: 現在ステップが `bg-amber-100 animate-pulse` バッジで強調表示される
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B1-03**: `step_started_at` からの経過秒（`12s` / `1m 03s`）が表示され 1 秒ごとに更新される
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B1-04**: ペルソナと視点変換ラベルがサブ行に表示される
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B1-05**: 6 ステップアイコンが `✓ / ⟳(animate-spin) / ◯ / ✗` で状態表示される
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 
 #### B2: サマリヘッダ（俯瞰）
 
 - **P5-103-B2-01**: 「生成キュー」見出し横に `3/10 完了 / 失敗 1 / 推定残 6m20s` が表示される
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B2-02**: 推定残時間は「完了済みアイテムの平均ステップ秒 × 残ステップ数」で算出
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 
 #### B3: 失敗 UI（再試行導線）
 
 - **P5-103-B3-01**: `current_step='failed'` の行は `bg-red-50/50` + 赤いステップアイコン
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B3-02**: `error_message` が `<details>` で折りたたみ表示できる
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B3-03**: 「再試行」ボタン（既存 `handleRetryQueueItem` を呼ぶ）が失敗行のみに表示される
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 
 #### B4: ステップ遷移トースト
 
 - **P5-103-B4-01**: ステップ完了時 `toast.success('✓「{planTitle}」{nextStepLabel}完了')` が出る（react-hot-toast 既存）
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B4-02**: 失敗時 `toast.error('✗「{planTitle}」{stepLabel} 失敗: {message}')` が出る
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 
 #### B5: エージェント可視化
 
 - **P5-103-B5-01**: DB に `step_started_at`, `current_agent` カラムが追加されている（マイグレーション適用済み）
-  - [ ] Implemented (Generator G1)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G1)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B5-02**: `/api/queue/process` が各ステップ遷移で `step_started_at = NOW()` と `current_agent` を更新する
-  - [ ] Implemented (Generator G2)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G2)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B5-03**: `/api/queue` レスポンスが §17.2 の `QueueListItem` 形式で正規化されている
-  - [ ] Implemented (Generator G3)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G3)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B5-04**: UI 現在ステップバッジに `(Generator: Gemini Pro)` のような agent ラベルが併記される
-  - [ ] Implemented (Generator G4)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (Generator G4)
+  - [x] Tested (Evaluator 2)
 
 #### B6: リグレッション保証（既存機能を壊していない）
 
 - **P5-103-B6-01**: 既存の「一括生成」「キュー処理開始」「更新」ボタンが既存通り動作
-  - [ ] Implemented (該当なし、既存維持)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (該当なし、既存維持)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B6-02**: 「承認」「却下」「修正」フローが回帰していない
-  - [ ] Implemented (該当なし、既存維持)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (該当なし、既存維持)
+  - [x] Tested (Evaluator 2)
 - **P5-103-B6-03**: 既存記事 32 件 (zero) + 27 件 (source) の Hub 表示が壊れていない
-  - [ ] Implemented (該当なし、既存維持)
-  - [ ] Tested (Evaluator 2)
+  - [x] Implemented (該当なし、既存維持)
+  - [x] Tested (Evaluator 2)
 
 ### 17.4 5 エージェント並列実装スコープ
 
