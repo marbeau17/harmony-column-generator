@@ -1,3 +1,83 @@
+# Progress — P5-104 画像生成 silent fail 完全封じ込め
+
+**Date:** 2026-05-16
+**Author:** Generator/Evaluator（緊急対応）
+**Loop Count:** 1
+
+## 問題
+
+直近 10 記事すべて `image_files=0`。images ステップは catch で握り潰し、警告だけ吐いて seo_check へ進行 → 公開記事に画像が出ない。
+
+## ROOT CAUSE
+
+- `stage1-outline.ts` AI 出力 → `{section_id, heading_text, prompt}` 形式
+- `image-prompt.ts` AI 出力 → `{position, alt_text_ja, prompt}` 形式
+- `route.ts` images ステップは `position` のみ参照 → stage1 形式が DB に残った場合 `position=undefined`
+- `uploadImage` が undefined path で silently 動作 or generateImage 失敗を握り潰し → image_files=0
+- 外側 catch も握り潰し → queue は seo_check へ進む
+
+## 多層防御（完全封じ込め）
+
+1. **正規化レイヤ** `src/lib/content/image-prompts-normalizer.ts`（新規）
+   - `section_id` / `position` 両形式を canonical `{position, prompt, alt}` に変換
+   - 不正は即 throw（無音スキップ禁止）
+2. **ハードフェイル** route.ts images case
+   - `imageFiles.length === 0` で **throw** → outer catch → markFailed → UI 可視化
+   - 外側握り潰し catch を削除（normalize throw も markFailed 経路へ）
+3. **エラー保全** `image_generation_errors` カラムに失敗詳細を保存（カラム未追加でも fallback で握り潰さない）
+4. **単体テスト** `test/unit/image-prompts-normalizer.test.ts`（新規、14/14 PASS）
+   - canonical 形式変換
+   - 不正 throw（無音禁止）
+   - 配列内 1 件不正 → 全体 throw
+
+## 検証
+
+- `npx tsc --noEmit`: 0 errors
+- `vitest run image-prompts-normalizer.test.ts`: 14/14 PASS
+- `npm run build`: ✅ exit 0
+- API 直接呼出（gemini-3-pro-image-preview）: 200, 776KB JPEG, 18s → モデル / キー正常確認
+
+## 残課題
+
+- 既存 outline_approved / body_review 記事は再トリガが必要（過去のままでは画像なし）
+- 任意で `image_generation_errors` カラム追加マイグレーション（fallback で握り潰さないが、保存もされない）
+
+---
+
+# Progress — P5-103 AIプランナー進捗可視化（実装完了 / DB マイグレーション未適用）
+
+**Date:** 2026-05-16
+**Author:** Generator (5 並列 + Evaluator 試験作成)
+**Current Loop Count: 1**
+
+## P5-103 実装スナップショット（圧縮）
+
+### Phase 1: クイックフィックス（3 件、commit 前）
+- Bug1 ✅ `/api/queue/process` 全 7 レスポンスに `planTitle` 追加
+- Bug2 ✅ `planner/page.tsx:591` で `newStep→currentStep`, `keyword→planTitle`
+- Bug3 ✅ `fetchQueue` で `step→current_step`, `content_plan.keyword→plan_name` 正規化
+
+### Phase 2: 5 並列実装（commit 前）
+- G1 ✅ `supabase/migrations/20260516000000_queue_progress_tracking.sql` 作成（`step_started_at`, `current_agent` カラム追加、`IF NOT EXISTS` で冪等）
+- G2 ✅ `/api/queue/process` route — `updateQueueStep(agent)` 拡張、各 case で agent 渡し、全 7 レスポンスに `stepStartedAt` + `currentAgent` 追加
+- G3 ✅ `/api/queue` route — サーバ側で `QueueListItem` 形式に正規化
+- G4 ✅ `planner/page.tsx` — 行ヘッダ刷新（B1）/ サマリ（B2）/ 失敗UI（B3）/ toast（B4）/ agent ラベル（B5）
+- E2 ✅ `test/e2e/queue-progress.spec.ts` 新規（8 test() 定義、`page.route` で API モック）
+
+### 検証結果
+- `npx tsc --noEmit`: 0 errors
+- `npm run build`: ✅ 成功（exit 0）— planner ページ 11.3 kB
+- Playwright 実行: 未実施（次の Evaluator 2 フェーズ）
+
+### 残課題（**ブロッカー**）
+- **DB マイグレーション未適用**: remote Supabase に `step_started_at`, `current_agent` カラムが存在しない。このまま `/api/queue/process` を叩くと G2 の UPDATE が column not found エラーで失敗 → キュー処理がデグレ。
+  - **対応**: ユーザに適用方法を確認（CLI / Studio / Service Role 経由スクリプト / Supabase MCP）
+
+### 仕様書
+- `/docs/optimized_spec.md` §17 (P5-103) — 18 項目の二段チェックリストで定義済み
+
+---
+
 # Progress — Publish Control V2 P0 完了
 
 **Date:** 2026-04-25

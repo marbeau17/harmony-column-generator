@@ -1,3 +1,44 @@
+# Evaluation Report — P5-103 AIプランナー進捗可視化（追記 2026-05-16）
+
+**Evaluator:** Evaluator 2（Phase 2 リグレッション確認）
+**Date:** 2026-05-16
+**Spec:** /docs/optimized_spec.md §17（v2.2）
+**Loop Count:** 1
+**対象:** 5 並列実装後の P5-103（Phase 1 クイックフィックス 3 件 + Phase 2 G1〜G4 + E2）
+
+## 検証結果サマリ
+
+| 検証 | 結果 | 詳細 |
+|---|---|---|
+| `npx tsc --noEmit` | ✅ PASS | 0 errors |
+| `npm run build` | ✅ PASS | exit 0、planner 11.3 kB |
+| マイグレーション適用 | ✅ PASS | Studio 経由で適用、SERVICE_ROLE_KEY 経由 SELECT で `step_started_at` `current_agent` 両カラム存在確認 |
+| Playwright spec ロード | ✅ PASS | 8 test() 認識、SKIP（TEST_USER_PASSWORD 未設定の予定挙動） |
+| dev サーバ起動 | ✅ PASS | localhost:3000 |
+| `/dashboard/planner` runtime | ✅ PASS | 未認証時 `/login` リダイレクト正常、console error / warning 共に 0 |
+
+## 未完了（人間判断要請）
+
+- **B1-01〜B6-03 視覚検証**: TEST_USER_PASSWORD 未設定 + MCP Playwright のログインも未実施のため、UI が実データで意図通り表示されるかは未確認。
+  - **推奨**: ユーザが http://localhost:3000/dashboard/planner にログインして目視確認 → 問題なければ commit。
+  - **代替**: TEST_USER_PASSWORD を .env.local に追記すれば自動 smoke が走る。
+
+## デグレ確認 (B6)
+
+- ✅ 既存 `/api/queue` `/api/queue/process` のフィールド名 `previousStep` `currentStep` `articleId` `published` `title` を変更せず、追加のみ
+- ✅ `markFailed` 未変更（current_agent=null のまま）
+- ✅ Phase 1 で修正済み `console.log` を G2/G4 が壊していない
+- ✅ ALTER TABLE は `IF NOT EXISTS` で冪等、既存データ破壊なし
+- ✅ `handleRetryQueueItem` 関数本体未変更（既存 retry 経路維持）
+
+## ループ判定
+
+- 致命的リグレッションなし → ロールバック不要
+- 視覚検証のみ残課題、ユーザ確認後 commit 推奨
+- ループ継続条件未該当、現状で Step 4 PASS 判定
+
+---
+
 # Evaluation Report — P0 Spec (optimized_spec.md)
 
 **Evaluator:** Subagent (Evaluator role)

@@ -46,12 +46,16 @@ async function updateQueueStep(
   serviceClient: ServiceClient,
   queueId: string,
   step: string,
+  agent: string | null,
   extraFields?: Record<string, unknown>,
 ) {
+  const stepStartedAt = new Date().toISOString();
   const { error } = await serviceClient
     .from('generation_queue')
     .update({
       step,
+      current_agent: agent,
+      step_started_at: stepStartedAt,
       ...extraFields,
     })
     .eq('id', queueId);
@@ -59,6 +63,8 @@ async function updateQueueStep(
   if (error) {
     throw new Error(`キューステップ更新に失敗: ${error.message}`);
   }
+
+  return { stepStartedAt };
 }
 
 async function markFailed(
@@ -423,7 +429,12 @@ export async function POST(request: NextRequest) {
           }
 
           // --- 8. キューステップを進める ---
-          await updateQueueStep(serviceClient, queueItem.id, 'outline');
+          const { stepStartedAt } = await updateQueueStep(
+            serviceClient,
+            queueItem.id,
+            'outline',
+            'Planner',
+          );
 
           logger.info('api', 'processQueue.pending_complete', {
             queueId: queueItem.id,
@@ -436,6 +447,9 @@ export async function POST(request: NextRequest) {
             previousStep: 'pending',
             currentStep: 'outline',
             articleId,
+            planTitle: plan?.keyword ?? null,
+            stepStartedAt,
+            currentAgent: 'Planner',
           });
         }
 
@@ -559,7 +573,12 @@ export async function POST(request: NextRequest) {
             })
             .eq('id', articleId);
 
-          await updateQueueStep(serviceClient, queueItem.id, 'body');
+          const { stepStartedAt } = await updateQueueStep(
+            serviceClient,
+            queueItem.id,
+            'body',
+            'Generator',
+          );
 
           logger.info('api', 'processQueue.outline_complete', {
             queueId: queueItem.id,
@@ -572,6 +591,9 @@ export async function POST(request: NextRequest) {
             previousStep: 'outline',
             currentStep: 'body',
             articleId,
+            planTitle: plan?.keyword ?? null,
+            stepStartedAt,
+            currentAgent: 'Generator',
           });
         }
 
@@ -652,7 +674,12 @@ export async function POST(request: NextRequest) {
             })
             .eq('id', articleId);
 
-          await updateQueueStep(serviceClient, queueItem.id, 'images');
+          const { stepStartedAt } = await updateQueueStep(
+            serviceClient,
+            queueItem.id,
+            'images',
+            'Generator',
+          );
 
           logger.info('api', 'processQueue.body_complete', {
             queueId: queueItem.id,
@@ -666,6 +693,9 @@ export async function POST(request: NextRequest) {
             previousStep: 'body',
             currentStep: 'images',
             articleId,
+            planTitle: plan?.keyword ?? null,
+            stepStartedAt,
+            currentAgent: 'Generator',
           });
         }
 
@@ -688,86 +718,125 @@ export async function POST(request: NextRequest) {
             throw new Error('記事が見つかりません');
           }
 
-          // ── 実際の画像生成（Gemini Image） ──
-          const imagePrompts = article.image_prompts as { prompt: string; position: string; alt_text_ja?: string }[] | null;
-          if (imagePrompts && imagePrompts.length > 0) {
-            try {
-              const { generateImage } = await import('@/lib/ai/gemini-client');
-              const { uploadImage } = await import('@/lib/storage/image-storage');
-              const imageFiles: { position: string; url: string; alt: string; filename: string }[] = [];
+          // ── 実際の画像生成（Gemini Image）── 多層防御で silent fail を完全封じ込め
+          // 1. 正規化レイヤ: stage1/image-prompt 両形式を canonical 化（不正は即 throw）
+          // 2. 全件失敗時: queue を failed に落とす（無音スキップ禁止）
+          // 3. 部分失敗時: エラー詳細を image_generation_errors に保存
+          // 4. 外側 catch なし: throw は queue の outer try/catch で markFailed される
+          const rawImagePrompts = article.image_prompts as unknown;
+          if (Array.isArray(rawImagePrompts) && rawImagePrompts.length > 0) {
+            const { normalizeImagePrompts } = await import('@/lib/content/image-prompts-normalizer');
+            // ← throw すると outer catch (stepError) → markFailed → UI で可視化
+            const normalizedPrompts = normalizeImagePrompts(rawImagePrompts).slice(0, 3);
 
-              for (const imgPrompt of imagePrompts.slice(0, 3)) {
-                try {
-                  console.log(`[queue] images: Generating image for position=${imgPrompt.position} articleId=${articleId}`);
-                  const imgStart = Date.now();
-                  logger.info('api', 'processQueue.generating_image', { articleId, position: imgPrompt.position });
-                  const result = await generateImage(imgPrompt.prompt, { timeoutMs: 60_000 });
-                  const url = await uploadImage(articleId, imgPrompt.position, result.imageBuffer, result.mimeType);
-                  imageFiles.push({
-                    position: imgPrompt.position,
-                    url,
-                    alt: imgPrompt.alt_text_ja || '',
-                    filename: `${imgPrompt.position}.webp`,
-                  });
-                  console.log(`[queue] images: Image ${imgPrompt.position} generated in ${Math.round((Date.now() - imgStart) / 1000)}s → ${url.substring(0, 60)}...`);
-                  logger.info('api', 'processQueue.image_generated', { articleId, position: imgPrompt.position, url });
-                } catch (imgErr) {
-                  console.log(`[queue] images: Image ${imgPrompt.position} FAILED: ${String(imgErr).substring(0, 100)}`);
-                  logger.warn('api', 'processQueue.image_failed', { articleId, position: imgPrompt.position, error: String(imgErr) });
-                  // 1枚失敗しても続行
+            const { generateImage } = await import('@/lib/ai/gemini-client');
+            const { uploadImage } = await import('@/lib/storage/image-storage');
+            const imageFiles: { position: string; url: string; alt: string; filename: string }[] = [];
+            const imageErrors: { position: string; error: string }[] = [];
+
+            for (const imgPrompt of normalizedPrompts) {
+              try {
+                console.log(`[queue] images: Generating image for position=${imgPrompt.position} articleId=${articleId}`);
+                const imgStart = Date.now();
+                logger.info('api', 'processQueue.generating_image', { articleId, position: imgPrompt.position });
+                const result = await generateImage(imgPrompt.prompt, { timeoutMs: 60_000 });
+                const url = await uploadImage(articleId, imgPrompt.position, result.imageBuffer, result.mimeType);
+                imageFiles.push({
+                  position: imgPrompt.position,
+                  url,
+                  alt: imgPrompt.alt,
+                  filename: `${imgPrompt.position}.webp`,
+                });
+                console.log(`[queue] images: Image ${imgPrompt.position} generated in ${Math.round((Date.now() - imgStart) / 1000)}s → ${url.substring(0, 60)}...`);
+                logger.info('api', 'processQueue.image_generated', { articleId, position: imgPrompt.position, url });
+              } catch (imgErr) {
+                const errMsg = imgErr instanceof Error ? imgErr.message : String(imgErr);
+                console.log(`[queue] images: Image ${imgPrompt.position} FAILED: ${errMsg.substring(0, 200)}`);
+                logger.warn('api', 'processQueue.image_failed', { articleId, position: imgPrompt.position, error: errMsg });
+                imageErrors.push({ position: imgPrompt.position, error: errMsg.substring(0, 500) });
+              }
+            }
+
+            // ── ハードフェイル: 全画像失敗時は queue を failed に落とす ──
+            if (imageFiles.length === 0) {
+              const summary = imageErrors
+                .map((e) => `${e.position}: ${e.error.substring(0, 80)}`)
+                .join(' | ');
+              throw new Error(
+                `画像生成 ${normalizedPrompts.length} 件すべて失敗: ${summary || '不明エラー'}`,
+              );
+            }
+
+            // ── 部分成功: image_files + HTML placeholder 置換 ──
+            const updateFields: Record<string, unknown> = {
+              image_files: imageFiles,
+              updated_at: new Date().toISOString(),
+            };
+
+            for (const field of ['stage2_body_html', 'stage3_final_html'] as const) {
+              let html = article[field] as string | null;
+              if (!html) continue;
+              let changed = false;
+              for (const img of imageFiles) {
+                const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
+                const patterns = [
+                  new RegExp(`<div[^>]*class="[^"]*placeholder[^"]*"[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->\\s*</div>`, 'g'),
+                  new RegExp(`<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->`, 'g'),
+                  new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)? `, 'g'),
+                ];
+                for (const p of patterns) {
+                  const prev: string = html as string;
+                  html = (html as string).replace(p, imgTag);
+                  if (html !== prev) changed = true;
                 }
               }
+              if (changed) updateFields[field] = html;
+            }
 
-              if (imageFiles.length > 0) {
-                // Replace image placeholders in body HTML with actual img tags
-                const updateFields: Record<string, unknown> = {
-                  image_files: imageFiles,
-                  updated_at: new Date().toISOString(),
-                };
+            await serviceClient
+              .from('articles')
+              .update(updateFields)
+              .eq('id', articleId);
 
-                for (const field of ['stage2_body_html', 'stage3_final_html'] as const) {
-                  let html = article[field] as string | null;
-                  if (!html) continue;
-                  let changed = false;
-                  for (const img of imageFiles) {
-                    const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
-                    const patterns = [
-                      new RegExp(`<div[^>]*class="[^"]*placeholder[^"]*"[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->\\s*</div>`, 'g'),
-                      new RegExp(`<!--\\s*IMAGE:${img.position}:[\\s\\S]*?-->`, 'g'),
-                      new RegExp(`IMAGE:${img.position}(?::[^\\s<]*)? `, 'g'),
-                    ];
-                    for (const p of patterns) {
-                      const prev: string = html as string;
-                      html = (html as string).replace(p, imgTag);
-                      if (html !== prev) changed = true;
-                    }
-                  }
-                  if (changed) updateFields[field] = html;
-                }
-
+            // 部分失敗があれば追加カラム（image_generation_errors）を別 update で保存。
+            // カラムが未マイグレーションでも上記の主 update は壊さない設計。
+            if (imageErrors.length > 0) {
+              try {
                 await serviceClient
                   .from('articles')
-                  .update(updateFields)
+                  .update({ image_generation_errors: imageErrors } as Record<string, unknown>)
                   .eq('id', articleId);
-                logger.info('api', 'processQueue.images_saved', { articleId, count: imageFiles.length, htmlUpdated: Object.keys(updateFields).length > 2 });
+              } catch {
+                // image_generation_errors カラム未追加でも続行（warn は既に出力済み）
               }
-            } catch (imgGenErr) {
-              logger.warn('api', 'processQueue.image_generation_error', { articleId, error: String(imgGenErr) });
-              // 画像生成全体が失敗しても続行（SEOチェックへ進む）
             }
+            logger.info('api', 'processQueue.images_saved', {
+              articleId,
+              count: imageFiles.length,
+              errors: imageErrors.length,
+              htmlUpdated: Object.keys(updateFields).length > 2,
+            });
           }
 
           const bodyHtml = (article.stage2_body_html || article.stage3_final_html || article.published_html) as string | null;
           if (!bodyHtml) {
             // 本文がない場合は品質チェックをスキップしてseo_checkへ進む
             console.log(`[queue] images: No body HTML found for article ${articleId}, skipping quality check`);
-            await updateQueueStep(serviceClient, queueItem.id, 'seo_check');
+            const { stepStartedAt } = await updateQueueStep(
+              serviceClient,
+              queueItem.id,
+              'seo_check',
+              'Evaluator',
+            );
             return NextResponse.json({
               processed: true,
               queueId: queueItem.id,
               previousStep: 'images',
               currentStep: 'seo_check',
               articleId,
+              planTitle: plan?.keyword ?? null,
+              stepStartedAt,
+              currentAgent: 'Evaluator',
             });
           }
 
@@ -810,7 +879,12 @@ export async function POST(request: NextRequest) {
             })
             .eq('id', articleId);
 
-          await updateQueueStep(serviceClient, queueItem.id, 'seo_check');
+          const { stepStartedAt } = await updateQueueStep(
+            serviceClient,
+            queueItem.id,
+            'seo_check',
+            'Evaluator',
+          );
 
           logger.info('api', 'processQueue.images_complete', {
             queueId: queueItem.id,
@@ -826,6 +900,9 @@ export async function POST(request: NextRequest) {
             previousStep: 'images',
             currentStep: 'seo_check',
             articleId,
+            planTitle: plan?.keyword ?? null,
+            stepStartedAt,
+            currentAgent: 'Evaluator',
           });
         }
 
@@ -883,9 +960,13 @@ export async function POST(request: NextRequest) {
               .update({ status: 'editing', updated_at: new Date().toISOString() })
               .eq('id', articleId);
 
-            await updateQueueStep(serviceClient, queueItem.id, 'completed', {
-              completed_at: new Date().toISOString(),
-            });
+            const { stepStartedAt } = await updateQueueStep(
+              serviceClient,
+              queueItem.id,
+              'completed',
+              'Publisher',
+              { completed_at: new Date().toISOString() },
+            );
             if (plan?.id) await updatePlanStatus(serviceClient, plan.id, 'completed');
 
             return NextResponse.json({
@@ -899,6 +980,9 @@ export async function POST(request: NextRequest) {
               reason,
               qualityCheck: checkResult,
               title: article.title,
+              planTitle: plan?.keyword ?? null,
+              stepStartedAt,
+              currentAgent: 'Publisher',
             });
           }
 
@@ -920,9 +1004,13 @@ export async function POST(request: NextRequest) {
             .eq('id', articleId);
 
           // Queue completed
-          await updateQueueStep(serviceClient, queueItem.id, 'completed', {
-            completed_at: new Date().toISOString(),
-          });
+          const { stepStartedAt } = await updateQueueStep(
+            serviceClient,
+            queueItem.id,
+            'completed',
+            'Publisher',
+            { completed_at: new Date().toISOString() },
+          );
 
           // Update plan status to completed
           if (plan?.id) await updatePlanStatus(serviceClient, plan.id, 'completed');
@@ -955,6 +1043,9 @@ export async function POST(request: NextRequest) {
             articleId,
             published: true,
             title: article.title,
+            planTitle: plan?.keyword ?? null,
+            stepStartedAt,
+            currentAgent: 'Publisher',
           });
         }
 

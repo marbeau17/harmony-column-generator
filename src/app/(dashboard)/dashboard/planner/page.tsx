@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
 import {
   Sparkles,
   ChevronDown,
@@ -47,7 +48,10 @@ interface QueueItem {
   plan_id: string;
   plan_name: string;
   current_step: QueueStep;
-  error_message?: string;
+  step_started_at: string | null;
+  current_agent: string | null;
+  started_at: string | null;
+  error_message?: string | null;
 }
 
 // Generation progress tracking
@@ -118,6 +122,37 @@ const QUEUE_STEP_LABELS: Record<QueueStep, string> = {
   completed: '完了',
   failed:    '失敗',
 };
+
+// B5-04: AI エージェント表示ラベル（サーバから返る current_agent をユーザ向け文言に変換）
+const QUEUE_AGENT_LABELS: Record<string, string> = {
+  Planner:   'AI プランナー',
+  Generator: 'AI ライター',
+  Evaluator: 'AI 校閲',
+  Publisher: '公開処理',
+};
+
+// 経過秒を `Ns` / `Nm SSs` 形式に整形
+function formatElapsed(startedAt: string | null, now: number): string {
+  if (!startedAt) return '';
+  const sec = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
+  if (sec < 60) return `${sec}s`;
+  return `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`;
+}
+
+// 簡易な残り時間推定: 完了済みアイテムの平均処理時間 × 残アイテム数
+// (注) completed_at カラムが無いため started_at からの経過秒で代用
+function estimateRemainingSeconds(items: QueueItem[], now: number): number {
+  const completed = items.filter((i) => i.current_step === 'completed' && i.started_at);
+  if (completed.length === 0) return 0;
+  const avgSec =
+    completed
+      .map((i) => (now - new Date(i.started_at!).getTime()) / 1000)
+      .reduce((a, b) => a + b, 0) / completed.length;
+  const remaining = items.filter(
+    (i) => i.current_step !== 'completed' && i.current_step !== 'failed',
+  ).length;
+  return Math.round(avgSec * remaining);
+}
 
 const FILTER_OPTIONS: { value: PlanStatus | 'all'; label: string }[] = [
   { value: 'all',        label: '全て' },
@@ -293,6 +328,14 @@ export default function PlannerPage() {
   const queueStartBtnRef = useRef<HTMLButtonElement | null>(null);
   const [highlightQueueBtn, setHighlightQueueBtn] = useState(false);
 
+  // P5-103 B1-04: 経過時間の自動更新 (queueRunning 時のみ tick)
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!queueRunning) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [queueRunning]);
+
   const isGenerating = progress.step === 'keywords' || progress.step === 'plans';
 
   // ── ページ離脱防止（生成中） ────────────────────────────────────
@@ -330,7 +373,8 @@ export default function PlannerPage() {
       const res = await fetch('/api/queue', { credentials: 'same-origin' });
       if (res.ok) {
         const data = await res.json();
-        const items: QueueItem[] = data.items ?? data.data ?? [];
+        // P5-103: サーバ (G3) が QueueListItem 形式で正規化済み。クライアントマッピング撤去。
+        const items: QueueItem[] = (data.data ?? data.items ?? []) as QueueItem[];
         setQueueItems(items);
         // Stop polling only if NOT actively running queue processing
         if (!queueRunning) {
@@ -586,9 +630,16 @@ export default function PlannerPage() {
 
         if (!res.ok) {
           console.error(`[queue] Process error (status ${res.status}):`, data.error, data.detail);
+          // P5-103 B4: 失敗をトーストで明示通知
+          toast.error(`✗ ${data.error ?? 'ステップ失敗'}`, { duration: 4000 });
           // Don't break - try next iteration (the failed item gets error_message set and will be skipped)
         } else {
-          console.log(`[queue] Step completed: ${data.previousStep} → ${data.newStep} for plan "${data.keyword || 'unknown'}"`);
+          console.log(`[queue] Step completed: ${data.previousStep} → ${data.currentStep} for plan "${data.planTitle || 'unknown'}"`);
+          // P5-103 B4: ステップ遷移トースト (pending→outline 以降のみ通知、completed/failed 以外)
+          if (data.processed && data.currentStep && data.currentStep !== 'pending') {
+            const label = QUEUE_STEP_LABELS[data.currentStep as QueueStep] ?? data.currentStep;
+            toast.success(`✓「${data.planTitle ?? 'プラン'}」${label} へ`, { duration: 2500 });
+          }
           if (data.published) {
             console.log(`[queue] Article published: ${data.title}`);
             // Show a brief notification
@@ -1228,12 +1279,31 @@ export default function PlannerPage() {
       {/* ── Generation Queue Section ─────────────────────────────── */}
       <div ref={queueSectionRef} className="rounded-xl bg-white shadow-sm border border-gray-100">
         <div className="flex flex-col gap-3 border-b border-gray-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-semibold text-gray-900 sm:text-lg">生成キュー</h2>
             {queueRunning && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 animate-pulse">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 処理中...
+              </span>
+            )}
+            {/* P5-103 B2: サマリヘッダ (完了数 / 失敗数 / 推定残時間) */}
+            {queueItems.length > 0 && (
+              <span className="ml-1 text-xs text-gray-600 tabular-nums">
+                {queueItems.filter((i) => i.current_step === 'completed').length}/{queueItems.length} 完了
+                {queueItems.some((i) => i.current_step === 'failed') && (
+                  <span className="ml-2 text-red-600">
+                    失敗 {queueItems.filter((i) => i.current_step === 'failed').length}
+                  </span>
+                )}
+                {(() => {
+                  const est = estimateRemainingSeconds(queueItems, now);
+                  return est > 0 ? (
+                    <span className="ml-2 text-gray-500">
+                      推定残 {formatElapsed(new Date(now - est * 1000).toISOString(), now)}
+                    </span>
+                  ) : null;
+                })()}
               </span>
             )}
           </div>
@@ -1355,69 +1425,133 @@ export default function PlannerPage() {
         ) : (
           <ul className="divide-y divide-gray-50">
             {queueItems.map((item) => {
-              const queueProgress = getQueueProgress(item.current_step);
               const isFailed = item.current_step === 'failed';
+              const isCompleted = item.current_step === 'completed';
+              const currentIdx = QUEUE_STEPS.indexOf(item.current_step);
+              // B5-04: images ステップは特例で「AI イメージャー」と表示
+              const agentLabel =
+                item.current_step === 'images'
+                  ? 'AI イメージャー（画像生成中）'
+                  : item.current_agent
+                    ? (QUEUE_AGENT_LABELS[item.current_agent] ?? item.current_agent)
+                    : null;
+              const progressRatio = isCompleted
+                ? 1
+                : isFailed
+                  ? 1
+                  : Math.max(0, currentIdx) / (QUEUE_STEPS.length - 1);
               return (
-                <li key={item.id} className={`px-4 py-4 sm:px-6 ${isFailed ? 'bg-red-50/50' : ''}`}>
-                  <div className="flex items-center justify-between mb-2 gap-2">
-                    <span className="text-sm font-medium text-gray-800 truncate">
-                      {item.plan_name}
-                    </span>
-                    <div className="flex items-center gap-2 shrink-0 ml-3">
-                      <span className={`text-xs ${isFailed ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-                        {QUEUE_STEP_LABELS[item.current_step]}
+                <li
+                  key={item.id}
+                  className={`px-4 py-4 sm:px-6 ${isFailed ? 'bg-red-50/50' : ''}`}
+                >
+                  {/* ── 1行目: タイトル + 現在ステップバッジ + 経過時間 ── */}
+                  <div className="flex items-start justify-between mb-1 gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-sm font-medium text-gray-800 truncate block">
+                        🎯 {item.plan_name}
                       </span>
-                      {/* Requirement 5: retry button for failed items */}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* 現在ステップ + エージェントバッジ */}
+                      {!isFailed && !isCompleted && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 animate-pulse">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          {QUEUE_STEP_LABELS[item.current_step]}
+                          {agentLabel && (
+                            <span className="text-amber-600">({agentLabel})</span>
+                          )}
+                        </span>
+                      )}
+                      {/* 経過時間 (B1-04) */}
+                      {item.step_started_at && !isCompleted && !isFailed && (
+                        <span className="text-xs text-gray-500 tabular-nums">
+                          ⏱ {formatElapsed(item.step_started_at, now)}
+                        </span>
+                      )}
+                      {/* 失敗バッジ */}
                       {isFailed && (
-                        <button
-                          onClick={() => handleRetryQueueItem(item.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-red-500 px-2.5 py-2 text-[11px] font-medium text-white transition-colors hover:bg-red-600 min-h-[44px] sm:py-1 sm:min-h-0"
-                        >
-                          <RotateCcw className="h-3 w-3" />
-                          再試行
-                        </button>
+                        <span className="text-xs text-red-600 font-medium">✗ 失敗</span>
+                      )}
+                      {/* 完了バッジ */}
+                      {isCompleted && (
+                        <span className="text-xs text-emerald-600 font-medium">✓ 完了</span>
                       )}
                     </div>
                   </div>
-                  {/* Error message for failed items */}
-                  {isFailed && item.error_message && (
-                    <div className="flex items-start gap-1.5 mb-2 rounded bg-red-100 px-2.5 py-1.5">
-                      <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-red-700 leading-relaxed">{item.error_message}</p>
-                    </div>
-                  )}
-                  {/* Progress bar */}
-                  <div className="relative h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+
+                  {/* ── 2行目: 進捗バー ── */}
+                  <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-2">
                     <div
-                      className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${
-                        item.current_step === 'completed'
-                          ? 'bg-emerald-400'
-                          : isFailed
-                            ? 'bg-red-400'
-                            : 'bg-brand-400'
+                      className={`h-full transition-all duration-500 ${
+                        isFailed
+                          ? 'bg-red-400'
+                          : isCompleted
+                            ? 'bg-emerald-400'
+                            : 'bg-amber-400'
                       }`}
-                      style={{ width: `${isFailed ? 100 : queueProgress}%` }}
+                      style={{ width: `${progressRatio * 100}%` }}
                     />
                   </div>
-                  {/* Step indicators */}
-                  {!isFailed && (
-                    <div className="flex justify-between mt-1 overflow-x-auto">
-                      {QUEUE_STEPS.filter((s) => s !== 'failed').map((step) => {
-                        const stepIdx = QUEUE_STEPS.indexOf(step);
-                        const currentIdx = QUEUE_STEPS.indexOf(item.current_step);
-                        const done = stepIdx <= currentIdx;
-                        return (
+
+                  {/* ── 3行目: ステップアイコン群 (B1-05) ── */}
+                  <div className="flex items-center justify-between text-[10px]">
+                    {QUEUE_STEPS.map((step, idx) => {
+                      const isPast = idx < currentIdx;
+                      const isCurr = idx === currentIdx && !isFailed && !isCompleted;
+                      const failedHere = isFailed && idx === currentIdx;
+                      return (
+                        <div
+                          key={step}
+                          className="flex flex-col items-center gap-0.5 flex-1"
+                        >
                           <span
-                            key={step}
-                            className={`text-[10px] ${
-                              done ? 'text-brand-600 font-medium' : 'text-gray-300'
-                            }`}
+                            className={
+                              failedHere
+                                ? 'text-red-500'
+                                : isPast
+                                  ? 'text-emerald-500'
+                                  : isCurr
+                                    ? 'text-amber-500'
+                                    : 'text-gray-300'
+                            }
+                          >
+                            {failedHere ? '✗' : isPast ? '✓' : isCurr ? '⟳' : '◯'}
+                          </span>
+                          <span
+                            className={
+                              failedHere
+                                ? 'text-red-500 font-medium'
+                                : isCurr
+                                  ? 'text-amber-700 font-medium'
+                                  : 'text-gray-400'
+                            }
                           >
                             {QUEUE_STEP_LABELS[step]}
                           </span>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ── 4行目: 失敗時のエラーパネル (B3) ── */}
+                  {isFailed && (
+                    <details className="mt-3 text-xs">
+                      <summary className="cursor-pointer text-red-700 font-medium select-none flex items-center gap-1.5">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        エラー詳細を表示
+                      </summary>
+                      <pre className="mt-2 p-2 bg-red-100 text-red-900 rounded whitespace-pre-wrap break-words">
+                        {item.error_message || '(エラーメッセージなし)'}
+                      </pre>
+                      <button
+                        onClick={() => handleRetryQueueItem(item.id)}
+                        className="mt-2 inline-flex items-center gap-1 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        再試行
+                      </button>
+                    </details>
                   )}
                 </li>
               );

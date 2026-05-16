@@ -8,6 +8,26 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logger } from '@/lib/logger';
 
+// ─── レスポンス型定義 ───────────────────────────────────────────────────────
+
+type QueueListItem = {
+  id: string;
+  plan_id: string;
+  plan_name: string;
+  current_step:
+    | 'pending'
+    | 'outline'
+    | 'body'
+    | 'images'
+    | 'seo_check'
+    | 'completed'
+    | 'failed';
+  step_started_at: string | null;
+  current_agent: string | null;
+  started_at: string | null;
+  error_message: string | null;
+};
+
 // ─── GET /api/queue ─────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -58,8 +78,20 @@ export async function GET(request: NextRequest) {
 
     logger.info('api', 'listQueue', { step, count });
 
+    // ─ 正規化: row → QueueListItem ─
+    const items: QueueListItem[] = (data ?? []).map((row: any) => ({
+      id: row.id,
+      plan_id: row.plan_id,
+      plan_name: row.content_plan?.keyword || '(プラン名なし)',
+      current_step: row.step,
+      step_started_at: row.step_started_at ?? null,
+      current_agent: row.current_agent ?? null,
+      started_at: row.started_at ?? null,
+      error_message: row.error_message ?? null,
+    }));
+
     return NextResponse.json({
-      data: data ?? [],
+      data: items,
       meta: {
         total: count ?? 0,
         limit,

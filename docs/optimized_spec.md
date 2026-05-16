@@ -831,6 +831,7 @@ UI-01〜05: UI/UX（5 項目）
 | 2026-04-30 | v1.0 | P5 Zero-Generation V1 特化版（Planner 初版） |
 | 2026-05-06 | v2.0 | 5 ドメイン横断統合、CTA 矛盾明記、placeholder Phase 1/2/3 追補、visibility_state 8 値整理、要 Change Request 10 件特定 |
 | 2026-05-06 | **v2.1** | **本版**: ユーザー判断 ❶〜❻ 確定（CTA=2回、claim_type=6値、risk に critical 追加、narrative_arc=JSONB、progress=0-100、Step2/3 を本サイクル実装）。データモデル整合性 27 矛盾点を §2.4 に統合。Generator 実装スコープを §13.3 で明示。 |
+| 2026-05-16 | **v2.2** | **P5-103 追加**: AIプランナー生成キュー進捗可視化（§17）。クイックフィックス 3 件（API/Client/Fetch normalize）を別途完了済み（commit 候補）。本仕様 §17 は B1〜B5 の UI 刷新 + DB 拡張 + Toast を 5 エージェントループで実装する。 |
 
 ---
 
@@ -857,3 +858,179 @@ UI-01〜05: UI/UX（5 項目）
 2. migration list が CI で diff ゼロ
 3. 受け入れ基準 40 項目から smoke 優先で抽出（PC-01, ZG-01, CG-01, IMG-01, OPS-01〜03）
 4. 残課題 R1〜R6（§13.2）の Evaluator 担当分（R1, R4, R6）を確認
+
+---
+
+## 17. P5-103 AIプランナー生成キュー進捗可視化（v2.2 新規 / 5 並列実装）
+
+### 17.1 背景・問題
+
+ユーザー報告: AIプランナーの「生成キュー」セクションが進捗不可視。スクリーンショットでは各キュー行が空のグレーバーのまま動かない。コンソールは `Step completed: pending → undefined for plan "unknown"` を出力。
+
+**根本原因 3 件（Phase 1 で既にクイックフィックス済み・確認のみ残）:**
+
+- ✅ Bug1 (修正済): `/api/queue/process` レスポンスに `planTitle` がなかった → 全 7 レスポンスに `planTitle: plan?.keyword ?? null` 追加
+- ✅ Bug2 (修正済): `planner/page.tsx:591` が `data.newStep` / `data.keyword` を読んでいた → `data.currentStep` / `data.planTitle` に修正
+- ✅ Bug3 (修正済): `/api/queue` 応答の `step` / ネスト `content_plan.keyword` を UI 期待の `current_step` / `plan_name` にマップしていなかった → `fetchQueue` で正規化
+
+**Phase 2（本仕様）スコープ:** 進捗を「数値で示す」だけでなく「**今この瞬間何が起きているか**」を可視化する。失敗時の原因と再試行導線を表示する。
+
+### 17.2 フィールド契約（5 エージェント共通の語彙）
+
+DB（generation_queue）・API（GET /api/queue, POST /api/queue/process）・UI（planner/page.tsx）が共通で使う名前を以下に固定する。**この命名は逸脱厳禁**。
+
+#### DB スキーマ拡張（マイグレーション `20260516000000_queue_progress_tracking.sql`）
+
+```sql
+ALTER TABLE generation_queue ADD COLUMN step_started_at TIMESTAMPTZ;
+ALTER TABLE generation_queue ADD COLUMN current_agent TEXT;
+COMMENT ON COLUMN generation_queue.step_started_at IS 'P5-103: ステップごとの開始時刻（per-step duration 計測用）';
+COMMENT ON COLUMN generation_queue.current_agent IS 'P5-103: 現在動作中の AI エージェント識別子（Planner/Generator/Evaluator/Publisher）';
+-- RLS は既存ポリシーを継承（カラム追加のみ）
+```
+
+#### API: `/api/queue` (GET) 正規化済みレスポンス
+
+```ts
+type QueueListItem = {
+  id: string;
+  plan_id: string;
+  plan_name: string;            // content_plan.keyword（NULL 時は '(プラン名なし)'）
+  current_step: QueueStep;      // DB の step を current_step として返す
+  step_started_at: string | null;
+  current_agent: string | null; // 'Planner' | 'Generator' | 'Evaluator' | 'Publisher' | null
+  started_at: string | null;    // 既存（行全体の開始）
+  error_message: string | null;
+};
+```
+
+サーバ側で正規化することで Phase 1 のクライアント側マップを撤去し、責務をサーバに寄せる。
+
+#### API: `/api/queue/process` (POST) 拡張レスポンス
+
+全 7 レスポンスに以下を追加:
+- `stepStartedAt: string` — 次ステップの開始時刻（ISO）
+- `currentAgent: string` — 次ステップに対応する AI エージェント名
+
+`previousStep` ごとの `currentAgent` マッピング（推論ロジック・別カラム追加なしでも反映可能）:
+
+| currentStep | currentAgent | 表示ラベル |
+|:---|:---|:---|
+| `pending` | (待機中、`null`) | — |
+| `outline` | `Planner` | AI プランナー（構成案生成中） |
+| `body` | `Generator` | AI ライター（本文生成中） |
+| `images` | `Generator` | AI イメージャー（画像生成中） |
+| `seo_check` | `Evaluator` | AI 校閲（品質チェック中） |
+| `completed` | `Publisher` | 公開済み |
+| `failed` | — | エラー |
+
+#### UI コンポーネント命名（planner/page.tsx 内）
+
+- `QueueRowHeader` — タイトル + ペルソナ + 視点 + 現在ステップバッジ + 経過時間
+- `QueueStepIndicators` — 6 個のステップアイコン（✓ / ⟳ / ◯ / ✗）
+- `QueueProgressBar` — 0〜100% の幅 + アニメーション
+- `QueueSummaryHeader` — n/m 完了・失敗数・推定残時間
+- `QueueErrorPanel` — 失敗詳細 + 再試行 / スキップボタン（折りたたみ）
+
+### 17.3 受け入れ基準（二段チェックリスト形式）
+
+CLAUDE.md §1 規約: `[ ] Implemented` は Generator が、`[ ] Tested` は Evaluator 2 だけがトグル可能。
+
+#### B1: 行ヘッダ刷新（タイトル/メタ/現在ステップ/経過時間）
+
+- **P5-103-B1-01**: キュー行に `plan_name` がプレースホルダ無しで表示される
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B1-02**: 現在ステップが `bg-amber-100 animate-pulse` バッジで強調表示される
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B1-03**: `step_started_at` からの経過秒（`12s` / `1m 03s`）が表示され 1 秒ごとに更新される
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B1-04**: ペルソナと視点変換ラベルがサブ行に表示される
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B1-05**: 6 ステップアイコンが `✓ / ⟳(animate-spin) / ◯ / ✗` で状態表示される
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+
+#### B2: サマリヘッダ（俯瞰）
+
+- **P5-103-B2-01**: 「生成キュー」見出し横に `3/10 完了 / 失敗 1 / 推定残 6m20s` が表示される
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B2-02**: 推定残時間は「完了済みアイテムの平均ステップ秒 × 残ステップ数」で算出
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+
+#### B3: 失敗 UI（再試行導線）
+
+- **P5-103-B3-01**: `current_step='failed'` の行は `bg-red-50/50` + 赤いステップアイコン
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B3-02**: `error_message` が `<details>` で折りたたみ表示できる
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B3-03**: 「再試行」ボタン（既存 `handleRetryQueueItem` を呼ぶ）が失敗行のみに表示される
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+
+#### B4: ステップ遷移トースト
+
+- **P5-103-B4-01**: ステップ完了時 `toast.success('✓「{planTitle}」{nextStepLabel}完了')` が出る（react-hot-toast 既存）
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B4-02**: 失敗時 `toast.error('✗「{planTitle}」{stepLabel} 失敗: {message}')` が出る
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+
+#### B5: エージェント可視化
+
+- **P5-103-B5-01**: DB に `step_started_at`, `current_agent` カラムが追加されている（マイグレーション適用済み）
+  - [ ] Implemented (Generator G1)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B5-02**: `/api/queue/process` が各ステップ遷移で `step_started_at = NOW()` と `current_agent` を更新する
+  - [ ] Implemented (Generator G2)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B5-03**: `/api/queue` レスポンスが §17.2 の `QueueListItem` 形式で正規化されている
+  - [ ] Implemented (Generator G3)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B5-04**: UI 現在ステップバッジに `(Generator: Gemini Pro)` のような agent ラベルが併記される
+  - [ ] Implemented (Generator G4)
+  - [ ] Tested (Evaluator 2)
+
+#### B6: リグレッション保証（既存機能を壊していない）
+
+- **P5-103-B6-01**: 既存の「一括生成」「キュー処理開始」「更新」ボタンが既存通り動作
+  - [ ] Implemented (該当なし、既存維持)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B6-02**: 「承認」「却下」「修正」フローが回帰していない
+  - [ ] Implemented (該当なし、既存維持)
+  - [ ] Tested (Evaluator 2)
+- **P5-103-B6-03**: 既存記事 32 件 (zero) + 27 件 (source) の Hub 表示が壊れていない
+  - [ ] Implemented (該当なし、既存維持)
+  - [ ] Tested (Evaluator 2)
+
+### 17.4 5 エージェント並列実装スコープ
+
+各エージェントは **指定ファイル以外を編集禁止** とすることで並列衝突を回避する。
+
+| Agent | 担当 | 編集ファイル（独占） |
+|:---:|:---|:---|
+| **G1** (DB) | step_started_at + current_agent カラム追加 | `supabase/migrations/20260516000000_queue_progress_tracking.sql`（新規） |
+| **G2** (API process) | 各 case で step_started_at + current_agent を UPDATE、レスポンスに stepStartedAt/currentAgent 追加 | `src/app/api/queue/process/route.ts` |
+| **G3** (API list) | サーバ側で QueueListItem 形式に正規化、step→current_step / content_plan.keyword→plan_name | `src/app/api/queue/route.ts` |
+| **G4** (UI) | B1〜B5 のクライアント UI 全部（行刷新・サマリ・失敗UI・toast・agent ラベル） | `src/app/(dashboard)/dashboard/planner/page.tsx`（queue 関連箇所のみ） |
+| **E2** (Playwright) | smoke spec 新規 | `tests/e2e/queue-progress.spec.ts`（新規） |
+
+### 17.5 ガード条項
+
+- **G3 が正規化するため、G4 は Phase 1 で入れた `fetchQueue` 内の `current_step ?? row.step` フォールバックを撤去してよい**（仕様確定後の整合）
+- **G2 は既存 currentStep を変更しない**（previousStep/currentStep のフィールド名は維持、新フィールドのみ追加）
+- **G4 は queue セクション以外の JSX を変更してはならない**（プラン承認ロジック、ヘッダ、その他は触らない）
+- **G1 のマイグレーションは ADD COLUMN のみ**（既存データ破壊禁止、RLS は既存継承）
+- **Loop Count ≤ 3 で停止**（progress.md でカウント管理）
+
+### 17.6 完了条件
+
+§17.3 の全 18 項目で `[x] Implemented` + `[x] Tested` が揃ったとき P5-103 完了。Evaluator 2 がデグレ確認 (B6) を実施し最終 PASS で commit。
