@@ -12,7 +12,7 @@ import {
 } from './helpers/monkey-fixtures';
 
 // Monkey publish-control suite.
-// Run: `FTP_DRY_RUN=true MONKEY_TEST=true PUBLISH_CONTROL_V2=on \
+// Run: `FTP_DRY_RUN=true MONKEY_TEST=true \
 //       MONKEY_SUPABASE_URL=... MONKEY_SUPABASE_SERVICE_ROLE=... \
 //       MONKEY_BASE_URL=http://localhost:3000 npm run test:e2e -- monkey-publish-control`
 //

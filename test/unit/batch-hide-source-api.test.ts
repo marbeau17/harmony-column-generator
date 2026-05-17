@@ -2,9 +2,8 @@
 // test/unit/batch-hide-source-api.test.ts
 // POST /api/articles/batch-hide-source の単体テスト
 //
-// 検証ケース (8 件):
+// 検証ケース (7 件):
 //   1. 認証なし → 401
-//   2. PUBLISH_CONTROL_V2 未設定 → 404
 //   3. body.confirm が 'HIDE_ALL_SOURCE' でない → 400
 //   4. dry_run=true で対象 5 件 → { hidden:0, ids:[...5件], dry_run:true } 200
 //   5. dry_run=false で対象 5 件 → 全 UPDATE 成功 + softWithdraw 5 回 + publish_events 5 件
@@ -141,7 +140,7 @@ function buildPostRequest(body: unknown, opts: { rawJson?: string } = {}): NextR
 // ─── env helpers ───────────────────────────────────────────────────────────
 
 const ENV_SNAPSHOT: Record<string, string | undefined> = {};
-const TRACKED_ENV = ['PUBLISH_CONTROL_V2', 'PUBLISH_CONTROL_FTP'];
+const TRACKED_ENV = ['PUBLISH_CONTROL_FTP'];
 
 function snapshotEnv(): void {
   for (const k of TRACKED_ENV) ENV_SNAPSHOT[k] = process.env[k];
@@ -195,8 +194,6 @@ function seedSoftWithdrawAllOk(): void {
 describe('POST /api/articles/batch-hide-source', () => {
   beforeEach(() => {
     snapshotEnv();
-    // 既定: PUBLISH_CONTROL_V2=on (404 抑制)
-    process.env.PUBLISH_CONTROL_V2 = 'on';
     process.env.PUBLISH_CONTROL_FTP = 'on';
 
     // 各 mock をクリア
@@ -232,18 +229,6 @@ describe('POST /api/articles/batch-hide-source', () => {
     expect(res.status).toBe(401);
     const json = await res.json();
     expect(json.error).toBe('unauthorized');
-  });
-
-  // ─── Case 2: PUBLISH_CONTROL_V2 未設定 → 404 ───────────────────────────
-  it('2) PUBLISH_CONTROL_V2 が on でない場合は 404 を返す', async () => {
-    delete process.env.PUBLISH_CONTROL_V2;
-    seedAuth(true);
-    const res = await POST(buildPostRequest({ confirm: 'HIDE_ALL_SOURCE' }));
-    expect(res.status).toBe(404);
-    const json = await res.json();
-    expect(json.error).toBe('not found');
-    // 404 は機能フラグで先に弾かれるので auth 取得は行われていない
-    expect(authGetUserMock).not.toHaveBeenCalled();
   });
 
   // ─── Case 3: confirm 不正 → 400 ────────────────────────────────────────

@@ -37,10 +37,6 @@ export interface CtaConfig {
   buttonText: string;
   position: 'intro' | 'mid' | 'end';
   purpose: string;
-  /** @deprecated バナー画像は廃止済み。後方互換のため残存 */
-  bannerUrl?: string;
-  /** @deprecated バナー画像は廃止済み。後方互換のため残存 */
-  bannerAlt?: string;
 }
 
 export interface CtaSettingsAll {

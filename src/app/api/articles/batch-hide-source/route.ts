@@ -5,7 +5,6 @@
 // POST /api/articles/batch-hide-source
 //   body: { confirm: 'HIDE_ALL_SOURCE', dry_run?: boolean }
 //
-// - PUBLISH_CONTROL_V2=on でなければ 404
 // - 認証必須（auth.getUser）
 // - 対象抽出は articles WHERE is_hub_visible=true AND
 //   (generation_mode='source' OR generation_mode IS NULL)
@@ -24,7 +23,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { isPublishControlEnabled } from '@/lib/publish-control/feature-flag';
 import { batchHideSourceArticles } from '@/lib/articles/batch-hide';
 import { logger } from '@/lib/logger';
 
@@ -61,10 +59,6 @@ function generateUlid(now: number = Date.now()): string {
 // ─── ハンドラ ────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (!isPublishControlEnabled()) {
-    return NextResponse.json({ error: 'not found' }, { status: 404 });
-  }
-
   // 認証
   const supabaseAuth = await createServerSupabaseClient();
   const { data: { user } } = await supabaseAuth.auth.getUser();

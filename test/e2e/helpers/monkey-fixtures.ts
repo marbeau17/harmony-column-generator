@@ -45,11 +45,6 @@ export function loadMonkeyEnv(): MonkeyEnv {
     );
   }
 
-  // Feature flag must be on.
-  if (process.env.PUBLISH_CONTROL_V2 !== 'on') {
-    throw new Error('refuse to start: monkey test requires PUBLISH_CONTROL_V2=on in the dev-server env');
-  }
-
   return { supabaseUrl, serviceRoleKey, baseUrl, seed };
 }
 

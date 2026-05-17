@@ -45,11 +45,10 @@ test.describe('Publish Control Baseline (Step 1 リファクタ前 pin)', () => 
   });
 
   test('B5. /api/articles/[id]/visibility が認証なしで 401 を返す', async ({ request }) => {
-    // visibility route は POST のみ受け付ける。
-    // 未認証時は 401。PUBLISH_CONTROL_V2 が無効な環境では 404。どちらも acceptable。
+    // visibility route は POST のみ受け付ける。未認証時は 401。
     const res = await request.post(`${BASE_URL}/api/articles/${DUMMY_ARTICLE_ID}/visibility`, {
       data: { visible: false, requestId: '0'.repeat(26) },
     });
-    expect([401, 404]).toContain(res.status());
+    expect(res.status()).toBe(401);
   });
 });

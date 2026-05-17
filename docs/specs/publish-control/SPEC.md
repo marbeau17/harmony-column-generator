@@ -330,7 +330,7 @@ feat/publish-control-single-button ブランチ
  │          `"Published articles are public"` の USING を
  │          `status='published'` → `is_hub_visible = true` に変更
  │          （step7 完了前に実行すると新規記事がサイレントに非公開化されるため順序厳守）
- └── step9: 14〜30日後、旧チェックボックスと関連フィルタコードを削除
+ └── step9: 14〜30日後、旧チェックボックスと関連フィルタコードを削除 ✅ 2026-05-17 完了
 ```
 
 各 step は env フラグ or 1PR revert で戻せる。

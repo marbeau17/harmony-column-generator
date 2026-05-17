@@ -2,13 +2,11 @@
 // publish-control-v2: single-button hub visibility toggle.
 // Spec: docs/specs/publish-control/SPEC.md §3.3
 //
-// Flag-gated: returns 404 unless PUBLISH_CONTROL_V2=on.
 // Idempotent: client requestId (ULID) dedupes; deployed_hash short-circuits no-op.
 // Atomic at the DB layer; FTP step is not part of the transaction (see §3.3 error taxonomy).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { isPublishControlEnabled } from '@/lib/publish-control/feature-flag';
 import { checkVisibilityGuard } from '@/lib/publish-control/guards';
 import { isValidRequestId } from '@/lib/publish-control/idempotency';
 import { assertTransition, isDanglingDeploying, type VisibilityState } from '@/lib/publish-control/state-machine';
@@ -33,11 +31,6 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const startedAt = Date.now();
   const { id: articleId } = params;
   logger.info('api', 'visibility.start', { article_id: articleId });
-
-  if (!isPublishControlEnabled()) {
-    logger.warn('api', 'visibility.feature_flag_off', { article_id: articleId });
-    return NextResponse.json({ error: 'not found' }, { status: 404 });
-  }
 
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();

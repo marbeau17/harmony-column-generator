@@ -97,12 +97,6 @@ vi.mock('@/lib/supabase/server', () => {
   };
 });
 
-// 公開制御フィーチャフラグは ON 固定
-vi.mock('@/lib/publish-control/feature-flag', () => ({
-  isPublishControlEnabled: () => true,
-  publishControlMode: () => 'on',
-}));
-
 // logger は副作用を抑止
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -179,10 +173,6 @@ function lastUpdatePayload(): Record<string, unknown> | null {
 // ─── テスト ─────────────────────────────────────────────────────────────────
 
 describe('review API — レビュー操作 (submit/approve/reject) のピン留め', () => {
-  beforeEach(() => {
-    process.env.PUBLISH_CONTROL_V2 = 'on';
-  });
-
   afterEach(() => {
     vi.clearAllMocks();
   });

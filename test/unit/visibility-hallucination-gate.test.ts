@@ -95,12 +95,6 @@ vi.mock('@/lib/supabase/server', () => {
   };
 });
 
-// 公開制御フィーチャフラグは ON 固定
-vi.mock('@/lib/publish-control/feature-flag', () => ({
-  isPublishControlEnabled: () => true,
-  publishControlMode: () => 'on',
-}));
-
 // FTP / Slack / logger は副作用を抑止
 vi.mock('@/lib/deploy/ftp-uploader', () => ({
   getFtpConfig: vi.fn(async () => ({})),
@@ -167,7 +161,6 @@ function setupHappyPath(opts: { isHubVisible: boolean }) {
 
 describe('visibility API — 第4ゲート: hallucination_critical = 0', () => {
   beforeEach(() => {
-    process.env.PUBLISH_CONTROL_V2 = 'on';
     process.env.PUBLISH_CONTROL_FTP = 'off'; // FTP / hub-rebuild の経路を抑止
   });
 

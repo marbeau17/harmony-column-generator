@@ -10,13 +10,11 @@
  * audit: publish_events に action='review_{submit|approve|reject}' で記録
  * reviewed_at / reviewed_by: approve 時のみ更新 (audit のみ目的、状態判断には使わない)
  *
- * Flag-gated: PUBLISH_CONTROL_V2=on でのみ稼働 (visibility/route.ts と同じパターン)。
  * Idempotent: client requestId (ULID) で重複実行を dedupe。
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { isPublishControlEnabled } from '@/lib/publish-control/feature-flag';
 import { isValidRequestId } from '@/lib/publish-control/idempotency';
 import type { VisibilityState } from '@/lib/publish-control/state-machine';
 import { performReviewAction, type ReviewAction } from '@/lib/publish-control/review-actions';
@@ -40,11 +38,6 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const startedAt = Date.now();
   const { id: articleId } = params;
   logger.info('api', 'review.start', { article_id: articleId });
-
-  if (!isPublishControlEnabled()) {
-    logger.warn('api', 'review.feature_flag_off', { article_id: articleId });
-    return NextResponse.json({ error: 'not found' }, { status: 404 });
-  }
 
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();

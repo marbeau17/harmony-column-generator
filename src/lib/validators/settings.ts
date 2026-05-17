@@ -30,8 +30,6 @@ const ctaItemSchema = z.object({
   buttonText: z.string().optional(),
   catchText: z.string().optional(),
   subText: z.string().optional(),
-  bannerUrl: z.string().optional(),
-  bannerAlt: z.string().optional(),
 });
 
 const ctaSettingsSchema = z.object({

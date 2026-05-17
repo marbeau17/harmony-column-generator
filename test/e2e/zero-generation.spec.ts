@@ -2,8 +2,8 @@
  * Zero-Generation E2E suite (spec §13.2 / ZG-1〜ZG-5)
  *
  * H14 で test.skip → test に解除済み。実機は shadow 環境（MONKEY_TEST=true /
- * FTP_DRY_RUN=true / PUBLISH_CONTROL_V2=on / MONKEY_SUPABASE_URL=非本番）でのみ
- * 動作する。env 未セット時は loadZeroGenEnv() が throw し beforeAll で skip する。
+ * FTP_DRY_RUN=true / MONKEY_SUPABASE_URL=非本番）でのみ動作する。
+ * env 未セット時は loadZeroGenEnv() が throw し beforeAll で skip する。
  *
  * 既存 monkey-publish-control / hub-rebuild へのデグレを起こさないために:
  *   - prod-DB ガード (PROD_SUBSTRINGS) を共有
@@ -22,7 +22,7 @@
  *   - 全成功: 201 / 一部失敗: 207
  *
  * 実行例:
- *   FTP_DRY_RUN=true MONKEY_TEST=true PUBLISH_CONTROL_V2=on \
+ *   FTP_DRY_RUN=true MONKEY_TEST=true \
  *   MONKEY_SUPABASE_URL=... MONKEY_SUPABASE_SERVICE_ROLE=... \
  *   MONKEY_BASE_URL=http://localhost:3000 \
  *   TEST_USER_PASSWORD=... \

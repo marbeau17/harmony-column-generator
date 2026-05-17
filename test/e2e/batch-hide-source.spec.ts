@@ -30,10 +30,9 @@
  *   - TEST_USER_PASSWORD
  *   - FTP_DRY_RUN=true
  *   - MONKEY_TEST=true
- *   - PUBLISH_CONTROL_V2=on   (server-side feature flag — API 404 回避)
  *
  * 起動例:
- *   FTP_DRY_RUN=true MONKEY_TEST=true PUBLISH_CONTROL_V2=on \
+ *   FTP_DRY_RUN=true MONKEY_TEST=true \
  *   MONKEY_SUPABASE_URL=... MONKEY_SUPABASE_SERVICE_ROLE=... \
  *   MONKEY_BASE_URL=http://localhost:3000 \
  *   TEST_USER_PASSWORD=... \
@@ -62,7 +61,6 @@ const REQUIRED_ENV = [
   'TEST_USER_PASSWORD',
   'FTP_DRY_RUN',
   'MONKEY_TEST',
-  'PUBLISH_CONTROL_V2',
 ] as const;
 
 const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
