@@ -10,7 +10,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import {
   buildArticleCards,
   buildCategories,
@@ -243,6 +243,25 @@ export async function POST(request: Request) {
       total: files.length,
       elapsed_ms: durationMs,
     });
+
+    // P5-110: ハブ再生成自体を publish_events に記録 (記事個別ではなく hub 全体イベント)。
+    // article_id は NULL、reason に集計値を入れて後追い可能にする。
+    try {
+      const serviceClient = await createServiceRoleClient();
+      await serviceClient.from('publish_events').insert({
+        article_id: null,
+        action: 'hub_deploy',
+        actor_email: user.email ?? 'unknown',
+        request_id: requestId,
+        reason: `pages=${pages.length} articles=${articles.length} uploaded=${result.uploaded}`,
+        hub_deploy_status: 'ok',
+      });
+    } catch (e) {
+      logger.warn('api', 'hub_deploy.publish_event_insert_threw', {
+        request_id: requestId,
+        error_message: e instanceof Error ? e.message : String(e),
+      });
+    }
 
     return NextResponse.json<HubDeploySuccess>({
       success: true,

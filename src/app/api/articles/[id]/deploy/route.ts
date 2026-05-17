@@ -2,6 +2,7 @@
 // Uploads article HTML + images to FTP, then updates hub page index.html
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'crypto';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 // hub page is now rebuilt via /api/hub/deploy (full generator with categories)
@@ -648,6 +649,40 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       errors,
       elapsed_ms: Date.now() - startedAt,
     });
+
+    // P5-109/P5-110: deployed_hash UPDATE + publish_events INSERT。
+    // HTML が実際にアップロードされた場合のみ記録 (errors_count === 0 でなくても
+    // 少なくとも 1 ファイル uploaded なら hash は更新する)。
+    if (uploaded.length > 0) {
+      const deployedHash = createHash('sha256').update(html).digest('hex').slice(0, 16);
+      try {
+        await serviceClient
+          .from('articles')
+          .update({ deployed_hash: deployedHash })
+          .eq('id', articleId);
+      } catch (e) {
+        logger.warn('api', 'article_deploy.deployed_hash_update_threw', {
+          article_id: articleId,
+          slug,
+          error_message: e instanceof Error ? e.message : String(e),
+        });
+      }
+      try {
+        await serviceClient.from('publish_events').insert({
+          article_id: articleId,
+          action: 'deploy',
+          actor_email: user.email ?? 'unknown',
+          request_id: `DEPLOY-${startedAt}-${articleId.slice(0, 8)}`,
+          reason: 'per-article-deploy',
+        });
+      } catch (e) {
+        logger.warn('api', 'article_deploy.publish_event_insert_threw', {
+          article_id: articleId,
+          slug,
+          error_message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
 
     return NextResponse.json({
       success: true,
