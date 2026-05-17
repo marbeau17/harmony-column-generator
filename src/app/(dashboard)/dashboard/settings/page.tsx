@@ -1552,7 +1552,9 @@ export default function SettingsPage() {
               </h3>
               <p className="text-xs text-gray-500 mb-3">
                 公開中の全記事 (live / live_hub_stale) を FTP に再アップロードします。
+                ゼロ生成・書き換え記事の両方が対象です (旧仕様の zero-only に戻すには env BULK_DEPLOY_ZERO_ONLY=on)。
                 各記事の HTML と画像 3 枚 (hero/body/summary) を上書き、最後にハブページも再生成します。
+                成功した記事は publish_events 監査ログと deployed_hash に記録されます。
                 記事数によっては数分かかる可能性があります。
               </p>
               <button

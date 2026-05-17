@@ -479,7 +479,12 @@ export function generateAllHubPages(
  */
 export async function buildArticleCards(): Promise<HubArticleCard[]> {
   const start = Date.now();
-  const includeRewrites = process.env.NEXT_PUBLIC_HUB_INCLUDE_REWRITES === 'on';
+  // P5-108 (2026-05-17): デフォルトを include rewrites = on に反転。
+  // 経緯: P5-55 では旧アメブロ書換 (source / null) をハブから除外したが、書換記事も
+  // 個別 URL では公開されており、ユーザーは「ハブからリンクされない理由が分からない」
+  // 状態だった。FTP には全 36 件が上がっているのにハブには 6 件しか出ない非対称が原因。
+  // 明示的に従来挙動へ戻したい場合のみ `NEXT_PUBLIC_HUB_INCLUDE_REWRITES=off` を指定する。
+  const includeRewrites = process.env.NEXT_PUBLIC_HUB_INCLUDE_REWRITES !== 'off';
   logger.info('generator', 'hub_generator.build_cards.start', {
     include_rewrites: includeRewrites,
   });
@@ -493,8 +498,8 @@ export async function buildArticleCards(): Promise<HubArticleCard[]> {
     .eq('status', 'published');
   let visibleQuery = applyPubliclyVisibleFilter(baseQuery);
 
-  // P5-55: 新規作成記事 (generation_mode='zero') のみハブに掲載。
-  //        NEXT_PUBLIC_HUB_INCLUDE_REWRITES=on の場合のみ書き換え記事 (source/null) も含める。
+  // P5-55 → P5-108: 既定で書換 (source / null) もハブに掲載。
+  //   `NEXT_PUBLIC_HUB_INCLUDE_REWRITES=off` を指定したときのみ zero-mode 限定に戻す。
   if (!includeRewrites) {
     visibleQuery = visibleQuery.eq('generation_mode', 'zero');
   }

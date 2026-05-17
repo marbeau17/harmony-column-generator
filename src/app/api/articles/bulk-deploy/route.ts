@@ -20,6 +20,7 @@
 //  - P5-84: image_files の型ガード (Array | JSON string 両対応)
 // ============================================================================
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'crypto';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { Client } from 'basic-ftp';
 import { Readable } from 'stream';
@@ -28,6 +29,59 @@ import { getFtpConfig } from '@/lib/deploy/ftp-uploader';
 import { attachFtpWireLogger } from '@/lib/deploy/ftp-wire-logger';
 import { logger } from '@/lib/logger';
 import type { Article } from '@/types/article';
+
+// P5-109/P5-110: 成功した記事 1 件あたり deployed_hash UPDATE + publish_events INSERT。
+// 失敗しても本体のレスポンスはブロックしないよう catch + logger.warn で吸収する。
+async function recordDeploySuccess(
+  serviceClient: Awaited<ReturnType<typeof createServiceRoleClient>>,
+  article: Article,
+  html: string,
+  actorEmail: string,
+  requestId: string,
+): Promise<void> {
+  const deployedHash = createHash('sha256').update(html).digest('hex').slice(0, 16);
+  try {
+    const { error } = await serviceClient
+      .from('articles')
+      .update({ deployed_hash: deployedHash })
+      .eq('id', article.id);
+    if (error) {
+      logger.warn('api', 'bulk_deploy.deployed_hash_update_failed', {
+        article_id: article.id,
+        slug: article.slug,
+        error_message: error.message,
+      });
+    }
+  } catch (e) {
+    logger.warn('api', 'bulk_deploy.deployed_hash_update_threw', {
+      article_id: article.id,
+      slug: article.slug,
+      error_message: e instanceof Error ? e.message : String(e),
+    });
+  }
+  try {
+    const { error } = await serviceClient.from('publish_events').insert({
+      article_id: article.id,
+      action: 'deploy',
+      actor_email: actorEmail,
+      request_id: requestId,
+      reason: 'bulk-deploy',
+    });
+    if (error) {
+      logger.warn('api', 'bulk_deploy.publish_event_insert_failed', {
+        article_id: article.id,
+        slug: article.slug,
+        error_message: error.message,
+      });
+    }
+  } catch (e) {
+    logger.warn('api', 'bulk_deploy.publish_event_insert_threw', {
+      article_id: article.id,
+      slug: article.slug,
+      error_message: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
 
 export const maxDuration = 300;
 
@@ -255,7 +309,9 @@ async function uploadArticleViaFtp(
 
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
-  logger.info('api', 'bulk_deploy.start', { elapsed_ms: 0 });
+  // P5-110: 一括 deploy 全体を 1 つの request_id で publish_events に紐付ける。
+  const bulkRequestId = `BULK-${startedAt}-${Math.random().toString(36).slice(2, 10)}`;
+  logger.info('api', 'bulk_deploy.start', { elapsed_ms: 0, request_id: bulkRequestId });
 
   try {
     // ─── Auth ────────────────────────────────────────────────────────────
@@ -270,15 +326,18 @@ export async function POST(req: NextRequest) {
     // ─── 対象記事 SELECT ──────────────────────────────────────────────────
     const serviceClient = await createServiceRoleClient();
     const tFetch = Date.now();
-    // P5-85: bulk-deploy は zero-mode (= 新規生成記事) のみを対象とする。
-    // 旧アメブロ書換 (source / null) はライブサイトに掲載しない方針 (P5-55 で
-    // hub-generator も同フィルタ済み)。両側のフィルタを揃えることで「ハブには
-    // 出ないが FTP 上に放置」という不整合を恒久的に防ぐ。
-    const { data: articlesRaw, error: selectErr } = await serviceClient
+    // P5-85 → P5-108 (2026-05-17): hub-generator のフィルタ反転 (zero-only → all
+    // modes) に合わせて bulk-deploy も既定で全 mode を対象に。明示的に従来挙動へ
+    // 戻したい場合のみ env `BULK_DEPLOY_ZERO_ONLY=on` を指定する。
+    // 両側のフィルタを揃えることで「ハブには出ないが FTP 上に放置」「FTP には無いが
+    // ハブに出る」の二重不整合を恒久的に防ぐ。
+    const zeroOnly = process.env.BULK_DEPLOY_ZERO_ONLY === 'on';
+    let articlesQuery = serviceClient
       .from('articles')
       .select('*')
-      .in('visibility_state', ['live', 'live_hub_stale'])
-      .eq('generation_mode', 'zero')
+      .in('visibility_state', ['live', 'live_hub_stale']);
+    if (zeroOnly) articlesQuery = articlesQuery.eq('generation_mode', 'zero');
+    const { data: articlesRaw, error: selectErr } = await articlesQuery
       .order('created_at', { ascending: true });
     if (selectErr) {
       logger.error(
@@ -363,6 +422,9 @@ export async function POST(req: NextRequest) {
       uploadedFiles += result.uploadedFiles;
       if (result.errors.length === 0) {
         successCount++;
+        // P5-109/P5-110: 成功時に deployed_hash UPDATE + publish_events INSERT。
+        // 失敗してもアップロード本体は完了しているのでメインのレスポンスはブロックしない。
+        await recordDeploySuccess(serviceClient, article, html, user.email ?? 'unknown', bulkRequestId);
       } else {
         failedCount++;
         errors.push({
