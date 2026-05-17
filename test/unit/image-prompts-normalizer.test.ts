@@ -48,6 +48,43 @@ describe('normalizeImagePrompt — stage1-outline.ts 形式 (section_id/heading_
   });
 });
 
+describe('normalizeImagePrompt — stage1-zero-outline.ts 形式 (slot)', () => {
+  it('slot を position として認識', () => {
+    const got = normalizeImagePrompt({
+      slot: 'hero',
+      prompt: '柔らかな朝の光に包まれる人物',
+    });
+    expect(got).toEqual({
+      position: 'hero',
+      prompt: '柔らかな朝の光に包まれる人物',
+      alt: '',
+    });
+  });
+
+  it('slot=body / summary も受け入れる', () => {
+    expect(normalizeImagePrompt({ slot: 'body', prompt: 'p' }).position).toBe('body');
+    expect(normalizeImagePrompt({ slot: 'summary', prompt: 'p' }).position).toBe('summary');
+  });
+
+  it('position が同時にある場合は position 優先', () => {
+    const got = normalizeImagePrompt({
+      position: 'hero',
+      slot: 'body',
+      prompt: 'p',
+    });
+    expect(got.position).toBe('hero');
+  });
+
+  it('section_id と slot が同時にある場合は section_id 優先', () => {
+    const got = normalizeImagePrompt({
+      section_id: 'hero',
+      slot: 'body',
+      prompt: 'p',
+    });
+    expect(got.position).toBe('hero');
+  });
+});
+
 describe('normalizeImagePrompt — 不正入力で必ず throw', () => {
   it('null/undefined → throw', () => {
     expect(() => normalizeImagePrompt(null)).toThrow(/object でない/);
@@ -62,8 +99,8 @@ describe('normalizeImagePrompt — 不正入力で必ず throw', () => {
     expect(() => normalizeImagePrompt({ position: 'hero', prompt: '' })).toThrow(/prompt が空/);
   });
 
-  it('position/section_id 両方欠落 → throw', () => {
-    expect(() => normalizeImagePrompt({ prompt: 'p' })).toThrow(/position\/section_id が未指定/);
+  it('position/section_id/slot すべて欠落 → throw', () => {
+    expect(() => normalizeImagePrompt({ prompt: 'p' })).toThrow(/position\/section_id\/slot が未指定/);
   });
 
   it('position が hero/body/summary 以外 → throw', () => {

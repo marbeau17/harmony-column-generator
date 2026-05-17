@@ -2,9 +2,10 @@
 // src/lib/content/image-prompts-normalizer.ts
 // 画像プロンプトの正規化＋検証
 //
-// 背景: AI 出力には 2 系統のスキーマが歴史的に混在する
-//   - stage1-outline.ts → { section_id, heading_text, prompt, suggested_filename }
-//   - image-prompt.ts   → { position, prompt, alt_text_ja, caption_ja, ... }
+// 背景: AI 出力には 3 系統のスキーマが歴史的に混在する
+//   - stage1-outline.ts      → { section_id, heading_text, prompt, suggested_filename }
+//   - image-prompt.ts        → { position, prompt, alt_text_ja, caption_ja, ... }
+//   - stage1-zero-outline.ts → { slot, prompt }
 // route.ts の images ステップは `position` のみを参照していたため、
 // stage1 形式が DB に残ったまま images ステップに到達すると
 // `position=undefined` で画像が無音失敗 → image_files=0 → 公開記事に画像が出ない。
@@ -40,7 +41,10 @@ function safeJsonSlice(value: unknown, maxLen: number): string {
  * 受け入れる入力スキーマ:
  *   { position, prompt, alt_text_ja? }                        (image-prompt.ts 形式)
  *   { section_id, prompt, heading_text? }                      (stage1-outline.ts 形式)
- *   どちらか一方の混在は許容、両方ある場合は image-prompt.ts 形式優先
+ *   { slot, prompt }                                           (stage1-zero-outline.ts 形式)
+ *   いずれかが混在していても許容。複数 field が同時にある場合は
+ *   position > section_id > slot の優先順位で解釈する。
+ *   alt は alt_text_ja > heading_text の優先順位。
  */
 export function normalizeImagePrompt(raw: unknown): NormalizedImagePrompt {
   if (!raw || typeof raw !== 'object') {
@@ -48,7 +52,7 @@ export function normalizeImagePrompt(raw: unknown): NormalizedImagePrompt {
   }
   const obj = raw as Record<string, unknown>;
 
-  const rawPosition = (obj.position ?? obj.section_id) as unknown;
+  const rawPosition = (obj.position ?? obj.section_id ?? obj.slot) as unknown;
   const rawPrompt = obj.prompt as unknown;
   const rawAlt = (obj.alt_text_ja ?? obj.heading_text ?? '') as unknown;
 
@@ -57,7 +61,7 @@ export function normalizeImagePrompt(raw: unknown): NormalizedImagePrompt {
   }
   if (typeof rawPosition !== 'string' || rawPosition.trim().length === 0) {
     throw new Error(
-      `画像プロンプトの position/section_id が未指定: ${safeJsonSlice(obj, 120)}`,
+      `画像プロンプトの position/section_id/slot が未指定: ${safeJsonSlice(obj, 120)}`,
     );
   }
   if (!VALID_POSITIONS.has(rawPosition)) {
