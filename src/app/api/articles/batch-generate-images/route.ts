@@ -8,6 +8,8 @@ import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supab
 import { generateImage } from '@/lib/ai/gemini-client';
 import { uploadImage } from '@/lib/storage/image-storage';
 import { logger } from '@/lib/logger';
+// P5-104 五重防御の経路統一: dual-schema (stage1-outline / image-prompt) を canonical 化。
+import { normalizeImagePrompts } from '@/lib/content/image-prompts-normalizer';
 
 export const maxDuration = 300;
 
@@ -45,13 +47,28 @@ export async function POST() {
     const results: { articleId: string; title: string; imagesGenerated: number; errors: string[] }[] = [];
 
     for (const article of needImages) {
-      const prompts = article.image_prompts as { prompt: string; position: string; alt_text_ja?: string }[];
-      if (!prompts || prompts.length === 0) continue;
+      // P5-104 五重防御 (Phase 1 normalizer): dual-schema 並存を canonical 化。
+      // 不正な要素を含む記事はスキップして errors に記録 (silent skip 禁止)。
+      let prompts;
+      try {
+        prompts = normalizeImagePrompts(article.image_prompts).slice(0, 3);
+      } catch (normalizeErr) {
+        const msg = normalizeErr instanceof Error ? normalizeErr.message : String(normalizeErr);
+        logger.warn('api', 'batchGenerateImages.normalize_failed', { articleId: article.id, error: msg });
+        results.push({
+          articleId: article.id,
+          title: (article.title as string) || '(無題)',
+          imagesGenerated: 0,
+          errors: [`画像プロンプトの形式が不正: ${msg}`],
+        });
+        continue;
+      }
+      if (prompts.length === 0) continue;
 
       const imageFiles: { position: string; url: string; alt: string; filename: string }[] = [];
       const errors: string[] = [];
 
-      for (const imgPrompt of prompts.slice(0, 3)) {
+      for (const imgPrompt of prompts) {
         try {
           logger.info('api', 'batchGenerateImages.generating', { articleId: article.id, position: imgPrompt.position });
           const result = await generateImage(imgPrompt.prompt, { timeoutMs: 90_000 });
@@ -59,7 +76,7 @@ export async function POST() {
           imageFiles.push({
             position: imgPrompt.position,
             url,
-            alt: imgPrompt.alt_text_ja || '',
+            alt: imgPrompt.alt,
             filename: `${imgPrompt.position}.webp`,
           });
         } catch (err) {

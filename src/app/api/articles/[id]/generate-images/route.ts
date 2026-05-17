@@ -17,6 +17,8 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { generateImage } from '@/lib/ai/gemini-client';
 import { uploadImage } from '@/lib/storage/image-storage';
 import { logger } from '@/lib/logger';
+// P5-104 五重防御の経路統一: dual-schema (stage1-outline / image-prompt) を canonical 化。
+import { normalizeImagePrompts } from '@/lib/content/image-prompts-normalizer';
 // P5-68 E3: ローカル独自実装の replaceImagePlaceholders を canonical 共通実装に統合。
 //   旧実装は Phase 1 のみ・class="placeholder" 限定の div ラップを扱っていたが、
 //   canonical (src/lib/zero-gen/replace-placeholders.ts) は
@@ -30,15 +32,6 @@ import { replaceImagePlaceholders } from '@/lib/zero-gen/replace-placeholders';
 export const maxDuration = 300;
 
 // ─── 型定義 ────────────────────────────────────────────────────────────────
-
-interface ImagePromptItem {
-  position: string;   // hero | body | summary
-  prompt: string;
-  alt_text_ja?: string;
-  caption_ja?: string;
-  negative_prompt?: string;
-  aspect_ratio?: string;
-}
 
 interface ImageResult {
   position: string;
@@ -86,7 +79,9 @@ export async function POST(
     return NextResponse.json({ error: '記事が見つかりません' }, { status: 404 });
   }
 
-  // 3. image_prompts の検証
+  // 3. image_prompts の検証 — P5-104 normalizer 経由で dual-schema を canonical 化。
+  //    不正な要素が 1 件でも含まれていれば throw → 400 で UI に明示。
+  //    silent-skip と 'hero' フォールバックでの上書きを物理的に不可能にする。
   const rawPrompts = article.image_prompts;
   if (!rawPrompts || !Array.isArray(rawPrompts) || rawPrompts.length === 0) {
     return NextResponse.json(
@@ -95,7 +90,17 @@ export async function POST(
     );
   }
 
-  const prompts = (rawPrompts as ImagePromptItem[]).slice(0, MAX_IMAGES);
+  let prompts;
+  try {
+    prompts = normalizeImagePrompts(rawPrompts).slice(0, MAX_IMAGES);
+  } catch (normalizeErr) {
+    const msg = normalizeErr instanceof Error ? normalizeErr.message : String(normalizeErr);
+    logger.error('ai', 'generate_images.normalize_failed', { articleId, errorMessage: msg }, normalizeErr);
+    return NextResponse.json(
+      { error: `画像プロンプトの形式が不正です: ${msg}` },
+      { status: 400 },
+    );
+  }
 
   logger.info('ai', 'generate_images.start', {
     articleId,
@@ -106,21 +111,9 @@ export async function POST(
   const results: ImageResult[] = [];
   const errors: ImageError[] = [];
 
-  for (const rawItem of prompts) {
-    // DB内のフィールド名の違いを吸収（section_id → position, heading_text → alt_text_ja等）
-    const raw = rawItem as unknown as Record<string, string>;
-    const promptItem = {
-      position: raw.position || raw.section_id || 'hero',
-      prompt: raw.prompt || '',
-      alt_text_ja: raw.alt_text_ja || raw.heading_text || '',
-    };
-    const { position, prompt, alt_text_ja } = promptItem;
-
-    if (!prompt) {
-      logger.warn('ai', 'generate_images.empty_prompt', { articleId, position });
-      errors.push({ position, error: 'プロンプトが空です' });
-      continue;
-    }
+  for (const item of prompts) {
+    const { position, prompt, alt } = item;
+    const alt_text_ja = alt;
 
     try {
       const imageResult = await generateImageWithRetry(prompt, IMAGE_TIMEOUT_MS);
