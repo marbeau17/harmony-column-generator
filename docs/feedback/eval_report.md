@@ -774,3 +774,68 @@ CLAUDE.md 評価軸 4-5/5 充足。AC-P5-12 は既存 JSON-LD 基盤がありゼ
 4. body/summary 以外の画像レイヤ (OG 画像など) にも normalizer 適用検討
 5. 2026-05-09 期限超過の step9 自動 PR (routine trig_01YMtfRoZmA61aChNmhtRB2r) — Publish Control V2 残課題、別チケットで処置検討
 
+---
+
+## 第 N+1 サイクル — backlog クローズアウト (step9 + agent ラベル + normalizer 経路統一 + スキーマ統合計画)
+
+**Date:** 2026-05-17
+**Scope:** P5-103/P5-104 から派生した next-cycle 候補 5 件のうち 4 件 (#17〜#20) を 1 セッションでクローズ。1 件 (本番 1 週間運用観察) はコード作業外のため対象外。
+
+### スコープ
+1. **#17 / step9 (Publish Control V2 legacy 削除)** — P5-43 step8 から 22 日経過 (SPEC 14〜30 日窓内、期限 2026-05-09 を 8 日超過) のため legacy UI / API gate / feature-flag module を一括撤去
+2. **#18 / P5-105 (agent ラベル動的紐付け)** — P5-103 の静的 `QUEUE_AGENT_LABELS` を server-side composer 経由で env 駆動 (実モデル名併記) に
+3. **#19 / P5-106 (normalizer 経路統一)** — P5-104 で `queue/process` "だけ" に適用されていた normalizer を `/api/articles/[id]/generate-images` + `/api/articles/batch-generate-images` にも拡張、dual-schema fallback と silent skip 経路を撤去
+4. **#20 / P5-107 (スキーマ統合計画)** — 第 3 スキーマ `slot` を normalizer に追加 + 3 フェーズ廃止計画ドキュメント策定
+
+### エージェント編成（5 段階短縮: Planner → Generator → Evaluator 統合実施）
+- **Planner**: 既存 SPEC §4 step9 + 5 候補リストから優先順を策定 (step9 が期限超過のため最優先 → 軽量タスク 3 件を順次)
+- **Generator (Fixer)**: 4 タスク順次実装
+- **Evaluator (本セッション統合)**: 各タスク後に `tsc --noEmit` + 関連 vitest を実行、最終に `npm run build` + フル vitest
+
+### 受け入れ基準（19 項目）
+
+| ID | 基準 | 結果 | 備考 |
+|----|------|------|------|
+| step9-A1 | 旧 checkbox UI 撤去 (articles/page.tsx の三項解体) | **PASS** | PublishButton 単独に統一 |
+| step9-A2 | API gate 撤去 (visibility / review / batch-hide-source の 404 早期 return) | **PASS** | 3 route から `isPublishControlEnabled()` 削除 |
+| step9-A3 | feature-flag module 削除 | **PASS** | `src/lib/publish-control/feature-flag.ts` 撤去、caller 0 確認 |
+| step9-A4 | dead code (count fallback / banner fields / runtime-parity) 撤去 | **PASS** | 3 箇所 + test 削除 |
+| step9-A5 | テスト整理 (mock 撤去 / "Case 2: 404" 削除 / hub-rebuild legacy spec 削除) | **PASS** | 32/32 影響テスト PASS |
+| step9-A6 | .env.local.example の `PUBLISH_CONTROL_V2` エントリ撤去 | **PASS** | "step9 で撤去済み" コメント挿入 |
+| step9-A7 | SPEC §4 step9 を ✅ 完了マーク | **PASS** | "✅ 2026-05-17 完了" 追記 |
+| 105-B1 | `composeAgentLabel(role, step)` で role × step kind × env モデル名を結合 | **PASS** | 11 ケース全 PASS |
+| 105-B2 | env 上書き (`GEMINI_MODEL=gemini-4-pro-experimental`) が即座にラベル反映 | **PASS** | テスト 8) で検証 |
+| 105-B3 | UI が server 合成 display を優先、静的 map はフォールバック | **PASS** | `item.current_agent_display ?? QUEUE_AGENT_LABELS[...]` |
+| 105-B4 | 既存 UI 動作 (B5-04 images ステップ特例) を維持 | **PASS** | images 特例は不変 |
+| 106-C1 | `/api/articles/[id]/generate-images` で normalizer 経由化 | **PASS** | inline fallback + silent skip 撤去 |
+| 106-C2 | `/api/articles/batch-generate-images` で normalizer 経由化 | **PASS** | 配列キャスト撤去 |
+| 106-C3 | normalize 失敗時に必ず errors / 400 で UI に伝播 (silent fail 不可能) | **PASS** | logger.error + 400 / errors 配列 |
+| 107-D1 | normalizer が第 3 スキーマ `slot` を accept | **PASS** | 4 新規テスト全 PASS |
+| 107-D2 | 優先順位 `position > section_id > slot` が deterministic | **PASS** | 同時存在ケース 2 件で検証 |
+| 107-D3 | 廃止計画 3 フェーズ + 前提条件 SQL を文書化 | **PASS** | `docs/refactor/image-prompts-schema-unification.md` |
+| AC-typecheck | `tsc --noEmit` exit 0 | **PASS** | 4 タスク完了後も 0 errors |
+| AC-build | `npm run build` | **PASS** | Compiled successfully |
+
+### 専門家観点 5 軸（spec §15）
+- 機能完全性: **5/5** (4 タスク全完了、19 受け入れ基準全 PASS)
+- 動作安定性: **5/5** (build PASS、新規追加 15 テスト全 PASS、影響テスト 32/32 PASS)
+- 仕様の妥当性: **5/5** (SPEC §4 step9 文言通りに実施、P5-104 の防御原則を `feedback_silent_failure_lessons` #6 に従って横展開)
+- 回帰なし: **5/5** (フル vitest 1000/1002 PASS、失敗 2 件は本セッション前から存在する pre-existing failure を main HEAD で確認済み)
+- 防御深度: **5/5** (P5-104 五重防御を 3 経路から 1 経路 (normalizer) に統合、`feedback_systemic_antipatterns.md` #3「同一ロジック複数ファイル禁止」を実体化)
+
+### 総合判定
+**【クローズドループ完了 — 4 タスク (#17/#18/#19/#20) すべて完全 PASS】**
+
+### 重要な発見
+1. **P5-104 防御は localized だった**: P5-104 で normalizer + hard fail を導入したが、`queue/process` images ステップ "だけ" に閉じており、`/api/articles/[id]/generate-images` と `/api/articles/batch-generate-images` には旧 inline dual-schema fallback + silent skip が温存されていた。「P5-104 で完全に封じ込めた」というユーザー要求は、当該経路には満たされていなかった。本サイクルで真の意味で経路統一が完了
+2. **画像 prompt スキーマは 2 系統ではなく 3 系統**: P5-104 設計時点では認識されていなかった第 3 形式 `{slot, prompt}` (`stage1-zero-outline.ts` 発出) が zero-gen 経路で並存。normalizer は当時の 2 系統のみ対応していたため、zero-gen 経路の `slot` 形式が `/api/articles/[id]/generate-images` 等に到達した場合、当初の normalizer は `"position/section_id が未指定"` で throw していた。本サイクルで `slot` も accept するよう拡張
+3. **step9 は 8 日超過していた**: SPEC で 2026-05-09 が期限と明示されていたが、実態は P5-103/P5-104 等の高優先タスクに押されて backlog 化していた。今後この種の期限管理を改善する必要 (次次サイクル候補)
+
+### 次サイクル候補
+1. P5-107 Phase 1 観察ログを normalizer に追加 (rate-limit 必須、30 日観察開始)
+2. step9 で削除した `hub-rebuild.spec.ts` の §6.3.* シナリオに対応する PublishButton 駆動 E2E を新規追加 (現状は monkey-publish-control S2 で部分代替)
+3. 2026-06-15 (Phase 1 観察期間終了) で legacy schema 発火件数集計 → Phase 2 着手判定
+4. publish-control SPEC 全体を読み返し、step6〜8 関連の transient guidance も折り畳む余地を検証
+5. 期限超過 backlog を発見するための簡易監視 (e.g., `grep -r "期限" docs/` の日次 cron) — Vercel cron で実装検討
+
+
