@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logger } from '@/lib/logger';
+import { composeAgentLabel } from '@/lib/queue/agent-labels';
 
 // ─── レスポンス型定義 ───────────────────────────────────────────────────────
 
@@ -24,6 +25,7 @@ type QueueListItem = {
     | 'failed';
   step_started_at: string | null;
   current_agent: string | null;
+  current_agent_display: string | null;
   started_at: string | null;
   error_message: string | null;
 };
@@ -86,6 +88,7 @@ export async function GET(request: NextRequest) {
       current_step: row.step,
       step_started_at: row.step_started_at ?? null,
       current_agent: row.current_agent ?? null,
+      current_agent_display: composeAgentLabel(row.current_agent ?? null, row.step ?? null),
       started_at: row.started_at ?? null,
       error_message: row.error_message ?? null,
     }));

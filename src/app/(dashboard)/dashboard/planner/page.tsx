@@ -50,6 +50,7 @@ interface QueueItem {
   current_step: QueueStep;
   step_started_at: string | null;
   current_agent: string | null;
+  current_agent_display?: string | null;
   started_at: string | null;
   error_message?: string | null;
 }
@@ -1428,13 +1429,17 @@ export default function PlannerPage() {
               const isFailed = item.current_step === 'failed';
               const isCompleted = item.current_step === 'completed';
               const currentIdx = QUEUE_STEPS.indexOf(item.current_step);
-              // B5-04: images ステップは特例で「AI イメージャー」と表示
+              // B5-04: images ステップは特例で「AI イメージャー」を優先表示。
+              // それ以外は API が返す current_agent_display (役割 + 実モデル名)
+              // を優先し、なければ静的マップへフォールバック。
               const agentLabel =
                 item.current_step === 'images'
                   ? 'AI イメージャー（画像生成中）'
-                  : item.current_agent
-                    ? (QUEUE_AGENT_LABELS[item.current_agent] ?? item.current_agent)
-                    : null;
+                  : item.current_agent_display
+                    ? item.current_agent_display
+                    : item.current_agent
+                      ? (QUEUE_AGENT_LABELS[item.current_agent] ?? item.current_agent)
+                      : null;
               const progressRatio = isCompleted
                 ? 1
                 : isFailed
