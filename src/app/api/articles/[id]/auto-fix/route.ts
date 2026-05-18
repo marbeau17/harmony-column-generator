@@ -22,6 +22,7 @@ import {
   appendQualityOverride,
   buildDiffSummary,
 } from '@/lib/auto-fix/orchestrator';
+import { runDeterministicFix } from '@/lib/auto-fix/deterministic-fixers';
 import type { QualityOverride } from '@/lib/auto-fix/types';
 import { assertArticleWriteAllowed } from '@/lib/publish-control/session-guard';
 import { saveRevision } from '@/lib/db/article-revisions';
@@ -30,10 +31,12 @@ import { logger } from '@/lib/logger';
 interface ArticleRow {
   id: string;
   title: string | null;
+  slug: string | null;
   status: string;
   keyword: string | null;
   stage2_body_html: string | null;
   stage3_final_html: string | null;
+  image_files: unknown | null;
   quality_overrides: QualityOverride[] | null;
 }
 
@@ -88,7 +91,7 @@ export async function POST(
   const serviceClient = await createServiceRoleClient();
   const { data: article, error: aErr } = await serviceClient
     .from('articles')
-    .select('id, title, status, keyword, stage2_body_html, stage3_final_html, quality_overrides')
+    .select('id, title, slug, status, keyword, stage2_body_html, stage3_final_html, image_files, quality_overrides')
     .eq('id', articleId)
     .maybeSingle();
   if (aErr || !article) {
@@ -131,6 +134,116 @@ export async function POST(
         check_item_id: req.check_item_id,
         cost_estimate: 0,
         overrides: result.overrides,
+      });
+    }
+
+    if (req.fix_strategy === 'deterministic-fix') {
+      // P5-111: AI を呼ばず regex / canonical helper で確実に修復
+      const beforeHtml = row.stage2_body_html ?? '';
+      if (!beforeHtml) {
+        return NextResponse.json(
+          { error: 'stage2_body_html が空のため修復不可。Stage2 を先に実行してください' },
+          { status: 422 },
+        );
+      }
+      // 履歴 INSERT (修復前)
+      try {
+        await saveRevision(
+          articleId,
+          { title: row.title ?? undefined, body_html: beforeHtml },
+          'auto_fix_before',
+          user.id,
+        );
+      } catch (e) {
+        console.warn('[auto-fix.det.revision.before.failed]', {
+          articleId,
+          error_message: (e as Error).message,
+        });
+      }
+
+      let fix;
+      try {
+        fix = runDeterministicFix(req.check_item_id, {
+          bodyHtml: beforeHtml,
+          article: {
+            id: row.id,
+            title: row.title,
+            slug: row.slug,
+            image_files: row.image_files,
+          },
+        });
+      } catch (e) {
+        return NextResponse.json(
+          { error: (e as Error).message },
+          { status: 400 },
+        );
+      }
+
+      if (!fix.applied) {
+        // 修復対象が無かった (= 既に綺麗) → 200 noop 扱い
+        logger.info('api', 'auto-fix.deterministic.noop', {
+          articleId,
+          check_item_id: req.check_item_id,
+          detail: fix.detail,
+        });
+        return NextResponse.json({
+          ok: true,
+          fix_strategy: 'deterministic-fix',
+          check_item_id: req.check_item_id,
+          before_html: beforeHtml,
+          after_html: fix.after_html,
+          diff_summary: fix.diff_summary,
+          cost_estimate: 0,
+          applied: false,
+          detail: fix.detail,
+        });
+      }
+
+      // articles UPDATE
+      const { error: updErr } = await serviceClient
+        .from('articles')
+        .update({ stage2_body_html: fix.after_html })
+        .eq('id', articleId);
+      if (updErr) {
+        return NextResponse.json(
+          { error: `articles UPDATE 失敗: ${updErr.message}` },
+          { status: 500 },
+        );
+      }
+
+      // 履歴 INSERT (修復後)
+      try {
+        await saveRevision(
+          articleId,
+          { title: row.title ?? undefined, body_html: fix.after_html },
+          'auto_fix_after',
+          user.id,
+        );
+      } catch (e) {
+        console.warn('[auto-fix.det.revision.after.failed]', {
+          articleId,
+          error_message: (e as Error).message,
+        });
+      }
+
+      logger.info('api', 'auto-fix.deterministic.success', {
+        articleId,
+        check_item_id: req.check_item_id,
+        diff_summary: fix.diff_summary,
+        detail: fix.detail,
+        elapsed_ms: Date.now() - startedAt,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        fix_strategy: 'deterministic-fix',
+        check_item_id: req.check_item_id,
+        before_html: beforeHtml,
+        after_html: fix.after_html,
+        diff_summary: fix.diff_summary,
+        cost_estimate: 0,
+        applied: true,
+        detail: fix.detail,
       });
     }
 

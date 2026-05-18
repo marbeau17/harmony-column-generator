@@ -33,7 +33,14 @@ const ignoreWarnParamsSchema = z.object({
 
 export const autoFixRequestSchema = z
   .object({
-    fix_strategy: z.enum(['auto-fix', 'regen-chapter', 'regen-full', 'ignore-warn', 'manual-edit']),
+    fix_strategy: z.enum([
+      'auto-fix',
+      'deterministic-fix', // P5-111: AI を呼ばない安全修復
+      'regen-chapter',
+      'regen-full',
+      'ignore-warn',
+      'manual-edit',
+    ]),
     check_item_id: z.string().min(1),
     auto_fix_params: autoFixParamsSchema.optional(),
     regen_params: regenChapterParamsSchema.optional(),

@@ -7,6 +7,7 @@ import type { ChecklistResult } from '@/lib/content/quality-checklist';
 
 export type FixStrategy =
   | 'auto-fix'
+  | 'deterministic-fix' // P5-111: AI を使わない regex/canonical helper による安全修復
   | 'regen-chapter'
   | 'regen-full'
   | 'ignore-warn'

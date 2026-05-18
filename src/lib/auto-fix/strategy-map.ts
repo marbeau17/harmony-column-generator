@@ -45,8 +45,9 @@ export const STRATEGY_MAP: Record<string, StrategyMapEntry> = {
   literary: {
     allowed: ['manual-edit', 'ignore-warn'],
   },
+  // P5-111: 由起子さん FB「""禁止」を deterministic に処理 ("→「」)。
   double_quotes: {
-    allowed: ['manual-edit', 'ignore-warn'],
+    allowed: ['deterministic-fix', 'manual-edit', 'ignore-warn'],
   },
 
   // ─── コンテンツ ─────────────────────────────────────────
@@ -65,15 +66,17 @@ export const STRATEGY_MAP: Record<string, StrategyMapEntry> = {
   // ─── 画像 ───────────────────────────────────────────────
   image_placeholders: {
     // P5-26 で run-completion 内自動置換、編集画面で「画像を反映」もある
-    allowed: ['manual-edit', 'ignore-warn'],
+    // P5-111: canonical helper を deterministic-fix 経由で UI 直叩き可能化
+    allowed: ['deterministic-fix', 'manual-edit', 'ignore-warn'],
   },
 
   // ─── CTA ────────────────────────────────────────────────
   cta_count: {
     allowed: ['regen-chapter', 'manual-edit', 'ignore-warn'],
   },
+  // P5-111: 不正 CTA href を canonical URL に一発置換 (regex のみ、本文は不変)
   cta_urls: {
-    allowed: ['manual-edit', 'ignore-warn'],
+    allowed: ['deterministic-fix', 'manual-edit', 'ignore-warn'],
   },
 
   // ─── タイトル ──────────────────────────────────────────
@@ -88,9 +91,9 @@ export const STRATEGY_MAP: Record<string, StrategyMapEntry> = {
   banned_book: { allowed: ['manual-edit'] },
   medical: { allowed: ['manual-edit'] },
   ai_patterns: { allowed: ['manual-edit', 'ignore-warn'] },
+  // P5-111: AI 生成残骸 / IMAGE トークンを deterministic に除去 (text 限定)
   error_patterns: {
-    // AI 生成残骸 / IMAGE プレースホルダ等
-    allowed: ['manual-edit', 'ignore-warn'],
+    allowed: ['deterministic-fix', 'manual-edit', 'ignore-warn'],
   },
   soul_count: { allowed: ['manual-edit', 'ignore-warn'] },
   love_count: { allowed: ['manual-edit', 'ignore-warn'] },
