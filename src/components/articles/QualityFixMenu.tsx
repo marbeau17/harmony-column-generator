@@ -31,7 +31,9 @@ const STRATEGY_LABEL: Record<
   FixStrategy,
   { label: string; cost: string; time: string }
 > = {
-  'auto-fix': { label: '🔧 自動補正', cost: '~$0.005', time: '~15s' },
+  // P5-111: AI を呼ばない確実修復を最優先表示 (記事破壊リスクなし)
+  'deterministic-fix': { label: '⚡ 確実修復 (AI不使用)', cost: '0', time: '~1s' },
+  'auto-fix': { label: '🤖 AI補正 (リスクあり)', cost: '~$0.005', time: '~15s' },
   'regen-chapter': { label: '🔁 章再生成', cost: '~$0.05', time: '~30s' },
   'regen-full': { label: '🔄 全体再生成', cost: '~$0.18', time: '~90s' },
   'manual-edit': { label: '✏️ 手動編集', cost: '0', time: '-' },
@@ -87,7 +89,14 @@ export default function QualityFixMenu({ articleId, item, onAfter, onManualEdit 
 
     let body: Record<string, unknown> | null = null;
 
-    if (strategy === 'auto-fix') {
+    if (strategy === 'deterministic-fix') {
+      // P5-111: AI を呼ばない確実修復。サーバ側の deterministic-fixers が
+      // canonical helper / regex で安全に修復するため params 不要。
+      body = {
+        fix_strategy: 'deterministic-fix',
+        check_item_id: item.id,
+      };
+    } else if (strategy === 'auto-fix') {
       if (!entry.auto_fix_type) {
         toast.error('この項目は自動補正に対応していません');
         return;
@@ -165,9 +174,19 @@ export default function QualityFixMenu({ articleId, item, onAfter, onManualEdit 
       if (strategy === 'auto-fix') {
         // P5-65: 補正成功を明示的に表示し、after_html を親に伝搬する。
         toast.success(
-          `✅ 補正完了 (${json.diff_summary ?? ''} / 概算 $${(
+          `✅ AI補正完了 (${json.diff_summary ?? ''} / 概算 $${(
             json.cost_estimate ?? 0
           ).toFixed(3)})`,
+        );
+        await onAfter({ after_html: json.after_html });
+        return;
+      } else if (strategy === 'deterministic-fix') {
+        // P5-111: 確実修復は AI 不使用 = コスト 0、結果を即時反映
+        const applied = (json as { applied?: boolean }).applied !== false;
+        toast.success(
+          applied
+            ? `⚡ 確実修復完了 (${json.diff_summary ?? ''})`
+            : `修復対象なし: 既に綺麗な状態でした`,
         );
         await onAfter({ after_html: json.after_html });
         return;
