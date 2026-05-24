@@ -27,6 +27,14 @@
       {
         "selector": "CallExpression[callee.property.name='filter'][arguments.0.value='reviewed_at']",
         "message": "P5-43 Step 4: reviewed_at を state 判定に使うのは禁止です。公開可視判定は visibility_state を単一ソースとして使ってください。どうしても audit 用途で必要な場合は // audit-only: P5-43 Step 4 コメントを添えて eslint-disable-next-line で例外化してください。"
+      },
+      {
+        "selector": "NewExpression[callee.type='MemberExpression'][callee.object.type='AwaitExpression'][callee.object.argument.type='ImportExpression']",
+        "message": "new (await import('mod')).Foo() は Vercel/Next.js の serverless bundle で named export 解決が壊れ '(intermediate value).Foo is not a constructor' になります。トップレベルで import { Foo } from 'mod' を使ってください (例: stream.Readable / crypto.Hash / fs.X)。"
+      },
+      {
+        "selector": "NewExpression[callee.type='MemberExpression'][callee.object.type='AwaitExpression'][callee.object.argument.type='CallExpression'][callee.object.argument.callee.type='Import']",
+        "message": "new (await import('mod')).Foo() は Vercel/Next.js の serverless bundle で named export 解決が壊れ '(intermediate value).Foo is not a constructor' になります (legacy ESTree variant)。トップレベルで import { Foo } from 'mod' を使ってください。"
       }
     ]
   },

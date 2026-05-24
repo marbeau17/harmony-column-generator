@@ -95,6 +95,27 @@ async function fetchPublicHtml(slug: string): Promise<{ status: number; html?: s
   return { status: r.status, html: r.text };
 }
 
+/**
+ * HEAD probe (本文ダウンロードを避けるため画像系で使用)。
+ * H-18 で各 live 記事の hero/body/summary 画像 URL の 200 応答を確認する。
+ */
+async function headPublicUrl(url: string, ms = 10000): Promise<{ status: number; error?: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, {
+      method: 'HEAD',
+      headers: { 'User-Agent': FETCH_UA, 'Cache-Control': 'no-cache' },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return { status: res.status };
+  } catch (e) {
+    clearTimeout(timer);
+    return { status: 0, error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) };
+  }
+}
+
 async function main(): Promise<void> {
   const sb = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -581,6 +602,72 @@ async function main(): Promise<void> {
       : `clean: ${h17Checked - h17Failed.length}/${h17Checked}`,
     failedSamples: h17Failed.slice(0, 5),
   });
+
+  // ── H-18: live 記事の hero/body/summary 画像 URL 200 応答 ─────────────────
+  // 背景: 2026-05-24 — POST /deploy が "Readable is not a constructor" で 500 に
+  //   なっていたため、ハブ index.html は更新されるが個別記事の画像が FTP に
+  //   上がらず、harmony-mc.com/spiritual/column/<slug>/images/hero.jpg が
+  //   404 になっていた。H-05 は HTML URL だけ probe しており画像は対象外。
+  // 仕様:
+  //   - liveFull (= H-17 と同じ全カラム結果) の image_files から url を取得
+  //   - position が 'hero' のものを最優先で 1 件 HEAD probe (記事ごとの代表)
+  //     画像 3 種全部 probe すると 1 日 200+ 件で lolipop に過剰負荷なので
+  //     代表 1 件 + 全 fail 時の詳細出力にとどめる
+  //   - 200 以外 (404/0/4xx/5xx) は critical
+  if (!SKIP_HTTP && !liveFullErr) {
+    const h18Failed: HealthResult['failedSamples'] = [];
+    let h18Checked = 0;
+    let h18Ok = 0;
+    const probeQueue: { article: Article; url: string }[] = [];
+    for (const row of liveFull ?? []) {
+      const article = row as unknown as Article;
+      const slug = article.slug;
+      if (!slug) continue;
+      const imageFiles = Array.isArray(article.image_files)
+        ? (article.image_files as { url?: string; position?: string }[])
+        : [];
+      // hero を最優先 (記事サムネ + ハブカード両方で参照される代表)
+      const hero = imageFiles.find((f) => f?.position === 'hero');
+      if (!hero) continue; // image_files 自体が無いケースは別 health で扱う
+      const url = `${PUBLIC_BASE}${HUB_PATH}/${slug}/images/hero.jpg`;
+      probeQueue.push({ article, url });
+    }
+    const concurrency = 8;
+    while (probeQueue.length > 0) {
+      const batch = probeQueue.splice(0, concurrency);
+      const probed = await Promise.all(
+        batch.map(async ({ article, url }) => ({
+          article,
+          url,
+          res: await headPublicUrl(url),
+        })),
+      );
+      for (const { article, url, res } of probed) {
+        h18Checked++;
+        if (res.status === 200) {
+          h18Ok++;
+        } else {
+          h18Failed.push({
+            id: article.id,
+            slug: article.slug,
+            note: `hero.jpg status=${res.status}${res.error ? ` (${res.error})` : ''} url=${url}`,
+          });
+        }
+      }
+    }
+    results.push({
+      id: 'H-18', label: 'live 記事 hero 画像 200 応答', severity: 'critical',
+      ok: h18Failed.length === 0,
+      detail: `200: ${h18Ok}/${h18Checked}`,
+      failedSamples: h18Failed.slice(0, 5),
+    });
+  } else {
+    results.push({
+      id: 'H-18', label: 'live 記事 hero 画像 200 応答', severity: 'critical',
+      ok: true,
+      detail: SKIP_HTTP ? 'SKIPPED (--skip-http)' : 'SKIPPED (H-17 query failed)',
+    });
+  }
 
   // ── サマリ出力 ────────────────────────────────────────────────────────────
   const summary = {

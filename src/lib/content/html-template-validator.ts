@@ -98,6 +98,80 @@ const STRUCTURE_CHECKS = [
   },
 ];
 
+// ─── インライン <script> 構文検証 ─────────────────────────────────────────
+// 背景: 2026-05-24 に NEXT_PUBLIC_GA_ID env var の末尾改行が
+//   gtag('config', 'G-TH2X...\n') として inline script に展開され、
+//   本番ハブで Uncaught SyntaxError: Invalid or unexpected token を発生させた。
+//   既存の runTemplateCheck は <script> タグの「存在」だけ見て中身を構文検証して
+//   いなかった。Node 組込みの `new Function(body)` はコード本体をコンパイルだけ
+//   して実行はしないため、SyntaxError を確実に捕捉できる (依存追加不要)。
+//
+// 仕様:
+//   - <script src="..."> は外部読み込みなのでスキップ (中身が無い / 別経路で検証)
+//   - <script type="application/ld+json"> は JSON 構造化データなので JSON.parse で検証
+//   - 上記以外 (= 実行される inline JS) は new Function('"use strict";' + body) で検証
+//   - 1 つでも構文エラーがあれば全体を fail とし、行頭 80 字までを detail に出す
+
+const SCRIPT_TAG_RE = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+const SRC_ATTR_RE = /\bsrc\s*=\s*["'][^"']+["']/i;
+const TYPE_JSONLD_RE = /\btype\s*=\s*["']application\/ld\+json["']/i;
+
+interface InlineScript {
+  index: number; // ファイル中の出現順 (1-based)
+  kind: 'js' | 'jsonld';
+  attrs: string;
+  body: string;
+}
+
+function extractInlineScripts(html: string): InlineScript[] {
+  const out: InlineScript[] = [];
+  let m: RegExpExecArray | null;
+  let idx = 0;
+  SCRIPT_TAG_RE.lastIndex = 0;
+  while ((m = SCRIPT_TAG_RE.exec(html)) !== null) {
+    idx++;
+    const attrs = m[1] ?? '';
+    const body = m[2] ?? '';
+    if (SRC_ATTR_RE.test(attrs)) continue; // 外部 src は中身なし
+    if (!body.trim()) continue; // 空 body は検証対象外
+    const kind: InlineScript['kind'] = TYPE_JSONLD_RE.test(attrs) ? 'jsonld' : 'js';
+    out.push({ index: idx, kind, attrs: attrs.trim(), body });
+  }
+  return out;
+}
+
+interface ScriptCheckResult {
+  passed: boolean;
+  failures: string[];
+}
+
+export function validateInlineScripts(html: string): ScriptCheckResult {
+  const failures: string[] = [];
+  const scripts = extractInlineScripts(html);
+  for (const s of scripts) {
+    if (s.kind === 'jsonld') {
+      try {
+        JSON.parse(s.body);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        failures.push(`script#${s.index} (JSON-LD) parse 失敗: ${msg.slice(0, 80)}`);
+      }
+      continue;
+    }
+    // 実行される inline JS の構文検証。実行はしない (コンパイルのみ)。
+    try {
+      // eslint-disable-next-line no-new-func -- syntax validation only; the function is never invoked
+      new Function('"use strict";' + s.body);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // 改行や生制御文字を含む body は head の先頭 60 字を併記して特定しやすくする
+      const head = s.body.replace(/\s+/g, ' ').trim().slice(0, 60);
+      failures.push(`script#${s.index} 構文エラー: ${msg.slice(0, 80)} | head=${head}`);
+    }
+  }
+  return { passed: failures.length === 0, failures };
+}
+
 // ─── メイン検証関数 ─────────────────────────────────────────────────────
 
 /**
@@ -126,6 +200,15 @@ export function validateArticleTemplate(html: string): TemplateCheckResult {
       detail: result.detail,
     });
   }
+
+  // インライン <script> 構文検証 (P5: GA env 改行型バグ予防)
+  const scriptCheck = validateInlineScripts(html);
+  items.push({
+    id: 'inline_script_syntax',
+    label: 'inline <script> 構文エラー 0',
+    status: scriptCheck.passed ? 'pass' : 'fail',
+    detail: scriptCheck.passed ? undefined : scriptCheck.failures.slice(0, 3).join(' / '),
+  });
 
   return {
     passed: items.every(i => i.status === 'pass'),
