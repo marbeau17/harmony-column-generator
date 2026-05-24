@@ -34,7 +34,10 @@ import type { Article } from '@/types/article';
 const SITE_URL = getSiteUrl();
 const BOOKING_URL = 'https://harmony-booking.web.app/';
 const HUB_URL = getHubUrl();
-const GA4_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-TH2XJ24V3T';
+// .trim() 必須: Vercel env var が末尾改行付きで設定されている場合、
+// 文字列リテラル内に生 \n が混入し inline script で SyntaxError になる
+// (例: gtag('config', 'G-TH2X...\n'); ← 改行で string literal が切れる)
+const GA4_ID = (process.env.NEXT_PUBLIC_GA_ID || 'G-TH2XJ24V3T').trim();
 
 function buildGA4Tag(): string {
   return `<script async src="https://www.googletagmanager.com/gtag/js?id=${GA4_ID}"></script>

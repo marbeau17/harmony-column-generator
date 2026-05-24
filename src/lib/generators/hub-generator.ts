@@ -46,7 +46,10 @@ const SITE_NAME = 'Harmonyスピリチュアルコラム';
 // P5-44: SITE_URL / COLUMNS_BASE のハードコードと /columns/ 複数形バグを撤去。
 // 公開 URL は env 駆動の getSiteUrl() / getHubUrl() / getHubPath() に統一。
 const BOOKING_URL = 'https://harmony-booking.web.app/';
-const GA4_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-TH2XJ24V3T';
+// .trim() 必須: Vercel env var が末尾改行付きで設定されている場合、
+// 文字列リテラル内に生 \n が混入し inline script で SyntaxError になる
+// (例: gtag('config', 'G-TH2X...\n'); ← 改行で string literal が切れる)
+const GA4_ID = (process.env.NEXT_PUBLIC_GA_ID || 'G-TH2XJ24V3T').trim();
 
 /** GA4タグを生成 */
 function buildGA4Tag(): string {
