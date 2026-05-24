@@ -23,8 +23,68 @@ import type {
 const GEMINI_API_KEY = () => {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY is not set');
-  return key;
+  return key.trim();
 };
+
+// ─── API key フォールバックチェーン ───────────────────────────────────────────
+// 月次 spending cap に primary が引っかかったら GEMINI_API_KEY1 → GEMINI_API_KEY2 …
+// と自動切替する。Vercel env に第 2/第 3 のキーを設定するだけで動く設計。
+// runtime state は invocation lifetime 限定 (Vercel serverless で十分)。
+const FALLBACK_KEY_ENVS = [
+  'GEMINI_API_KEY',
+  'GEMINI_API_KEY1',
+  'GEMINI_API_KEY2',
+  'GEMINI_API_KEY3',
+] as const;
+
+function getApiKeyChain(): string[] {
+  const keys: string[] = [];
+  for (const name of FALLBACK_KEY_ENVS) {
+    const v = process.env[name];
+    if (v && v.trim()) keys.push(v.trim());
+  }
+  if (keys.length === 0) throw new Error('GEMINI_API_KEY is not set');
+  return keys;
+}
+
+// invocation 中に「使い切った」と判明したキーは re-pick で skip する
+const exhaustedKeys = new Set<string>();
+
+function pickAvailableKey(): string {
+  const chain = getApiKeyChain();
+  for (const k of chain) {
+    if (!exhaustedKeys.has(k)) return k;
+  }
+  // 全部使い切った → 最初のキーで失敗させて quota エラーを上位に surface する
+  return chain[0];
+}
+
+function markKeyExhausted(key: string): void {
+  exhaustedKeys.add(key);
+}
+
+function isQuotaExhaustedError(status: number, body: string): boolean {
+  if (status !== 429) return false;
+  // 月次 spending cap / billing 系のみ fallback 対象。
+  // 短時間 rate limit (TOO_MANY_REQUESTS / "Quota exceeded for quota metric ...") は
+  // 別キーに切替えても同じ project 単位の per-minute 制限を共有しているとは限らないが、
+  // 安全側に倒し別キー切替対象外とする (delay-retry で十分回復)。
+  return (
+    /RESOURCE_EXHAUSTED/.test(body) ||
+    /spending cap/i.test(body) ||
+    /spend cap/i.test(body)
+  );
+}
+
+function hasUntriedKey(triedKeys: Set<string>): boolean {
+  const chain = getApiKeyChain();
+  return chain.some((k) => !triedKeys.has(k) && !exhaustedKeys.has(k));
+}
+
+/** テスト用: invocation 跨ぎでキー状態をリセットする */
+export function resetGeminiApiKeyState(): void {
+  exhaustedKeys.clear();
+}
 
 const GEMINI_MODEL = () =>
   process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview';
@@ -75,8 +135,9 @@ export async function callGemini(
   config: GeminiRequestConfig,
 ): Promise<GeminiResponse> {
   const model = config.model || GEMINI_MODEL();
-  const apiKey = config.apiKey || GEMINI_API_KEY();
-  const url = `${BASE_URL}/${model}:generateContent?key=${apiKey}`;
+  // apiKey は retry/fallback loop の中で都度 pick する (quota 超過時の自動切替のため)
+  const fixedApiKey = config.apiKey; // 明示指定があれば fallback 無効
+  const triedKeysThisCall = new Set<string>();
   const callStart = Date.now();
   console.log(`[gemini] Calling ${model} (timeout=${config.timeoutMs ?? DEFAULTS.timeoutMs}ms)...`);
 
@@ -145,6 +206,11 @@ export async function callGemini(
       await sleep(delay);
     }
 
+    // 毎回 fresh に key を pick (quota_exhausted で markKeyExhausted されたら次のキー)
+    const apiKey = fixedApiKey || pickAvailableKey();
+    triedKeysThisCall.add(apiKey);
+    const url = `${BASE_URL}/${model}:generateContent?key=${apiKey}`;
+
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -163,6 +229,39 @@ export async function callGemini(
       // ── エラーハンドリング ──
       if (!response.ok) {
         const errorBody = await response.text().catch(() => 'unknown');
+
+        const isQuotaErr = isQuotaExhaustedError(response.status, errorBody);
+
+        // 月次 spending cap / RESOURCE_EXHAUSTED → API key を切り替えてリトライ
+        // 切替は config.apiKey が明示指定されていない場合のみ。retry budget は消費しない。
+        if (!fixedApiKey && isQuotaErr && hasUntriedKey(triedKeysThisCall)) {
+          markKeyExhausted(apiKey);
+          console.warn('[gemini.quota_key_fallback]', {
+            status: response.status,
+            from_key_suffix: apiKey.slice(-4),
+            attempt,
+            errorBody: errorBody.substring(0, 200),
+          });
+          lastError = new Error(
+            `Gemini API quota exhausted on key ...${apiKey.slice(-4)}; switching fallback`,
+          );
+          attempt--; // retry budget を消費せず次のキーで再試行
+          continue;
+        }
+
+        // 全 key が quota 切れ → 通常 retry は無意味 (delay 後も同じ 429) → 即 throw
+        // catch 側で「もう loop しても無駄」を判定できるよう name で識別する。
+        if (isQuotaErr && !fixedApiKey && !hasUntriedKey(triedKeysThisCall)) {
+          console.error('[gemini.all_keys_exhausted]', {
+            tried_count: triedKeysThisCall.size,
+            errorBody: errorBody.substring(0, 200),
+          });
+          const exhaustedErr = new Error(
+            `Gemini API error ${response.status} (all keys exhausted): ${errorBody.substring(0, 200)}`,
+          );
+          exhaustedErr.name = 'GeminiQuotaExhaustedAllKeys';
+          throw exhaustedErr;
+        }
 
         if (isRetryableError(response.status) && attempt < maxRetries) {
           console.warn('[gemini.retryable_error]', {
@@ -271,6 +370,11 @@ export async function callGemini(
         rawResponse: data,
       };
     } catch (error) {
+      // 全 key が quota 切れ → リトライしても無駄 (永続障害) → 即 throw
+      if (error instanceof Error && error.name === 'GeminiQuotaExhaustedAllKeys') {
+        throw error;
+      }
+
       if (
         error instanceof Error &&
         error.name === 'AbortError'
@@ -504,8 +608,8 @@ export async function generateImage(
   options?: { timeoutMs?: number; apiKey?: string },
 ): Promise<GenerateImageResult> {
   const model = GEMINI_IMAGE_MODEL();
-  const apiKey = options?.apiKey || GEMINI_API_KEY();
-  const url = `${BASE_URL}/${model}:generateContent?key=${apiKey}`;
+  const fixedApiKey = options?.apiKey;
+  const triedKeysThisCall = new Set<string>();
   const timeoutMs = options?.timeoutMs ?? 180_000; // 3 min for image gen
 
   const requestBody = {
@@ -529,6 +633,11 @@ export async function generateImage(
       await sleep(delay);
     }
 
+    // 毎 attempt で fresh に key を pick (quota fallback 対応)
+    const apiKey = fixedApiKey || pickAvailableKey();
+    triedKeysThisCall.add(apiKey);
+    const url = `${BASE_URL}/${model}:generateContent?key=${apiKey}`;
+
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -545,6 +654,24 @@ export async function generateImage(
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => 'unknown');
+        // quota_exhausted → 別キーに切替 (retry budget 消費なし)
+        if (
+          !fixedApiKey &&
+          isQuotaExhaustedError(response.status, errorBody) &&
+          hasUntriedKey(triedKeysThisCall)
+        ) {
+          markKeyExhausted(apiKey);
+          console.warn('[gemini.image.quota_key_fallback]', {
+            status: response.status,
+            from_key_suffix: apiKey.slice(-4),
+            attempt,
+          });
+          lastError = new Error(
+            `Gemini Image API quota exhausted on key ...${apiKey.slice(-4)}; switching fallback`,
+          );
+          attempt--;
+          continue;
+        }
         if (isRetryableError(response.status) && attempt < DEFAULTS.maxRetries) {
           lastError = new Error(`Gemini Image API error ${response.status}: ${errorBody.substring(0, 200)}`);
           continue;
