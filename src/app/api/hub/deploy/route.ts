@@ -10,6 +10,8 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import * as fs from 'fs';
+import * as path from 'path';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import {
   buildArticleCards,
@@ -123,9 +125,52 @@ export async function POST(request: Request) {
         content: page.html,
       });
     }
+
+    // 静的アセット (hub.css / hub.js) を毎回 idempotent に push する。
+    // 記事 HTML が <link href="../../css/hub.css"> / <script src="../../js/hub.js">
+    // を参照するため、remoteBasePath=/spiritual/column/ から見て ../css /../js に置く
+    // (実 URL: /spiritual/css/hub.css, /spiritual/js/hub.js)。
+    // 2026-05-24: /spiritual/js/hub.js が一度も deploy されておらず 404 になっていた
+    //             バグへの恒久対処。next.config.js の outputFileTracingIncludes で
+    //             templates/hub/** を lambda bundle に含めている前提。
+    const STATIC_ASSETS = [
+      { src: 'templates/hub/css/hub.css', remotePath: '../css/hub.css' },
+      { src: 'templates/hub/js/hub.js', remotePath: '../js/hub.js' },
+    ] as const;
+    let staticAssetCount = 0;
+    for (const a of STATIC_ASSETS) {
+      const abs = path.join(process.cwd(), a.src);
+      try {
+        if (fs.existsSync(abs)) {
+          const content = fs.readFileSync(abs, 'utf-8');
+          files.push({ remotePath: a.remotePath, content });
+          staticAssetCount++;
+          logger.info('ftp', 'deploy.static_asset.queued', {
+            request_id: requestId,
+            src: a.src,
+            remote_path: a.remotePath,
+            bytes: Buffer.byteLength(content, 'utf-8'),
+          });
+        } else {
+          logger.warn('ftp', 'deploy.static_asset.missing', {
+            request_id: requestId,
+            src: a.src,
+            abs_path: abs,
+          });
+        }
+      } catch (e) {
+        logger.warn('ftp', 'deploy.static_asset.read_failed', {
+          request_id: requestId,
+          src: a.src,
+          error_message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
     logger.info('ftp', 'deploy.prepare_files.end', {
       request_id: requestId,
       file_count: files.length,
+      static_asset_count: staticAssetCount,
       elapsed_ms: Date.now() - prepStart,
     });
 
