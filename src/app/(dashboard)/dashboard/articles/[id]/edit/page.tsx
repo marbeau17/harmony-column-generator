@@ -219,6 +219,14 @@ export default function ArticleEditPage() {
     try {
       // 1. フィールド更新（最終HTML・メタ情報を保存）
       // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+      // 注意: published_at は **意図的に送らない**。
+      //   D1 invariant INV4 (articles_inv4_published_at_constrains_visibility) が
+      //   「published_at IS NOT NULL ⇒ visibility_state ∈ {live, live_hub_stale, unpublished, deploying, failed}」
+      //   を要求する。この時点ではまだ visibility_state は pending_review/idle 等なので
+      //   published_at を先送りすると CHECK 制約違反で 500。
+      //   published_at は次ステップの POST /transition が
+      //   status=published / visibility_state=live / is_hub_visible=true と
+      //   同時に 1 UPDATE で書き込み、INV2/INV4 を同時に満たす。
       const updateRes = await fetch(`/api/articles/${articleId}`, {
         method: 'PUT',
         credentials: 'same-origin',
@@ -226,7 +234,6 @@ export default function ArticleEditPage() {
         body: JSON.stringify({
           ...autoSaveData,
           published_html: bodyHtml,
-          published_at: new Date().toISOString(),
         }),
       });
       if (!updateRes.ok) throw new Error('記事の保存に失敗しました');
@@ -237,6 +244,7 @@ export default function ArticleEditPage() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
+        // guard-approved: HTTP request body の literal。サーバ側 /api/articles/[id]/transition で transition-validator (guardPublishAttempt/guardArticleTransition) が gate 検証する
         body: JSON.stringify({ status: 'published' }),
       });
       if (!transitionRes.ok) {
@@ -1187,6 +1195,8 @@ export default function ArticleEditPage() {
                       // 通常 handlePublish の transition 呼出を上書きする形で直接実行
                       try {
                         // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
+                        // published_at は送らない (INV4 違反回避 — 通常 handlePublish と同様、
+                        // 直後の /transition?force=true が visibility_state='live' と同時に書込む)
                         const updateRes = await fetch(`/api/articles/${articleId}`, {
                           method: 'PUT',
                           credentials: 'same-origin',
@@ -1194,7 +1204,6 @@ export default function ArticleEditPage() {
                           body: JSON.stringify({
                             ...autoSaveData,
                             published_html: bodyHtml,
-                            published_at: new Date().toISOString(),
                           }),
                         });
                         if (!updateRes.ok) throw new Error('記事保存に失敗');
@@ -1205,6 +1214,7 @@ export default function ArticleEditPage() {
                             method: 'POST',
                             credentials: 'same-origin',
                             headers: { 'Content-Type': 'application/json' },
+                            // guard-approved: HTTP request body の literal。サーバ側 /api/articles/[id]/transition で transition-validator が gate 検証する (force=true でも server 側で再検証)
                             body: JSON.stringify({ status: 'published' }),
                           },
                         );
