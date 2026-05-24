@@ -738,19 +738,39 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.error('deploy', 'article-deploy-failed', { articleId, error: message });
+    const errCode = (error as { code?: string | number } | null)?.code;
+    const errName = error instanceof Error ? error.name : undefined;
+    const stack = error instanceof Error ? error.stack?.slice(0, 800) : undefined;
+    // 診断目的の raw stdout dump。
+    //   Vercel 構造化 JSON ログは query が hit しにくく、preview にも本文が出ない。
+    //   console.error 直書きで「最初の stdout 行」相当の preview にメッセージ本文を
+    //   露出させ、再現 1 回で確実に診断できるようにする。
+    console.error(
+      `[DEPLOY-500] article_id=${articleId} name=${errName ?? 'unknown'} code=${errCode ?? 'n/a'} message=${message}`,
+    );
+    if (stack) console.error(`[DEPLOY-500-STACK] ${stack}`);
+    logger.error('deploy', 'article-deploy-failed', { articleId, error: message, name: errName, code: errCode });
     logger.error(
       'api',
       'article_deploy.failed',
       {
         article_id: articleId,
         error_message: message,
-        stack: error instanceof Error ? error.stack?.slice(0, 500) : undefined,
+        error_name: errName,
+        error_code: errCode,
+        stack,
         elapsed_ms: Date.now() - startedAt,
       },
       error instanceof Error ? error : undefined,
     );
-    return NextResponse.json({ error: `FTPアップロードに失敗: ${message}` }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: `FTPアップロードに失敗: ${message}`,
+        code: errCode,
+        name: errName,
+      },
+      { status: 500 },
+    );
   }
 }
 
