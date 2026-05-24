@@ -45,11 +45,16 @@ function fail(
 export async function POST(request: Request) {
   const startedAt = Date.now();
   // G4: request_id を発行し button → API → service の経路を ID で追跡可能にする。
-  const requestId = `ftp_${startedAt}_${Math.random().toString(36).slice(2, 8)}`;
+  // Journey-marker: 上流 (Journey A の visibility / Journey B の bulk-deploy) が
+  // X-Trace-Id ヘッダで trace_id を渡してきた場合はそれを request_id として採用し、
+  // grep ('request_id":"<trace_id>"') で全 server log を 1 列に並べられるようにする。
+  const traceIdHeader = request.headers.get('x-trace-id');
+  const requestId = traceIdHeader ?? `ftp_${startedAt}_${Math.random().toString(36).slice(2, 8)}`;
   try {
     // G4: API 受信ログ (silent failure 排除のための入口計測)
-    logger.info('ftp', 'deploy.api.received', {
+    logger.info('ftp', '[hub] deploy.api.received', {
       request_id: requestId,
+      trace_id_source: traceIdHeader ? 'upstream' : 'self_generated',
       method: 'POST',
       url: request.url,
       content_type: request.headers.get('content-type') ?? null,
@@ -234,7 +239,7 @@ export async function POST(request: Request) {
       elapsed_ms: uploadElapsed,
     });
 
-    logger.info('api', 'hub_deploy.end', {
+    logger.info('api', '[hub] hub_deploy.end', {
       request_id: requestId,
       success: true,
       pages: pages.length,

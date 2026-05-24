@@ -30,7 +30,20 @@ interface VisibilityBody {
 export async function POST(req: NextRequest, { params }: RouteParams) {
   const startedAt = Date.now();
   const { id: articleId } = params;
-  logger.info('api', 'visibility.start', { article_id: articleId });
+  // Journey A 起点: UI (PublishButton) の X-Trace-Id ヘッダを優先採用。
+  // 未送信時は articleId+startedAt の組合せから簡易 trace_id を生成し、最低限
+  // server log だけは 1 本に追えるようにする。以降の logger.info は既存のままで、
+  // request_id を全 log の details に詰めることで grep ('request_id":"<id>"') で
+  // 一気通貫タイムラインを抽出可能にする。
+  const traceIdHeader = req.headers.get('x-trace-id');
+  const requestId = traceIdHeader ?? `vis_${startedAt}_${articleId.slice(0, 8)}`;
+  logger.info('api', '[A1] visibility.entered', {
+    article_id: articleId,
+    request_id: requestId,
+    trace_id_source: traceIdHeader ? 'upstream' : 'self_generated',
+    ts: new Date().toISOString(),
+  });
+  logger.info('api', 'visibility.start', { article_id: articleId, request_id: requestId });
 
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -237,7 +250,15 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
   logger.info('api', 'visibility.lock.ok', {
     article_id: articleId,
+    request_id: requestId,
     elapsed_ms: Date.now() - lockStartMs,
+  });
+  logger.info('api', '[A2] visibility.locked', {
+    article_id: articleId,
+    request_id: requestId,
+    from_state: currentState,
+    to_state: 'deploying',
+    elapsed_total_ms: Date.now() - startedAt,
   });
 
   const slug = (article.slug ?? article.seo_filename ?? article.id) as string;
@@ -347,7 +368,18 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (updErr) throw updErr;
     logger.info('api', 'visibility.update.end', {
       article_id: articleId,
+      request_id: requestId,
       elapsed_ms: Date.now() - updateStartMs,
+    });
+    logger.info('api', '[A3] visibility.patch_applied', {
+      article_id: articleId,
+      request_id: requestId,
+      slug,
+      visibility_state: patch.visibility_state,
+      is_hub_visible: patch.is_hub_visible,
+      promoted_status: patch.status ?? null,
+      generated_slug: patch.slug ?? null,
+      elapsed_total_ms: Date.now() - startedAt,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -395,6 +427,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     hub_deploy_error: hubDeployError,
     reason: body.reason,
   });
+  logger.info('api', '[A4] visibility.publish_event_written', {
+    article_id: articleId,
+    request_id: requestId,
+    action: body.visible ? 'publish' : 'unpublish',
+    hub_deploy_status: hubDeployStatus,
+    elapsed_total_ms: Date.now() - startedAt,
+  });
 
   // Fire-and-await the hub rebuild so the UI doesn't swallow errors.
   // Trigger the existing endpoint from the server side only when the overall
@@ -402,19 +441,26 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   let hubWarning: string | null = null;
   if (process.env.PUBLISH_CONTROL_FTP === 'on') {
     const hubFireMs = Date.now();
-    logger.info('api', 'visibility.hub_rebuild.fire', { article_id: articleId });
+    logger.info('api', '[A5] visibility.hub_rebuild.fire', {
+      article_id: articleId,
+      request_id: requestId,
+      elapsed_total_ms: Date.now() - startedAt,
+    });
     try {
       const origin = new URL(req.url).origin;
       const res = await fetch(`${origin}/api/hub/deploy`, {
         method: 'POST',
         headers: {
           cookie: req.headers.get('cookie') ?? '',
+          // [A5→hub] trace_id を hub/deploy ルートに伝搬。hub 側ログも同 request_id で grep 可能になる。
+          'X-Trace-Id': requestId,
         },
       });
       if (!res.ok) {
         hubWarning = `hub rebuild returned ${res.status}`;
-        logger.warn('api', 'visibility.hub_rebuild.fail', {
+        logger.warn('api', '[A6/fail] visibility.hub_rebuild.fail', {
           article_id: articleId,
+          request_id: requestId,
           status: res.status,
           elapsed_ms: Date.now() - hubFireMs,
         });
@@ -424,15 +470,17 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           .update({ visibility_state: 'live_hub_stale' })
           .eq('id', articleId);
       } else {
-        logger.info('api', 'visibility.hub_rebuild.ok', {
+        logger.info('api', '[A6] visibility.hub_rebuild.ok', {
           article_id: articleId,
+          request_id: requestId,
           elapsed_ms: Date.now() - hubFireMs,
         });
       }
     } catch (err) {
       hubWarning = err instanceof Error ? err.message : String(err);
-      logger.error('api', 'visibility.hub_rebuild.error', {
+      logger.error('api', '[A6/error] visibility.hub_rebuild.error', {
         article_id: articleId,
+        request_id: requestId,
         error_message: hubWarning,
         stack: (err as Error)?.stack?.slice(0, 500),
         elapsed_ms: Date.now() - hubFireMs,
@@ -444,12 +492,34 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         .eq('id', articleId);
     }
     if (hubWarning) await sendSlackNotification(`⚠️ live_hub_stale: article=${articleId} hub deploy failed (${hubWarning})`);
+  } else {
+    // [A6/skip] PUBLISH_CONTROL_FTP が 'on' 以外の場合は hub rebuild が呼ばれない。
+    //          以前は完全無音だったが、ジャーニーが「ここで止まっている」ことを
+    //          見えるようにするため明示的にスキップログを残す。
+    logger.warn('api', '[A6/skip] visibility.hub_rebuild_skipped_no_ftp', {
+      article_id: articleId,
+      request_id: requestId,
+      reason: 'PUBLISH_CONTROL_FTP is not "on"',
+      env_value: process.env.PUBLISH_CONTROL_FTP ?? null,
+      elapsed_total_ms: Date.now() - startedAt,
+    });
   }
 
   const status = hubWarning ? 207 : 200;
   const finalState = hubWarning ? 'live_hub_stale' : (body.visible ? 'live' : 'unpublished');
+  logger.info('api', '[A7] visibility.respond', {
+    article_id: articleId,
+    request_id: requestId,
+    elapsed_ms: Date.now() - startedAt,
+    final_state: finalState,
+    visible: body.visible,
+    hubDeployStatus,
+    hubWarning,
+    http_status: status,
+  });
   logger.info('api', 'visibility.end', {
     article_id: articleId,
+    request_id: requestId,
     elapsed_ms: Date.now() - startedAt,
     final_state: finalState,
     visible: body.visible,

@@ -17,6 +17,9 @@ import { filterArticlesByMode } from '@/lib/utils/article-mode-filter';
 import { logClientError } from '@/lib/utils/client-error-logger';
 // P5-43 Step 2: 公開可視判定の単一ソース（reviewed_at ベースから visibility_state ベースへ統一）
 import { isPubliclyVisible, isDeployable } from '@/lib/publish-control/visibility-predicate';
+// Journey B: bulk-deploy の trace_id 発行用。ULID は per-article fetch / rebuildHub の
+// X-Trace-Id ヘッダで server log に伝搬し、grep で 1 列タイムライン抽出できるようにする。
+import { ulid } from '@/lib/publish-control/ulid';
 // P5-59: generation_mode の厳密型を共通 types から取り込む
 import type { GenerationMode } from '@/types/article';
 
@@ -139,23 +142,48 @@ export default function ArticlesPage() {
     if (!confirm('確認済みの記事をサーバーにデプロイしますか？')) return;
     setBulkDeploying(true);
     setBulkDeployResult(null);
+
+    // [B0] Journey B 起点。bulkTraceId を 1 本発行し、per-article fetch には
+    //      `${bulkTraceId}_${article.id}` を、rebuildHub には `${bulkTraceId}_hub` を
+    //      X-Trace-Id で渡す。これで server log を grep 一発で 1 つのジャーニーに束ねられる。
+    const bulkTraceId = ulid();
+    const bulkStartedAt = performance.now();
+    console.log('[B0] bulk_deploy.click', {
+      trace_id: bulkTraceId,
+      ts: new Date().toISOString(),
+    });
+
     try {
       const fetchResult = await fetchPublishedArticles(200);
       if (!fetchResult.ok) {
         // P5-51: 記事一覧取得失敗を toast.error で可視化
         const errMsg = `記事一覧取得エラー: ${fetchResult.error}`;
+        console.error('[B1] bulk_deploy.fetch_failed', {
+          trace_id: bulkTraceId,
+          error: fetchResult.error,
+        });
         setBulkDeployResult(errMsg);
         toast.error(errMsg, { duration: 8000 });
         // C7: Vercel logs にも構造化エラーを残す
         logClientError('articles-list:bulk-deploy:fetch-published', new Error(errMsg), {
           inner: fetchResult.error,
+          trace_id: bulkTraceId,
         });
         return;
       }
       const freshArticles = fetchResult.articles as unknown as ArticleItem[];
+      console.log('[B1] bulk_deploy.fetched', {
+        trace_id: bulkTraceId,
+        total: freshArticles.length,
+      });
       // P5-43 Step 2: 一括デプロイ対象は visibility_state が deploy 可能な記事のみ
       const reviewed = freshArticles.filter((a) => isDeployable(a));
       const skipped = freshArticles.filter((a) => !isDeployable(a));
+      console.log('[B2] bulk_deploy.filtered', {
+        trace_id: bulkTraceId,
+        target_count: reviewed.length,
+        skipped_count: skipped.length,
+      });
 
       let success = 0;
       let failed = 0;
@@ -163,40 +191,82 @@ export default function ArticlesPage() {
       // P5-51: 失敗 ID を別途収集（toast に件数 + ID を可視化するため）
       const failedIds: string[] = [];
 
-      for (const article of reviewed) {
+      for (let i = 0; i < reviewed.length; i++) {
+        const article = reviewed[i];
+        // per-article trace_id: bulk_id を base に article_id を suffix。
+        // deploy/route.ts 側でこの値が request_id として全 server log に載る。
+        const perArticleTraceId = `${bulkTraceId}_${article.id.slice(0, 8)}`;
+        const itemStart = performance.now();
+        console.log('[B3.start] bulk_deploy.item.start', {
+          trace_id: perArticleTraceId,
+          bulk_trace_id: bulkTraceId,
+          index: i + 1,
+          total: reviewed.length,
+          article_id: article.id,
+          slug: article.slug,
+        });
         try {
           // P5-51: Supabase Auth cookie を同一オリジンで送信するため明示
-          const res = await fetch(`/api/articles/${article.id}/deploy`, { method: 'POST', credentials: 'same-origin' });
+          const res = await fetch(`/api/articles/${article.id}/deploy`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'X-Trace-Id': perArticleTraceId },
+          });
           if (res.ok) {
             success++;
+            console.log('[B3.end] bulk_deploy.item.ok', {
+              trace_id: perArticleTraceId,
+              article_id: article.id,
+              slug: article.slug,
+              elapsed_ms: Math.round(performance.now() - itemStart),
+            });
           } else {
             failed++;
             failedIds.push(article.id);
             const body = await res.json().catch(() => ({}));
             errors.push(`${article.title}: [HTTP ${res.status}] ${body.error || ''}`);
-            console.error(`[Deploy FAIL] ${article.slug}:`, body);
+            console.error('[B3.end] bulk_deploy.item.fail', {
+              trace_id: perArticleTraceId,
+              article_id: article.id,
+              slug: article.slug,
+              http_status: res.status,
+              body,
+              elapsed_ms: Math.round(performance.now() - itemStart),
+            });
             // C7: Vercel logs に必ず構造化エラーを残す
             logClientError(
               'articles-list:bulk-deploy:item-http',
               new Error(`HTTP ${res.status} ${body.error || ''}`),
-              { articleId: article.id, slug: article.slug, status: res.status, body },
+              { articleId: article.id, slug: article.slug, status: res.status, body, trace_id: perArticleTraceId },
             );
           }
         } catch (err) {
           failed++;
           failedIds.push(article.id);
           errors.push(`${article.title}: ネットワークエラー`);
-          console.error(`[Deploy ERROR] ${article.slug}:`, err);
+          console.error('[B3.end] bulk_deploy.item.network_error', {
+            trace_id: perArticleTraceId,
+            article_id: article.id,
+            slug: article.slug,
+            error: err instanceof Error ? err.message : String(err),
+            elapsed_ms: Math.round(performance.now() - itemStart),
+          });
           // C7: Vercel logs に必ず構造化エラーを残す
           logClientError('articles-list:bulk-deploy:item-network', err, {
             articleId: article.id,
             slug: article.slug,
+            trace_id: perArticleTraceId,
           });
         }
       }
 
       // ★ UNCONDITIONAL hub rebuild — even if reviewed.length === 0 and even if some per-article deploys failed.
-      const hubResult = await rebuildHub();
+      const hubTraceId = `${bulkTraceId}_hub`;
+      console.log('[B4] bulk_deploy.hub_rebuild.fire', {
+        trace_id: hubTraceId,
+        bulk_trace_id: bulkTraceId,
+      });
+      const hubResult = await rebuildHub(hubTraceId);
 
       let msg = `${success} 件デプロイ成功`;
       if (failed > 0) msg += `、${failed} 件失敗`;
@@ -204,6 +274,21 @@ export default function ArticlesPage() {
       msg += ` ／ ${formatHubRebuildResult(hubResult)}`;
       if (errors.length > 0) msg += `\n失敗: ${errors.slice(0, 3).join(' / ')}`;
       setBulkDeployResult(msg);
+
+      // [B5] Journey B 終端。集計サマリを bulkTraceId 紐付けで吐く。
+      //      `grep "${bulkTraceId}"` で B0 から B5 まで全行が拾える。
+      console.log('[B5] bulk_deploy.summary', {
+        trace_id: bulkTraceId,
+        success_count: success,
+        failed_count: failed,
+        skipped_count: skipped.length,
+        failed_ids: failedIds,
+        hub_success: hubResult.success,
+        hub_pages: hubResult.success ? hubResult.pages : undefined,
+        hub_articles: hubResult.success ? hubResult.articles : undefined,
+        hub_error: hubResult.success ? undefined : hubResult.error,
+        elapsed_total_ms: Math.round(performance.now() - bulkStartedAt),
+      });
 
       // P5-51: 1件以上失敗していれば toast.error で件数 + 失敗 ID（先頭3件）を可視化
       if (failed > 0) {
@@ -219,9 +304,13 @@ export default function ArticlesPage() {
     } catch (err) {
       // P5-51: 全体失敗を toast.error で可視化（silent failure 解消）
       const msg = err instanceof Error ? err.message : '予期せぬエラー';
-      console.error('[BulkDeploy ERROR]:', err);
+      console.error('[B5] bulk_deploy.fatal', {
+        trace_id: bulkTraceId,
+        error: err instanceof Error ? err.message : String(err),
+        elapsed_total_ms: Math.round(performance.now() - bulkStartedAt),
+      });
       // C7: Vercel logs に構造化ログを残す
-      logClientError('articles-list:bulk-deploy:fatal', err);
+      logClientError('articles-list:bulk-deploy:fatal', err, { trace_id: bulkTraceId });
       setBulkDeployResult(`デプロイに失敗しました: ${msg}`);
       toast.error(`一括デプロイ失敗: ${msg}`, { duration: 8000 });
     } finally {

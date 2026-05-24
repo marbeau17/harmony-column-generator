@@ -61,15 +61,43 @@ export default function PublishButton({ articleId, articleTitle, initialState, o
       : `「${articleTitle}」をハブページから非表示にします。関連記事のブロックも更新されます。よろしいですか？`;
     if (!window.confirm(confirmMsg)) return;
 
+    // [A0] Journey A 起点。trace_id (= requestId) を 1 本発行し、server 側の
+    //      visibility / hub/deploy 全 log と同 ID で grep 連結できるようにする。
+    const traceId = ulid();
+    const startedAt = performance.now();
+    console.log('[A0] publish_button.click', {
+      trace_id: traceId,
+      article_id: articleId,
+      article_title: articleTitle,
+      target_visible: target,
+      from_state: state,
+      ts: new Date().toISOString(),
+    });
+
     setBusy(true);
     setState('deploying');
     try {
       const res = await fetch(`/api/articles/${articleId}/visibility`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visible: target, requestId: ulid() }),
+        headers: {
+          'Content-Type': 'application/json',
+          // [A0→A1] server 側 logger に trace_id を持ち越す。body.requestId と
+          //         二重持ちだが、bulk-deploy ルート等とヘッダ規約を揃えるため。
+          'X-Trace-Id': traceId,
+        },
+        body: JSON.stringify({ visible: target, requestId: traceId }),
       });
       const json = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
+      // [A8] server からの応答受信。同 trace_id で server log と timeline 結合可能。
+      console.log('[A8] publish_button.response', {
+        trace_id: traceId,
+        article_id: articleId,
+        http_status: res.status,
+        ok: res.ok,
+        response_status: json.status,
+        response_error: json.error,
+        elapsed_ms: Math.round(performance.now() - startedAt),
+      });
       if (!res.ok && res.status !== 207) {
         setState('failed');
         toast.error(`公開状態の更新に失敗しました: ${json.error ?? res.status}`);
@@ -84,6 +112,13 @@ export default function PublishButton({ articleId, articleTitle, initialState, o
         toast.success(target ? `${articleTitle} を公開しました` : `${articleTitle} を非表示にしました`);
       }
     } catch (err) {
+      // [A8/network_error] fetch 例外も同 trace_id で記録。
+      console.error('[A8] publish_button.network_error', {
+        trace_id: traceId,
+        article_id: articleId,
+        error: err instanceof Error ? err.message : String(err),
+        elapsed_ms: Math.round(performance.now() - startedAt),
+      });
       setState('failed');
       toast.error(`通信エラー: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

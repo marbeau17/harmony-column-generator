@@ -28,9 +28,21 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const { id: articleId } = params;
   const startedAt = Date.now();
 
+  // Journey B (per-article) 起点: bulk-deploy UI が X-Trace-Id を送ってきたら採用。
+  // 個別 deploy ボタン呼び出し時は自前生成。grep 連結用に全ログ details に同 id を載せる。
+  const traceIdHeader = req.headers.get('x-trace-id');
+  const requestId = traceIdHeader ?? `deploy_${startedAt}_${articleId.slice(0, 8)}`;
+
   // 関数入口 — silent failure を防ぐため必ず entered ログを残す
+  logger.info('api', '[B3.start] article_deploy.entered', {
+    article_id: articleId,
+    request_id: requestId,
+    trace_id_source: traceIdHeader ? 'upstream' : 'self_generated',
+    ts: new Date().toISOString(),
+  });
   logger.info('api', 'article_deploy.start', {
     article_id: articleId,
+    request_id: requestId,
     elapsed_ms: 0,
   });
 
@@ -227,6 +239,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (!templateCheck.passed) {
       logger.warn('api', 'article_deploy.template_check.failed', {
         article_id: articleId,
+        request_id: requestId,
         slug,
         failures: templateCheck.failures,
         elapsed_ms: Date.now() - startedAt,
@@ -236,6 +249,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         failures: templateCheck.failures,
       }, { status: 422 });
     }
+    // [B3.qa_ok] checklist と template_check の両方が PASS = FTP 送出に進むゲート通過。
+    logger.info('api', '[B3.qa_ok] article_deploy.qa_passed', {
+      article_id: articleId,
+      request_id: requestId,
+      slug,
+      elapsed_total_ms: Date.now() - startedAt,
+    });
 
     // 3. Prepare files for upload
     const files: { remotePath: string; content: string }[] = [];
@@ -635,11 +655,23 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       client.close();
       logger.info('ftp', 'article_deploy.ftp.close.ok', {
         article_id: articleId,
+        request_id: requestId,
         slug,
       });
     }
 
-    logger.info('deploy', 'article-deployed', { articleId, slug, uploaded: uploaded.length, errors: errors.length });
+    // [B3.ftp_ok] FTP セッションが閉じた時点で記事 HTML + 画像のアップロード完了。
+    logger.info('api', '[B3.ftp_ok] article_deploy.ftp_finished', {
+      article_id: articleId,
+      request_id: requestId,
+      slug,
+      uploaded_count: uploaded.length,
+      errors_count: errors.length,
+      success: errors.length === 0,
+      elapsed_total_ms: Date.now() - startedAt,
+    });
+
+    logger.info('deploy', 'article-deployed', { articleId, slug, uploaded: uploaded.length, errors: errors.length, request_id: requestId });
     logger.info('api', 'article_deploy.end', {
       article_id: articleId,
       slug,
@@ -672,18 +704,31 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           article_id: articleId,
           action: 'deploy',
           actor_email: user.email ?? 'unknown',
-          request_id: `DEPLOY-${startedAt}-${articleId.slice(0, 8)}`,
+          // trace_id 優先で publish_events に記録。grep ('request_id":"<id>"') で
+          // server log と DB レコードの突合が可能になる。
+          request_id: requestId,
           reason: 'per-article-deploy',
         });
       } catch (e) {
         logger.warn('api', 'article_deploy.publish_event_insert_threw', {
           article_id: articleId,
+          request_id: requestId,
           slug,
           error_message: e instanceof Error ? e.message : String(e),
         });
       }
     }
 
+    // [B3.end] 1 記事の deploy ジャーニーが完了。bulk-deploy ループ側はこの行を見て次へ。
+    logger.info('api', '[B3.end] article_deploy.respond', {
+      article_id: articleId,
+      request_id: requestId,
+      slug,
+      uploaded_count: uploaded.length,
+      errors_count: errors.length,
+      http_status: 200,
+      elapsed_total_ms: Date.now() - startedAt,
+    });
     return NextResponse.json({
       success: true,
       slug,

@@ -3,11 +3,14 @@ import { logger } from '@/lib/logger';
 
 const TARGET_URL = '/api/hub/deploy';
 
-export async function rebuildHub(): Promise<HubDeployResponse> {
+export async function rebuildHub(traceId?: string): Promise<HubDeployResponse> {
   const start = performance.now();
+  // 呼び出し元 (Journey A の visibility ルート / Journey B の bulk-deploy) が trace_id を
+  // 渡してきた場合は X-Trace-Id ヘッダで hub/deploy ルートに伝搬し、server 側ログを連結する。
   logger.info('deploy', 'hub_rebuild_client.post.start', {
     target_url: TARGET_URL,
     method: 'POST',
+    trace_id: traceId ?? null,
   });
 
   let res: Response;
@@ -15,6 +18,7 @@ export async function rebuildHub(): Promise<HubDeployResponse> {
     res = await fetch(TARGET_URL, {
       method: 'POST',
       credentials: 'same-origin',
+      headers: traceId ? { 'X-Trace-Id': traceId } : undefined,
     });
   } catch (err) {
     const elapsed_ms = performance.now() - start;
