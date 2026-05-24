@@ -3,6 +3,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'crypto';
+// static import: 動的 import('stream').Readable は Vercel ESM 解決で
+// "(intermediate value).Readable is not a constructor" になるため避ける
+import { Readable } from 'stream';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 // hub page is now rebuilt via /api/hub/deploy (full generator with categories)
@@ -451,9 +454,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         bytes: Buffer.byteLength(html, 'utf-8'),
         elapsed_ms: Date.now() - startedAt,
       });
-      const htmlStream = new (await import('stream')).Readable();
-      htmlStream.push(html);
-      htmlStream.push(null);
+      const htmlStream = Readable.from(Buffer.from(html, 'utf-8'));
       logger.info('api', 'article_deploy.ftp_ensure_dir.start', {
         article_id: articleId,
         slug,
@@ -566,9 +567,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           }
           const buffer = Buffer.from(await imgRes.arrayBuffer());
 
-          const imgStream = new (await import('stream')).Readable();
-          imgStream.push(buffer);
-          imgStream.push(null);
+          const imgStream = Readable.from(buffer);
 
           logger.info('ftp', 'article_deploy.ftp.ensure_dir.attempt', {
             article_id: articleId,
