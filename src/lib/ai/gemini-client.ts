@@ -63,17 +63,39 @@ function markKeyExhausted(key: string): void {
   exhaustedKeys.add(key);
 }
 
-function isQuotaExhaustedError(status: number, body: string): boolean {
-  if (status !== 429) return false;
-  // 月次 spending cap / billing 系のみ fallback 対象。
-  // 短時間 rate limit (TOO_MANY_REQUESTS / "Quota exceeded for quota metric ...") は
-  // 別キーに切替えても同じ project 単位の per-minute 制限を共有しているとは限らないが、
-  // 安全側に倒し別キー切替対象外とする (delay-retry で十分回復)。
-  return (
-    /RESOURCE_EXHAUSTED/.test(body) ||
-    /spending cap/i.test(body) ||
-    /spend cap/i.test(body)
-  );
+/**
+ * このキーは「永続的に使えない」状態か判定する。
+ * 該当時は別キーに fallback すべき。再試行しても回復しない。
+ *
+ * 対象:
+ *   - 429 RESOURCE_EXHAUSTED / monthly spending cap (billing 上限到達)
+ *   - 403 CONSUMER_SUSPENDED (GCP project が suspend されている = billing 凍結等)
+ *   - 403 API_KEY_INVALID / API_KEY_SERVICE_BLOCKED (キー自体が無効化)
+ *
+ * 対象外 (= fallback しない):
+ *   - 429 TOO_MANY_REQUESTS / "Quota exceeded for quota metric" (短時間 rate limit;
+ *     別キーでも同 project quota を共有していたら同じく fail。delay-retry で回復可)
+ *   - 5xx server error (transient; delay-retry で回復可)
+ */
+function isKeyUnusableError(status: number, body: string): boolean {
+  // 月次 cap / 課金関連 (status 429)
+  if (status === 429) {
+    return (
+      /RESOURCE_EXHAUSTED/.test(body) ||
+      /spending cap/i.test(body) ||
+      /spend cap/i.test(body)
+    );
+  }
+  // 永続的な認可エラー (status 403)
+  if (status === 403) {
+    return (
+      /CONSUMER_SUSPENDED/.test(body) ||
+      /API_KEY_INVALID/.test(body) ||
+      /API_KEY_SERVICE_BLOCKED/.test(body) ||
+      /has been suspended/i.test(body)
+    );
+  }
+  return false;
 }
 
 function hasUntriedKey(triedKeys: Set<string>): boolean {
@@ -86,11 +108,13 @@ export function resetGeminiApiKeyState(): void {
   exhaustedKeys.clear();
 }
 
+// .trim() 必須: Vercel env var が末尾改行付きで設定されていると URL に '\n' が
+// 混入して 404 / model-not-found / 構文不正な request URL になる (GA 改行型の同 class)。
 const GEMINI_MODEL = () =>
-  process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview';
+  (process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview').trim();
 
 const GEMINI_IMAGE_MODEL = () =>
-  process.env.GEMINI_IMAGE_MODEL || 'gemini-3-pro-image-preview';
+  (process.env.GEMINI_IMAGE_MODEL || 'gemini-3-pro-image-preview').trim();
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -230,7 +254,7 @@ export async function callGemini(
       if (!response.ok) {
         const errorBody = await response.text().catch(() => 'unknown');
 
-        const isQuotaErr = isQuotaExhaustedError(response.status, errorBody);
+        const isQuotaErr = isKeyUnusableError(response.status, errorBody);
 
         // 月次 spending cap / RESOURCE_EXHAUSTED → API key を切り替えてリトライ
         // 切替は config.apiKey が明示指定されていない場合のみ。retry budget は消費しない。
@@ -657,7 +681,7 @@ export async function generateImage(
         // quota_exhausted → 別キーに切替 (retry budget 消費なし)
         if (
           !fixedApiKey &&
-          isQuotaExhaustedError(response.status, errorBody) &&
+          isKeyUnusableError(response.status, errorBody) &&
           hasUntriedKey(triedKeysThisCall)
         ) {
           markKeyExhausted(apiKey);

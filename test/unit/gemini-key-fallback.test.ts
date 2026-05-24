@@ -76,6 +76,40 @@ describe('callGemini API key fallback chain', () => {
     expect(calls[0]).toContain('key=AIzaPRIMARY');
   });
 
+  it('(2b) primary 403 CONSUMER_SUSPENDED → fallback に switch して 200', async () => {
+    // 2026-05-24 本番事故: KEY1 の GCP project が suspended で 403 を返した
+    const SUSPENDED_BODY = {
+      error: {
+        code: 403,
+        message: "Permission denied: Consumer 'api_key:AIzaXXX' has been suspended.",
+        status: 'PERMISSION_DENIED',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason: 'CONSUMER_SUSPENDED',
+            domain: 'googleapis.com',
+          },
+        ],
+      },
+    };
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      calls.push(String(url));
+      if (calls.length === 1) return makeResponse(403, SUSPENDED_BODY);
+      return makeResponse(200, OK_BODY);
+    }) as unknown as typeof fetch;
+
+    const res = await callGemini({
+      systemInstruction: 's',
+      messages: [{ role: 'user', parts: [{ text: 'u' }] }],
+    });
+
+    expect(calls.length).toBe(2);
+    expect(calls[0]).toContain('key=AIzaPRIMARY');
+    expect(calls[1]).toContain('key=AIzaFALLBACK1');
+    expect(res.text).toBe('ok');
+  });
+
   it('(2) primary 429 RESOURCE_EXHAUSTED → fallback に switch して 200', async () => {
     const calls: string[] = [];
     globalThis.fetch = vi.fn(async (url) => {
