@@ -17,10 +17,19 @@
 //      が修復前後で「単調増加」または「保持」されることを assert
 // ============================================================================
 
+import * as cheerio from 'cheerio';
 import {
   replaceImagePlaceholders,
   type ImageFileRow,
 } from '@/lib/zero-gen/replace-placeholders';
+
+/** cheerio/domhandler のノードを最小限の構造で扱うための型 */
+interface DomNodeLike {
+  type: string;
+  data?: string;
+  name?: string;
+  children?: DomNodeLike[];
+}
 
 export interface DeterministicFixContext {
   bodyHtml: string;
@@ -93,28 +102,31 @@ function fixImagePlaceholders(ctx: DeterministicFixContext): DeterministicFixRes
  */
 function fixDoubleQuotes(ctx: DeterministicFixContext): DeterministicFixResult {
   const before = ctx.bodyHtml;
-  // テキストノードのみ対象にするため tag を一旦保護
-  const TAG_PLACEHOLDER = 'TAG';
-  const tags: string[] = [];
-  const protectedHtml = before.replace(/<[^>]+>/g, (m) => {
-    tags.push(m);
-    return TAG_PLACEHOLDER;
-  });
-  // U+201C/201D は対の置換 (左→「、右→」)
-  let textOnly = protectedHtml
-    .replace(/“/g, '「')
-    .replace(/”/g, '」');
-  // 半角 " は対で挟まれているケースのみ「」に置換 (奇数個ある場合は手動を促す)
-  // 「最初の " を 「、次の " を 」」と交互に置換する
-  let inOpen = true;
-  textOnly = textOnly.replace(/"/g, () => {
-    const r = inOpen ? '「' : '」';
-    inOpen = !inOpen;
-    return r;
-  });
-  // タグを復元
-  let i = 0;
-  const after = textOnly.replace(new RegExp(TAG_PLACEHOLDER, 'g'), () => tags[i++] ?? '');
+  // P5 #6: 旧実装は `<tag>`→sentinel 文字列退避方式だったが脆く、cheerio で
+  // パースして「テキストノードのみ」を走査することで属性値・タグ構造を一切
+  // 壊さずに置換する (CLAUDE.md: HTML は regex でなく cheerio/htmlparser2)。
+  const $ = cheerio.load(before, null, false);
+  let inOpen = true; // 半角 " は文書全体を通して開き→閉じを交互に割り当てる
+  const SKIP_TAGS = new Set(['script', 'style']);
+  const walk = (nodes: DomNodeLike[] | undefined): void => {
+    if (!nodes) return;
+    for (const node of nodes) {
+      if (node.type === 'text') {
+        let str = node.data ?? '';
+        str = str.replace(/\u201C/g, '\u300C').replace(/\u201D/g, '\u300D');
+        str = str.replace(/"/g, () => {
+          const r = inOpen ? '\u300C' : '\u300D';
+          inOpen = !inOpen;
+          return r;
+        });
+        node.data = str;
+      } else if (node.children && (!node.name || !SKIP_TAGS.has(node.name))) {
+        walk(node.children);
+      }
+    }
+  };
+  walk($.root().toArray() as unknown as DomNodeLike[]);
+  const after = $.html();
   const replaced = before !== after;
   return {
     after_html: after,

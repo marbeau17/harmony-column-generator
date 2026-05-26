@@ -13,6 +13,7 @@
 // ============================================================================
 import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 import { getOgImageUrl, getHubPath } from '@/lib/config/public-urls';
+import { localizeArticleImageUrls } from '@/lib/deploy/image-url-localizer';
 import type { Article } from '@/types/article';
 
 /** 正規表現メタ文字をエスケープ (hubPath を regex に埋め込む用) */
@@ -39,11 +40,8 @@ export function buildDeployHtml(article: Article): { html: string; slug: string;
   });
   const charsBeforeReplace = html.length;
 
-  // post-process (deploy/route.ts と完全同一)
-  html = html.replace(
-    /https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g,
-    './images/$1.jpg',
-  );
+  // post-process (deploy/route.ts と完全同一の共有ヘルパー経由)
+  html = localizeArticleImageUrls(html);
   html = html.replace('href="./css/hub.css"', 'href="../../css/hub.css"');
   html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
 

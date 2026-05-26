@@ -18,6 +18,7 @@ import {
 import { getStickyCtaBarCss, getStickyCtaBarHtml } from '@/lib/generators/sticky-cta-bar';
 // P5-44: 公開 URL は env 駆動の単一ソースから取得 (ハードコード排除)
 import { getOgImageUrl, getHubPath, getSiteUrl } from '@/lib/config/public-urls';
+import { localizeArticleImageUrls } from '@/lib/deploy/image-url-localizer';
 import type { Article } from '@/types/article';
 
 // P5-44: 正規表現のメタ文字をエスケープ (hubPath を regex に埋め込む用)
@@ -148,11 +149,8 @@ export async function exportArticleToOut(
   });
 
   // 5. Post-process HTML: rewrite paths for static export
-  // Rewrite Supabase image URLs to local relative paths
-  html = html.replace(
-    /https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g,
-    './images/$1.jpg'
-  );
+  // Rewrite Supabase image URLs to local relative paths (共有ヘルパー経由)
+  html = localizeArticleImageUrls(html);
   // Fix CSS path
   html = html.replace('href="./css/hub.css"', 'href="../../css/hub.css"');
   // Fix JS path

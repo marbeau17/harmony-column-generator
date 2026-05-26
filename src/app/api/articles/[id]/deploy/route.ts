@@ -9,7 +9,8 @@ import { Readable } from 'stream';
 import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 // hub page is now rebuilt via /api/hub/deploy (full generator with categories)
-import { getFtpConfig, uploadToFtp } from '@/lib/deploy/ftp-uploader';
+import { getFtpConfig, uploadToFtp, FTP_TIMEOUT_MS } from '@/lib/deploy/ftp-uploader';
+import { localizeArticleImageUrls, checkDeployableImages } from '@/lib/deploy/image-url-localizer';
 import { logger } from '@/lib/logger';
 import { runDeployChecklist } from '@/lib/content/quality-checklist';
 import { runTemplateCheck } from '@/lib/content/html-template-validator';
@@ -140,6 +141,23 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       }, { status: 422 });
     }
 
+    // 1.5 画像実在ゲート (#5): hero が無いと公開サイトで hero.jpg が 404 になるため block。
+    const imageCheck = checkDeployableImages(article.image_files);
+    if (!imageCheck.ok) {
+      logger.warn('api', 'article_deploy.images_missing', {
+        article_id: articleId,
+        slug,
+        missing: imageCheck.missing,
+        present: imageCheck.present,
+        elapsed_ms: Date.now() - startedAt,
+      });
+      return NextResponse.json({
+        error: `画像が不足しているためデプロイできません（不足: ${imageCheck.missing.join(', ')}）。画像を再生成してからデプロイしてください。`,
+        code: 'IMAGES_MISSING',
+        missing: imageCheck.missing,
+      }, { status: 422 });
+    }
+
     // 2. Generate article HTML
     const tHtml = Date.now();
     logger.info('api', 'article_deploy.html_generate.start', {
@@ -169,7 +187,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       chars_before: charsBeforeReplace,
       elapsed_ms: Date.now() - startedAt,
     });
-    html = html.replace(/https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g, './images/$1.jpg');
+    html = localizeArticleImageUrls(html);
     html = html.replace('href="./css/hub.css"', 'href="../../css/hub.css"');
     html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
     // P5-44: 関連記事リンク/サムネイルの post-process を hubPath ベースに変更
@@ -399,7 +417,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     // Use basic-ftp directly for binary support
     const { Client } = await import('basic-ftp');
     const { attachFtpWireLogger } = await import('@/lib/deploy/ftp-wire-logger');
-    const client = new Client();
+    const client = new Client(FTP_TIMEOUT_MS); // #8: timeout を共通定数に統一
     // P5-77: FTP wire-level (PROTOCOL) transaction を logger 経由で出力
     attachFtpWireLogger(client, { where: 'article_deploy', article_id: articleId, slug });
 

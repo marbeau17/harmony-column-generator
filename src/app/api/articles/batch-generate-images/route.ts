@@ -77,7 +77,7 @@ export async function POST() {
             position: imgPrompt.position,
             url,
             alt: imgPrompt.alt,
-            filename: `${imgPrompt.position}.webp`,
+            filename: `${imgPrompt.position}.jpg`,
           });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);

@@ -285,6 +285,7 @@ describe('POST /api/articles/bulk-deploy (integration)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    delete process.env.BULK_DEPLOY_ZERO_ONLY;
   });
 
   // ─── TC1: 5 zero-mode → 全 5 件アップロード ──────────────────────────────
@@ -329,8 +330,12 @@ describe('POST /api/articles/bulk-deploy (integration)', () => {
     expect(ftpState.closeCalls).toBe(5);
   });
 
-  // ─── TC2: P5-85 フィルタ検証 ────────────────────────────────────────────
-  it('TC2: zero 5 + source 30 → zero の 5 件のみアップロード (P5-85 リグレッション防止)', async () => {
+  // ─── TC2: P5-85/P5-108 フィルタ検証 ──────────────────────────────────────
+  // P5-108 (2026-05-17): 既定は全 mode 対象に変更され、zero-only は
+  // BULK_DEPLOY_ZERO_ONLY=on で明示選択する方式に。本テストは「zero-only を
+  // 要求したとき確実に source-mode を除外する」guard を維持する。
+  it('TC2: BULK_DEPLOY_ZERO_ONLY=on で zero 5 + source 30 → zero の 5 件のみ (P5-85 リグレッション防止)', async () => {
+    process.env.BULK_DEPLOY_ZERO_ONLY = 'on';
     for (let i = 1; i <= 5; i++) {
       supaState.fixtures.push(makeArticle(i, 'zero', 3));
     }

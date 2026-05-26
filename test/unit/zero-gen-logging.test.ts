@@ -12,14 +12,16 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { buildZeroImagePrompts } from '@/lib/ai/prompts/zero-image-prompt';
+import { logger } from '@/lib/logger';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
 // ─── 1. buildZeroImagePrompts: 動的ログ検証 ─────────────────────────────────
 
 describe('buildZeroImagePrompts — 構造化ログ契約', () => {
-  it('emits [image-prompt.begin] and [image-prompt.end]', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('emits zero_image_prompt.start and zero_image_prompt.end logs', () => {
+    // 現契約: console.log 直書きではなく logger.info('ai', 'zero_image_prompt.start'|'.end', …)
+    const spy = vi.spyOn(logger, 'info').mockImplementation(() => {});
 
     buildZeroImagePrompts({
       // outline は最小限 — h2_chapters / lead_summary / image_prompts のみ参照される
@@ -37,9 +39,9 @@ describe('buildZeroImagePrompts — 構造化ログ契約', () => {
       },
     });
 
-    const calls = spy.mock.calls.map((c) => c[0] as string);
-    expect(calls).toContain('[image-prompt.begin]');
-    expect(calls).toContain('[image-prompt.end]');
+    const actions = spy.mock.calls.map((c) => c[1] as string);
+    expect(actions).toContain('zero_image_prompt.start');
+    expect(actions).toContain('zero_image_prompt.end');
 
     spy.mockRestore();
   });

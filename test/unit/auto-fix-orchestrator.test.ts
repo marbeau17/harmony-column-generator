@@ -60,7 +60,8 @@ describe('runAutoFix', () => {
   });
 
   it('array_html 形式の Gemini レスポンスも吸収する (バグD 対応)', async () => {
-    const longChunks = ['<p>' + 'a'.repeat(80) + '</p>', '<p>' + 'b'.repeat(80) + '</p>'];
+    // P5-111 C-2 の post-validate 下限 (200 chars) を超える長さにする
+    const longChunks = ['<p>' + 'a'.repeat(120) + '</p>', '<p>' + 'b'.repeat(120) + '</p>'];
     generateJsonMock.mockResolvedValue({ data: longChunks, response: { text: '' } });
     const got = await runAutoFix({
       bodyHtml: '<p>orig</p>',
@@ -71,7 +72,7 @@ describe('runAutoFix', () => {
   });
 
   it('keyword 戦略のコストは ~$0.005', async () => {
-    const after = '<p>' + 'a'.repeat(150) + '</p>';
+    const after = '<p>' + 'a'.repeat(210) + '</p>';
     generateJsonMock.mockResolvedValue({ data: { html: after }, response: { text: '' } });
     const got = await runAutoFix({
       bodyHtml: '<p>x</p>',
@@ -81,7 +82,7 @@ describe('runAutoFix', () => {
   });
 
   it('tone 戦略のコストはやや高め', async () => {
-    const after = '<p>' + 'a'.repeat(150) + '</p>';
+    const after = '<p>' + 'a'.repeat(210) + '</p>';
     generateJsonMock.mockResolvedValue({ data: { html: after }, response: { text: '' } });
     const got = await runAutoFix({
       bodyHtml: '<p>x</p>',

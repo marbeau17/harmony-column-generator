@@ -140,24 +140,12 @@ export default function ArticleEditPage() {
         // 発生していた。stage3 は publish 時に必要に応じて regenerate する。
         const stage2 = (a.stage2_body_html ?? '').trim();
         let html = stage2.length > 0 ? a.stage2_body_html! : '';
-        // Replace <!--IMAGE:position:filename--> placeholders with actual images
-        const imageFiles = a.image_files as { position: string; url: string; alt: string }[] | null;
-        if (imageFiles && Array.isArray(imageFiles)) {
-          for (const img of imageFiles) {
-            const imgTag = `<img src="${img.url}" alt="${img.alt || ''}" style="max-width:100%;border-radius:8px;margin:1em 0" />`;
-            // Match various placeholder formats including TipTap-stripped versions
-            const patterns = [
-              new RegExp(`<!--\\s*IMAGE:${img.position}:[^-]*-->`, 'g'),
-              new RegExp(`<div[^>]*>\\s*<!--\\s*IMAGE:${img.position}:[^-]*-->\\s*</div>`, 'g'),
-              new RegExp(`IMAGE:${img.position}:[\\w.-]+`, 'g'),
-              new RegExp(`<p[^>]*>\\s*IMAGE:${img.position}\\s*</p>`, 'g'),
-              new RegExp(`(?<![\\w:])IMAGE:${img.position}(?![\\w:])`, 'g'),
-              new RegExp(`<(?:div|span|p)[^>]*class="[^"]*placeholder[^"]*"[^>]*>[^<]*IMAGE:${img.position}[^<]*</(?:div|span|p)>`, 'g'),
-            ];
-            for (const pattern of patterns) {
-              html = html.replace(pattern, imgTag);
-            }
-          }
+        // P5 #7: 旧実装はこの load() 内に独自の 6 パターン regex 置換を持っていたが、
+        // handleApplyImages と二重実装で危険 (自然文「IMAGE:body」の誤置換・本文消失)
+        // だった。canonical な replaceImagePlaceholders に一本化する。
+        const imageFiles = a.image_files as ImageFileRow[] | null;
+        if (imageFiles && Array.isArray(imageFiles) && imageFiles.length > 0) {
+          html = replaceImagePlaceholders(html, imageFiles).html;
         }
         setBodyHtml(html);
         setInitialBodyHtml(html);

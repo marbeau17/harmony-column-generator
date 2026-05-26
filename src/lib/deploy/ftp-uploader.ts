@@ -197,6 +197,20 @@ export async function getFtpConfig(): Promise<FtpConfig> {
   return config;
 }
 
+// ─── 共通設定 (#8: timeout / retry を一元化) ──────────────────────────────────
+// 以前は uploadToFtp と per-article deploy が timeout 無指定 (basic-ftp 既定 30s)、
+// bulk-deploy のみ 60s と不統一で、かつ lolipop の一時的な 4xx/timeout に対する
+// リトライが一切無かった。env で上書き可能な単一の定数に集約する。
+
+/** FTP ソケット timeout (ms)。env FTP_TIMEOUT_MS で上書き可。既定 60s。 */
+export const FTP_TIMEOUT_MS = Number(process.env.FTP_TIMEOUT_MS) || 60_000;
+/** 1 ファイルあたりの追加リトライ回数。env FTP_MAX_RETRIES で上書き可。既定 2。 */
+export const FTP_MAX_RETRIES = Number(process.env.FTP_MAX_RETRIES) || 2;
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // ─── ヘルパー ────────────────────────────────────────────────────────────────
 
 /**
@@ -337,6 +351,47 @@ export async function uploadFile(
     );
     throw e;
   }
+}
+
+/**
+ * #8: 単一ファイルアップロードを transient エラーに対してリトライする。
+ * uploadFile は内部で ensureDir + cd('/') を毎回やり直すため、同一接続上で
+ * 再実行しても cwd 状態に依存しない (リトライ安全)。指数バックオフ。
+ */
+async function uploadFileWithRetry(
+  client: Client,
+  basePath: string,
+  remotePath: string,
+  content: string,
+  maxRetries: number = FTP_MAX_RETRIES,
+): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await uploadFile(client, basePath, remotePath, content);
+      if (attempt > 0) {
+        logger.info('ftp', 'ftp_uploader.upload_file.retry_succeeded', {
+          remote_path: remotePath,
+          attempt,
+        });
+      }
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < maxRetries) {
+        const backoff = 500 * (attempt + 1);
+        logger.warn('ftp', 'ftp_uploader.upload_file.retry', {
+          remote_path: remotePath,
+          attempt,
+          max_retries: maxRetries,
+          backoff_ms: backoff,
+          error_message: e instanceof Error ? e.message : String(e),
+        });
+        await sleepMs(backoff);
+      }
+    }
+  }
+  throw lastErr;
 }
 
 // ─── モンキーテスト / DRY_RUN ガード ─────────────────────────────────────────
@@ -487,7 +542,7 @@ export async function uploadToFtp(
     return result;
   }
 
-  const client = new Client();
+  const client = new Client(FTP_TIMEOUT_MS);
   // P5-77: FTP wire-level (PROTOCOL) transaction を logger 経由で出力
   // (ESM 循環回避のため動的 import)
   const { attachFtpWireLogger } = await import('@/lib/deploy/ftp-wire-logger');
@@ -536,7 +591,7 @@ export async function uploadToFtp(
         elapsed_ms: Date.now() - startedAt,
       });
       try {
-        await uploadFile(client, config.remoteBasePath, file.remotePath, file.content);
+        await uploadFileWithRetry(client, config.remoteBasePath, file.remotePath, file.content);
         uploaded++;
         logger.info('ftp', 'ftp_uploader.upload_to_ftp.per_file.end', {
           remote_path: file.remotePath,

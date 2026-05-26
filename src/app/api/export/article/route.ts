@@ -9,6 +9,7 @@ import { generateArticleHtml } from '@/lib/generators/article-html-generator';
 import { getStickyCtaBarCss, getStickyCtaBarHtml } from '@/lib/generators/sticky-cta-bar';
 import { logger } from '@/lib/logger';
 import { getOgImageUrl, getSiteUrl } from '@/lib/config/public-urls';
+import { localizeArticleImageUrls } from '@/lib/deploy/image-url-localizer';
 import archiver from 'archiver';
 import { PassThrough } from 'stream';
 import fs from 'fs';
@@ -116,10 +117,7 @@ export async function POST(request: NextRequest) {
           ogImage: getOgImageUrl(slug, 'hero'),
           hubUrl: '../index.html',
         });
-        html = html.replace(
-          /https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g,
-          './images/$1.jpg',
-        );
+        html = localizeArticleImageUrls(html);
         html = html.replace('href="./css/hub.css"', 'href="../../css/style.css"');
         html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
         html = html.replace(/href="\/column\/([^"]+)\/"/g, 'href="../$1/index.html"');
@@ -193,7 +191,7 @@ export async function POST(request: NextRequest) {
             ogImage: getOgImageUrl(slug, 'hero'),
             hubUrl: '../index.html',
           });
-          html = html.replace(/https:\/\/khsorerqojgwbmtiqrac\.supabase\.co\/storage\/v1\/object\/public\/article-images\/articles\/[^"]+\/(hero|body|summary)\.jpg/g, './images/$1.jpg');
+          html = localizeArticleImageUrls(html);
           html = html.replace('href="./css/hub.css"', 'href="../../css/style.css"');
           html = html.replace('src="./js/hub.js"', 'src="../../js/hub.js"');
           html = html.replace(/href="\/column\/([^"]+)\/"/g, 'href="../$1/index.html"');

@@ -163,7 +163,7 @@ export async function POST(
       position: r.position,
       url: r.url,
       alt: r.alt,
-      filename: `${r.position}.webp`,
+      filename: `${r.position}.jpg`,
     }));
 
     // 本文HTMLのプレースホルダーを実画像に自動置換 (canonical 共通実装を使用)

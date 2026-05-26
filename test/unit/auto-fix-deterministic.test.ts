@@ -66,6 +66,27 @@ describe('double_quotes fixer', () => {
     });
     expect(r.applied).toBe(false);
   });
+
+  it('#6: 本文に "TAG" が含まれてもタグが崩壊しない (旧 sentinel 退避方式の回帰防止)', () => {
+    // 旧実装は <tag> を文字列 sentinel に退避→復元していたため、本文に "TAG" 等の
+    // 文字列が含まれると復元インデックスがずれて全タグが崩壊した。cheerio 化で解消。
+    const r = runDeterministicFix('double_quotes', {
+      bodyHtml: '<p>HTML の TAG を学ぶ</p><div>"引用文"です</div>',
+      article: { ...ARTICLE_BASE, image_files: null },
+    });
+    expect(r.applied).toBe(true);
+    // タグ構造 (<p>/<div>) が保持され、テキストの " のみ「」に変換されること
+    expect(r.after_html).toBe('<p>HTML の TAG を学ぶ</p><div>「引用文」です</div>');
+  });
+
+  it('#6: script 内の " は対象外', () => {
+    const r = runDeterministicFix('double_quotes', {
+      bodyHtml: '<p>"本文"</p><script>var x = "keep";</script>',
+      article: { ...ARTICLE_BASE, image_files: null },
+    });
+    expect(r.applied).toBe(true);
+    expect(r.after_html).toBe('<p>「本文」</p><script>var x = "keep";</script>');
+  });
 });
 
 describe('cta_urls fixer', () => {
