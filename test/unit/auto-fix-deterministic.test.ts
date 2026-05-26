@@ -79,6 +79,16 @@ describe('double_quotes fixer', () => {
     expect(r.after_html).toBe('<p>HTML の TAG を学ぶ</p><div>「引用文」です</div>');
   });
 
+  it('#6: 引用符が無ければ cheerio 正規化を持ち込まず原文を返す (bare & が &amp; 化しない)', () => {
+    const html = '<p>A & B</p><img src="x.jpg" />';
+    const r = runDeterministicFix('double_quotes', {
+      bodyHtml: html,
+      article: { ...ARTICLE_BASE, image_files: null },
+    });
+    expect(r.applied).toBe(false);
+    expect(r.after_html).toBe(html); // bare & も <img/> も保持
+  });
+
   it('#6: script 内の " は対象外', () => {
     const r = runDeterministicFix('double_quotes', {
       bodyHtml: '<p>"本文"</p><script>var x = "keep";</script>',

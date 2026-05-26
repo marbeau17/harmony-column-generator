@@ -107,15 +107,17 @@ function fixDoubleQuotes(ctx: DeterministicFixContext): DeterministicFixResult {
   // 壊さずに置換する (CLAUDE.md: HTML は regex でなく cheerio/htmlparser2)。
   const $ = cheerio.load(before, null, false);
   let inOpen = true; // 半角 " は文書全体を通して開き→閉じを交互に割り当てる
+  let quoteHits = 0; // テキストノードで実際に置換した引用符の数
   const SKIP_TAGS = new Set(['script', 'style']);
   const walk = (nodes: DomNodeLike[] | undefined): void => {
     if (!nodes) return;
     for (const node of nodes) {
       if (node.type === 'text') {
-        let str = node.data ?? '';
-        str = str.replace(/\u201C/g, '\u300C').replace(/\u201D/g, '\u300D');
-        str = str.replace(/"/g, () => {
-          const r = inOpen ? '\u300C' : '\u300D';
+        const str = (node.data ?? '').replace(/[\u201C\u201D"]/g, (m) => {
+          quoteHits++;
+          if (m === '\u201C') return '\u300C';
+          if (m === '\u201D') return '\u300D';
+          const r = inOpen ? '\u300C' : '\u300D'; // 半角 " は開閉交互
           inOpen = !inOpen;
           return r;
         });
@@ -126,12 +128,22 @@ function fixDoubleQuotes(ctx: DeterministicFixContext): DeterministicFixResult {
     }
   };
   walk($.root().toArray() as unknown as DomNodeLike[]);
+
+  // 引用符の置換が 1 件も無ければ、cheerio 再シリアライズによる副次的な正規化
+  // (bare `&`→`&amp;`、`<img/>`→`<img>` 等) を持ち込まないよう原文をそのまま返す。
+  if (quoteHits === 0) {
+    return {
+      after_html: before,
+      applied: false,
+      detail: 'ダブルクォーテーション未検出',
+      diff_summary: buildDiff(before, before),
+    };
+  }
   const after = $.html();
-  const replaced = before !== after;
   return {
     after_html: after,
-    applied: replaced,
-    detail: replaced ? '" → 「」 / " " → "「" "」"' : 'ダブルクォーテーション未検出',
+    applied: before !== after,
+    detail: '" \u2192 \u300C\u300D / " " \u2192 "\u300C" "\u300D"',
     diff_summary: buildDiff(before, after),
   };
 }
